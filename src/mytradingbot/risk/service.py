@@ -27,6 +27,10 @@ class RiskEngine:
             checks.append("positive_quantity_required")
             return RiskDecision.reject(reason="invalid_quantity", checks=checks)
 
+        if intent.strategy_name == "scalping" and intent.side == "buy" and intent.bracket_plan is None:
+            checks.append("bracket_plan_required")
+            return RiskDecision.reject(reason="missing_bracket_plan", checks=checks)
+
         if intent.quantity > self.max_position_size:
             checks.append("max_position_size")
             return RiskDecision.reject(
@@ -35,4 +39,6 @@ class RiskEngine:
             )
 
         checks.extend(["mode_allowed", "position_limit_ok"])
+        if intent.bracket_plan is not None:
+            checks.append("bracket_plan_present")
         return RiskDecision.approve(intent=intent, checks=checks)

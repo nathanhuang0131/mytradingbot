@@ -1,6 +1,24 @@
 # First Run
 
-## 1. Install The Project
+## Works Without `pyqlib`
+
+- `app/app.py`
+- `app/pages/01_Dashboard.py`
+- `app/pages/02_Strategy_Control.py`
+- `app/pages/04_Paper_Trading.py` with explicit artifacts
+- `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
+
+## Works Without Alpaca Credentials
+
+- `app/app.py`
+- `app/pages/01_Dashboard.py`
+- `app/pages/02_Strategy_Control.py`
+- `app/pages/04_Paper_Trading.py` with explicit artifacts
+- `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, and `scripts/refresh_predictions.py` if repo-local normalized data and `pyqlib` already exist
+
+## First-Run Order
+
+1. Install the project.
 
 ```bash
 python -m venv .venv
@@ -8,40 +26,41 @@ python -m venv .venv
 pip install -e .[dev]
 ```
 
-## 2. Verify The Test Suite
+2. Verify the repo.
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
+python scripts/validate_system.py
+python scripts/goalcheck.py
 ```
 
-## 3. Prepare Runtime Artifacts
+3. Choose one of these first operational paths.
 
-Paper and dry-run sessions need both of these artifacts:
-
-- `models/predictions/latest.json`
-- `data/runtime/market_snapshot.json`
-
-You can also pass explicit file paths to the paper trading CLI:
+Paper-only with explicit artifacts:
 
 ```bash
 python scripts/run_paper_trading.py --strategy scalping --mode paper --predictions-file <path> --market-data-file <path>
 ```
 
-## 4. Understand Qlib Availability
+Repo-local phased build:
 
-- The dashboard launches even if `pyqlib` is not installed.
-- Dataset build, training, and prediction refresh actions fail clearly until qlib is installed and configured.
-- Existing runtime prediction artifacts can still be loaded for paper trading without `pyqlib`.
+```bash
+python scripts/run_daily_maintenance.py --action download --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d
+python scripts/build_qlib_dataset.py --strategy scalping
+python scripts/train_models.py --strategy scalping
+python scripts/refresh_predictions.py --strategy scalping
+python scripts/run_paper_trading.py --strategy scalping --mode paper
+```
 
-## 5. Launch The Dashboard
+4. Launch the dashboard.
 
 ```bash
 streamlit run app/app.py
 ```
 
-## 6. First Operator Workflow
+## Phase Command Mapping
 
-1. Open the dashboard.
-2. Go to `Strategy Control` and confirm the selected strategy and mode.
-3. Go to `Paper Trading` and run a `dry_run` or `paper` session.
-4. Review `Diagnostics` and `LLM Copilot`.
+- Phase 1: `scripts/run_paper_trading.py`, `app/pages/04_Paper_Trading.py`
+- Phase 2: `scripts/run_daily_maintenance.py --action download`, `scripts/run_daily_maintenance.py --action update`
+- Phase 3: `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, `scripts/refresh_predictions.py`
+- Phase 4: `scripts/run_live_trading.py`

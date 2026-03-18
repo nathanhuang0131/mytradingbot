@@ -1,51 +1,55 @@
 # Runbook
 
-## Daily Workflow
+## Daily Maintenance Order
 
-1. Launch `streamlit run app/app.py`.
-2. Check `Dashboard` for prediction readiness and health.
-3. Use `Strategy Control` to confirm the active strategy and mode.
-4. Use `Data and Training` to inspect qlib action readiness.
-5. Run a `dry_run` or `paper` session from `Paper Trading`.
-6. Review orders, positions, and trade attempts.
-7. Open `Diagnostics` to inspect stale artifacts and no-trade explanations.
-8. Open `LLM Copilot` for advisory-only summaries.
+1. `python scripts/run_daily_maintenance.py --action update --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d`
+2. `python scripts/build_qlib_dataset.py --strategy scalping`
+3. `python scripts/train_models.py --strategy scalping`
+4. `python scripts/refresh_predictions.py --strategy scalping`
+5. `python scripts/run_paper_trading.py --strategy scalping --mode dry_run`
+6. `python scripts/run_paper_trading.py --strategy scalping --mode paper`
+7. `streamlit run app/app.py`
 
-## Paper Trading Notes
+## Daily UI Order
 
-- `paper` is the default operational mode.
-- `dry_run` exercises the full pipeline but does not mutate broker state.
-- Both paths require a prediction artifact and a market snapshot artifact.
+1. Open `app/pages/01_Dashboard.py` from the Streamlit sidebar.
+2. Check the phase capability snapshot and prediction freshness.
+3. Use `app/pages/03_Data_and_Training.py` for phase-2 and phase-3 actions.
+4. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
+5. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
+
+## If Phase 2 Fails
+
+Check:
+
+- `alpaca-py` is installed through `pip install -e .[dev,broker]` or `pip install alpaca-py`
+- `ALPACA_API_KEY` or `BROKER__ALPACA_API_KEY` is set
+- `ALPACA_SECRET_KEY` or `BROKER__ALPACA_SECRET_KEY` is set
+- `data/raw/alpaca/bars/` and `data/normalized/bars/` are writable under the repo root
+
+## If Phase 3 Fails
+
+Check:
+
+- `pyqlib` is installed through `pip install -e .[dev,qlib]` or `pip install pyqlib`
+- `data/normalized/bars/` contains parquet for the requested strategy timeframe
+- `data/qlib/dataset.parquet` exists before training
+- `models/qlib/model.pkl` exists before prediction refresh
 
 ## If No Trades Happen
 
 Check:
 
-- prediction freshness
-- missing prediction artifact
-- predicted return threshold
-- confidence threshold
-- VWAP relationship
-- spread and liquidity filters
-- cooldown logic
-- flatten-near-close logic
+- `models/predictions/latest.json` freshness
+- `data/snapshots/market_snapshot.json` freshness
+- qlib return and confidence thresholds
+- scalping fee-adjusted bracket expectancy
+- whole-share execution rounding effects
+- cooldown and flatten-near-close logic
 - risk rejection reasons
-
-## If Qlib Actions Fail
-
-Expected phase-1 causes:
-
-- `pyqlib` is not installed
-- no concrete qlib workflow is configured yet
-- prediction artifact is missing or stale
-
-The system should fail with explicit guidance and keep the dashboard available.
 
 ## Live Trading Status
 
-Live trading is intentionally gated in phase 1.
-
-- the Live Trading page is visible
-- Alpaca live submission is disabled
-- risk blocks live order approval
-- the scaffold is validation-only
+- `scripts/run_live_trading.py` is validation-only
+- `src/mytradingbot/risk/service.py` still blocks live approval
+- `src/mytradingbot/brokers/alpaca.py` still reports live submission disabled

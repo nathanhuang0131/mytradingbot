@@ -59,3 +59,44 @@ def test_run_paper_trading_script_executes_without_crashing(
 
     assert result.returncode == 0
     assert "session_summary" in result.stdout.lower()
+
+
+def test_build_train_and_refresh_scripts_report_clear_prerequisite_status(script_runner) -> None:
+    build = script_runner("scripts/build_qlib_dataset.py", "--strategy", "scalping")
+    train = script_runner("scripts/train_models.py", "--strategy", "scalping")
+    refresh = script_runner("scripts/refresh_predictions.py", "--strategy", "scalping")
+
+    assert build.returncode == 0
+    assert any(
+        message in build.stdout.lower()
+        for message in [
+            "pyqlib",
+            "normalized repo-local parquet data is missing",
+            "qlib-ready dataset artifact built",
+        ]
+    )
+    assert train.returncode == 0
+    assert any(
+        message in train.stdout.lower()
+        for message in [
+            "pyqlib",
+            "qlib dataset artifact is missing",
+            "qlib model training completed",
+        ]
+    )
+    assert refresh.returncode == 0
+    assert any(
+        message in refresh.stdout.lower()
+        for message in [
+            "pyqlib",
+            "qlib dataset artifact is missing",
+            "predictions refreshed",
+        ]
+    )
+
+
+def test_run_daily_maintenance_reports_missing_alpaca_credentials(script_runner) -> None:
+    result = script_runner("scripts/run_daily_maintenance.py", "--action", "update")
+
+    assert result.returncode == 0
+    assert "credentials" in result.stdout.lower()

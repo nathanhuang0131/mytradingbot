@@ -4,10 +4,24 @@ from __future__ import annotations
 
 import logging
 
+from pydantic import BaseModel
+
+from mytradingbot.core.capabilities import CapabilitySnapshot
 from mytradingbot.orchestration.service import TradingPlatformService
 from mytradingbot.qlib_engine.models import QlibOperationResult
+from mytradingbot.data.models import MarketDataPipelineResult
 
 logger = logging.getLogger(__name__)
+
+
+class DataTrainingPayload(BaseModel):
+    """Operator payload for phase-2/3 maintenance pages."""
+
+    capabilities: CapabilitySnapshot
+    default_strategy: str
+    default_timeframes: list[str]
+    works_without_pyqlib: list[str]
+    works_without_alpaca_credentials: list[str]
 
 
 class DataTrainingService:
@@ -16,11 +30,54 @@ class DataTrainingService:
     def __init__(self, platform_service: TradingPlatformService) -> None:
         self.platform_service = platform_service
 
-    def build_dataset(self) -> QlibOperationResult:
-        return self.platform_service.build_dataset()
+    def get_payload(self) -> DataTrainingPayload:
+        settings = self.platform_service.settings
+        return DataTrainingPayload(
+            capabilities=self.platform_service.get_capabilities(),
+            default_strategy=settings.strategies.default_strategy.value,
+            default_timeframes=settings.data.default_timeframes,
+            works_without_pyqlib=[
+                "download_market_data",
+                "update_market_data",
+                "build_market_snapshot",
+                "paper_trading_with_explicit_artifacts",
+            ],
+            works_without_alpaca_credentials=[
+                "dashboard",
+                "paper_trading_with_explicit_artifacts",
+                "qlib_artifact_inspection",
+            ],
+        )
 
-    def train_models(self) -> QlibOperationResult:
-        return self.platform_service.train_models()
+    def download_market_data(
+        self,
+        *,
+        symbols: list[str] | None = None,
+        timeframes: list[str] | None = None,
+    ) -> MarketDataPipelineResult:
+        return self.platform_service.download_market_data(
+            symbols=symbols,
+            timeframes=timeframes,
+            full_refresh=True,
+        )
 
-    def refresh_predictions(self) -> QlibOperationResult:
-        return self.platform_service.refresh_predictions()
+    def update_market_data(
+        self,
+        *,
+        symbols: list[str] | None = None,
+        timeframes: list[str] | None = None,
+    ) -> MarketDataPipelineResult:
+        return self.platform_service.download_market_data(
+            symbols=symbols,
+            timeframes=timeframes,
+            full_refresh=False,
+        )
+
+    def build_dataset(self, *, strategy_name: str | None = None) -> QlibOperationResult:
+        return self.platform_service.build_dataset(strategy_name=strategy_name)
+
+    def train_models(self, *, strategy_name: str | None = None) -> QlibOperationResult:
+        return self.platform_service.train_models(strategy_name=strategy_name)
+
+    def refresh_predictions(self, *, strategy_name: str | None = None) -> QlibOperationResult:
+        return self.platform_service.refresh_predictions(strategy_name=strategy_name)

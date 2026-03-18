@@ -16,6 +16,11 @@ class RepoPaths(BaseModel):
     src_dir: Path
     configs_dir: Path
     data_dir: Path
+    raw_data_dir: Path
+    normalized_data_dir: Path
+    snapshots_dir: Path
+    qlib_dir: Path
+    runtime_dir: Path
     docs_dir: Path
     logs_dir: Path
     models_dir: Path
@@ -26,11 +31,20 @@ class RepoPaths(BaseModel):
     @classmethod
     def discover(cls) -> "RepoPaths":
         repo_root = Path(__file__).resolve().parents[3]
+        return cls.for_root(repo_root)
+
+    @classmethod
+    def for_root(cls, repo_root: Path) -> "RepoPaths":
         return cls(
             repo_root=repo_root,
             src_dir=repo_root / "src",
             configs_dir=repo_root / "configs",
             data_dir=repo_root / "data",
+            raw_data_dir=repo_root / "data" / "raw",
+            normalized_data_dir=repo_root / "data" / "normalized",
+            snapshots_dir=repo_root / "data" / "snapshots",
+            qlib_dir=repo_root / "data" / "qlib",
+            runtime_dir=repo_root / "data" / "runtime",
             docs_dir=repo_root / "docs",
             logs_dir=repo_root / "logs",
             models_dir=repo_root / "models",
@@ -42,5 +56,15 @@ class RepoPaths(BaseModel):
     def ensure_runtime_directories(self) -> None:
         """Create the mutable runtime directories the app relies on."""
 
-        for path in (self.data_dir, self.logs_dir, self.models_dir, self.reports_dir):
+        for path in (
+            self.data_dir,
+            self.raw_data_dir,
+            self.normalized_data_dir,
+            self.snapshots_dir,
+            self.qlib_dir,
+            self.runtime_dir,
+            self.logs_dir,
+            self.models_dir,
+            self.reports_dir,
+        ):
             path.mkdir(parents=True, exist_ok=True)

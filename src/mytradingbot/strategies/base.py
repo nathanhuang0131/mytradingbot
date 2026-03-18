@@ -28,7 +28,7 @@ class BaseStrategy(ABC):
         self,
         signal: SignalBundle,
         *,
-        quantity: int,
+        quantity: float,
         metadata: dict[str, float | str | bool] | None = None,
     ) -> TradeIntent:
         side = "buy" if signal.prediction.direction == "long" else "sell"

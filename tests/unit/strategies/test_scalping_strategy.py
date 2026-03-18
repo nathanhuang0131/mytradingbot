@@ -1,3 +1,4 @@
+from mytradingbot.core.settings import AppSettings, ScalpingBracketSettings
 from mytradingbot.strategies.scalping import ScalpingStrategy
 
 
@@ -48,3 +49,34 @@ def test_scalping_generates_exit_plan_for_valid_signal(signal_bundle_factory) ->
     assert decision.intent.exit_plan.take_profit is not None
     assert decision.intent.exit_plan.stop_loss is not None
     assert decision.intent.exit_plan.timeout_seconds is not None
+    assert decision.intent.bracket_plan is not None
+    assert decision.intent.bracket_plan.reward_risk_ratio > 0
+
+
+def test_scalping_rejects_trade_when_fee_adjusted_expectancy_is_poor(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(
+                estimated_slippage_bps=40.0,
+                estimated_fee_per_share=0.5,
+                minimum_reward_risk_ratio=1.5,
+                minimum_net_reward_per_share=0.5,
+            )
+        )
+    )
+
+    decision = strategy.evaluate(
+        signal_bundle_factory(
+            predicted_return=0.0055,
+            confidence=0.8,
+            last_price=10.0,
+            vwap=9.9,
+            spread_bps=0.5,
+            liquidity_score=0.9,
+        )
+    )
+
+    assert not decision.should_trade
+    assert "fee_adjusted_expectancy" in decision.failed_filters

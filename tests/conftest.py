@@ -17,6 +17,7 @@ from mytradingbot.core.models import MarketSnapshot, QlibPrediction, SignalBundl
 from mytradingbot.core.enums import RuntimeMode
 from mytradingbot.core.models import (
     ArtifactStatus,
+    BracketPlan,
     HealthStatus,
     SessionResult,
     SessionSummary,
@@ -65,6 +66,24 @@ def signal_bundle_factory():
 
 @pytest.fixture
 def approved_trade_intent() -> TradeIntent:
+    bracket_plan = BracketPlan(
+        planned_entry_price=100.0,
+        planned_stop_loss_price=99.0,
+        planned_take_profit_price=102.0,
+        planned_quantity=2.0,
+        risk_per_share=1.0,
+        gross_reward_per_share=2.0,
+        estimated_fees=0.0,
+        estimated_slippage=0.0,
+        estimated_fee_per_share=0.0,
+        estimated_slippage_per_share=0.0,
+        estimated_fixed_fees=0.0,
+        net_reward_per_share=2.0,
+        reward_risk_ratio=2.0,
+        expected_net_profit=4.0,
+        time_in_force="day",
+        exit_reason_metadata={"stop_loss": "risk_exit", "take_profit": "target_exit"},
+    )
     return TradeIntent(
         symbol="AAPL",
         strategy_name="scalping",
@@ -73,6 +92,7 @@ def approved_trade_intent() -> TradeIntent:
         limit_price=100.0,
         predicted_return=0.012,
         confidence=0.84,
+        bracket_plan=bracket_plan,
     )
 
 

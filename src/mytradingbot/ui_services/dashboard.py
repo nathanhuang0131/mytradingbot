@@ -6,6 +6,7 @@ import logging
 
 from pydantic import BaseModel
 
+from mytradingbot.core.capabilities import CapabilitySnapshot
 from mytradingbot.core.models import ArtifactStatus, HealthStatus, SessionSummary
 from mytradingbot.orchestration.service import TradingPlatformService
 
@@ -18,6 +19,7 @@ class DashboardPayload(BaseModel):
     health: HealthStatus
     prediction_status: ArtifactStatus
     available_strategies: list[str]
+    capabilities: CapabilitySnapshot
     last_session: SessionSummary | None = None
 
 
@@ -32,6 +34,7 @@ class DashboardService:
             health=self.platform_service.get_health_status(),
             prediction_status=self.platform_service.get_prediction_status(),
             available_strategies=self.platform_service.get_strategy_names(),
+            capabilities=self.platform_service.get_capabilities(),
             last_session=(
                 self.platform_service.last_session_result.session_summary
                 if self.platform_service.last_session_result

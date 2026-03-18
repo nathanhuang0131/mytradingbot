@@ -1,15 +1,5 @@
 # User Manual
 
-## What This Platform Does
-
-This platform provides:
-
-- qlib workflow scaffolding for dataset, training, and prediction refresh
-- typed signal-to-broker paper trading workflows
-- a Streamlit dashboard as the main operator interface
-- diagnostics and reporting grounded in recorded session artifacts
-- advisory-only LLM assistance
-
 ## Supported Strategies
 
 - `scalping`
@@ -17,53 +7,84 @@ This platform provides:
 - `short_term`
 - `long_term`
 
-## Main Pages
+## Page Map
 
-### Dashboard
+### `app/pages/01_Dashboard.py`
 
-Shows health, prediction readiness, and recent session status.
+Shows:
 
-### Strategy Control
+- prediction freshness
+- platform health
+- phase capability snapshot
+- recent session summary
 
-Lets you choose the active strategy and select `dry_run`, `paper`, or visible-but-gated `live`.
+### `app/pages/02_Strategy_Control.py`
 
-### Data and Training
+Lets the operator choose:
 
-Lets you trigger qlib dataset, training, and prediction refresh scaffolding. These actions fail clearly until qlib is installed and configured.
+- strategy
+- `dry_run`
+- `paper`
+- visible-but-gated `live`
 
-### Paper Trading
+### `app/pages/03_Data_and_Training.py`
 
-Runs dry-run or paper sessions and displays:
+Runs:
 
-- session summary
-- orders
-- positions
-- trade attempts
+- repo-local Alpaca historical download
+- incremental repo-local update
+- qlib dataset build
+- qlib model training
+- prediction refresh
 
-### Live Trading
+The page also separates what works without `pyqlib` and what works without Alpaca credentials.
 
-Shows the phase-1 live trading gate. No real live orders are submitted.
+### `app/pages/04_Paper_Trading.py`
 
-### LLM Copilot
+Runs:
 
-Shows advisory-only:
+- `dry_run`
+- `paper`
 
-- signal explanation
-- diagnostics summary
-- strategy comparison
+The paper workflow uses:
 
-### Diagnostics
+- `models/predictions/latest.json`
+- `data/snapshots/market_snapshot.json`
 
-Shows stale prediction health, no-trade explanations, and post-session notes.
+or explicit CLI artifact paths passed to `scripts/run_paper_trading.py`.
 
-### Settings
+### `app/pages/05_Live_Trading.py`
 
-Shows resolved application settings and paths.
+Shows the guarded phase-4 scaffold only. No real live orders are submitted.
 
-## Main Safety Notes
+### `app/pages/06_LLM_Copilot.py`
 
-- paper mode first
-- qlib remains the authority
-- LLM is advisory only
-- stale or missing predictions fail clearly
-- live trading is gated in phase 1
+Shows advisory-only summaries and explanations sourced from real session artifacts.
+
+### `app/pages/07_Diagnostics.py`
+
+Shows prediction health, no-trade diagnostics, and post-session review notes, including bracket-plan traceability when present.
+
+### `app/pages/08_Settings.py`
+
+Shows resolved settings and repo-local paths from `src/mytradingbot/core/settings.py` and `src/mytradingbot/core/paths.py`.
+
+## Scalping Operator Notes
+
+`src/mytradingbot/strategies/scalping.py` now requires a typed bracket plan before a buy can be submitted. The paper path records:
+
+- planned entry
+- planned stop
+- planned target
+- estimated fees
+- estimated slippage
+- net reward/risk
+- actual bracket exit reason when synthetic exits fire
+
+## Safety Notes
+
+- qlib remains the authority for direction and ranking
+- LLM output from `src/mytradingbot/llm/service.py` is advisory only
+- missing or stale predictions fail clearly
+- phase 1 remains the default operational path
+- phase 4 remains guarded and validation-only

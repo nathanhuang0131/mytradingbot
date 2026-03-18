@@ -1,0 +1,3229 @@
+diff --git a/.env.example b/.env.example
+index ea22903..a4ec0e7 100644
+--- a/.env.example
++++ b/.env.example
+@@ -2,24 +2,39 @@
+ # Trading Mode
+ #################################
+ 
++# Supported aliases:
++# - DEFAULT_MODE
++# - RUNTIME__DEFAULT_MODE
+ DEFAULT_MODE=paper
++LIVE_TRADING_ENABLED=false
+ 
+ #################################
+ # Alpaca Broker
+ #################################
+ 
++# Supported aliases:
++# - ALPACA_API_KEY
++# - BROKER__ALPACA_API_KEY
+ ALPACA_API_KEY=
++# Supported aliases:
++# - ALPACA_SECRET_KEY
++# - BROKER__ALPACA_SECRET_KEY
+ ALPACA_SECRET_KEY=
+ ALPACA_BASE_URL=https://paper-api.alpaca.markets
++ALPACA_DATA_FEED=iex
++ALPACA_ADJUSTMENT=raw
+ 
+ #################################
+ # LLM Advisory (optional)
+ #################################
+ 
+ OPENAI_API_KEY=
++LLM_ENABLED=false
+ 
+ #################################
+ # Logging
+ #################################
+ 
+-LOG_LEVEL=INFO
+\ No newline at end of file
++LOG_LEVEL=INFO
++
++PYTHON_ENV=mytradingbot
+diff --git a/README.md b/README.md
+index b457f25..b4578e3 100644
+--- a/README.md
++++ b/README.md
+@@ -1,47 +1,51 @@
+ # MyTradingBot Next
+ 
+-MyTradingBot Next is a clean, qlib-first quant trading platform built from scratch for modular strategy development, dashboard-driven operation, paper/live workflows, diagnostics, reporting, and advisory-only LLM tooling.
++MyTradingBot Next is a qlib-first, dashboard-first quant trading platform with a production-ready phase-1 paper workflow and explicit phase-2 through phase-4 rollout support inside this repository.
+ 
+-## Goals
++## Phase Map
+ 
+-- qlib-based dataset, training, and prediction workflows
+-- canonical strategy support for `scalping`, `intraday`, `short_term`, and `long_term`
+-- paper trading first
+-- live trading with explicit safeguards
+-- Streamlit dashboard-first UX
+-- diagnostics, validation, and reporting
+-- advisory-only LLM tools for operator assistance
++- Phase 1: `scripts/run_paper_trading.py` plus `app/app.py` run paper and dry-run sessions from real artifacts.
++- Phase 2: `scripts/run_daily_maintenance.py --action download` and `scripts/run_daily_maintenance.py --action update` drive the repo-local Alpaca historical data pipeline.
++- Phase 3: `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, and `scripts/refresh_predictions.py` build qlib-ready artifacts from repo-local parquet data.
++- Phase 4: `scripts/run_live_trading.py` remains visible and validation-only. No real live order submission is enabled.
+ 
+-## Phase 1 Status
++## Works Without `pyqlib`
+ 
+-Phase 1 delivers a fully runnable paper-trading path with:
++- `app/app.py`
++- `app/pages/01_Dashboard.py`
++- `app/pages/02_Strategy_Control.py`
++- `app/pages/04_Paper_Trading.py` when explicit prediction and market snapshot artifacts are provided
++- `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
++- `scripts/run_daily_maintenance.py --action download` and `scripts/run_daily_maintenance.py --action update` only if Alpaca credentials and `alpaca-py` are available
+ 
+-- typed signal, strategy, risk, execution, broker, and trace artifacts
+-- qlib adapter scaffolding with explicit stale or missing prediction failures
+-- a working in-memory paper broker
+-- a Streamlit dashboard and all required pages
+-- diagnostics and reporting services grounded in session artifacts
+-- advisory-only LLM summaries and explanations
++## Works Without Alpaca Credentials
+ 
+-Live trading is visible in the codebase and UI, but it remains validation-only and explicitly gated.
++- `app/app.py`
++- `app/pages/01_Dashboard.py`
++- `app/pages/02_Strategy_Control.py`
++- `app/pages/04_Paper_Trading.py` with explicit artifacts
++- `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
++- `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, and `scripts/refresh_predictions.py` only if repo-local normalized data and `pyqlib` are already available
+ 
+-## Runtime Artifacts
++## Canonical Data And Qlib Flow
+ 
+-Paper and dry-run sessions require:
++1. `scripts/run_daily_maintenance.py --action download` writes raw parquet to `data/raw/alpaca/bars/<timeframe>/<symbol>.parquet`.
++2. `scripts/run_daily_maintenance.py --action update` performs incremental parquet updates and normalization into `data/normalized/bars/<timeframe>/<symbol>.parquet`.
++3. `src/mytradingbot/data/schema.py` validates the canonical repo schema and transforms it into the qlib-ready schema.
++4. `scripts/build_qlib_dataset.py --strategy scalping` builds `data/qlib/dataset.parquet`.
++5. `scripts/train_models.py --strategy scalping` writes `models/qlib/model.pkl`.
++6. `scripts/refresh_predictions.py --strategy scalping` writes `models/predictions/latest.json`.
++7. `scripts/run_paper_trading.py --strategy scalping --mode paper` runs the strategy -> risk -> execution -> broker path against the refreshed artifacts.
+ 
+-- a runtime predictions artifact, default path: `models/predictions/latest.json`
+-- a runtime market snapshot artifact, default path: `data/runtime/market_snapshot.json`
++`src/mytradingbot/data/providers/alpaca_provider.py` is the canonical phase-2 provider. `src/mytradingbot/data/providers/file_ingest_provider.py` exists for fixtures, offline imports, and tests only.
+ 
+-The dashboard still loads if these artifacts are missing or if `pyqlib` is unavailable. Qlib-dependent maintenance actions fail clearly with guidance instead of falling back silently.
++## Runtime Artifact Paths
+ 
+-## Main Areas
+-
+-- `app/` Streamlit dashboard
+-- `configs/` configuration
+-- `scripts/` thin operational wrappers
+-- `src/mytradingbot/` package code
+-- `tests/` validation
+-- `docs/` architecture and operator docs
++- `models/predictions/latest.json`
++- `data/snapshots/market_snapshot.json`
++- `data/runtime/market_snapshot.json` as the current paper-session compatibility mirror
++- `data/qlib/dataset.parquet`
++- `models/qlib/model.pkl`
+ 
+ ## Initial Setup
+ 
+@@ -53,14 +57,18 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
+ streamlit run app/app.py
+ ```
+ 
+-## Common Commands
++## Canonical Commands
+ 
+ ```bash
+ python scripts/validate_system.py
+ python scripts/goalcheck.py
+-python scripts/run_live_trading.py
++python scripts/run_daily_maintenance.py --action download --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d
++python scripts/run_daily_maintenance.py --action update --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d
++python scripts/build_qlib_dataset.py --strategy scalping
++python scripts/train_models.py --strategy scalping
++python scripts/refresh_predictions.py --strategy scalping
+ python scripts/run_paper_trading.py --strategy scalping --mode paper --predictions-file <path> --market-data-file <path>
+-python scripts/build_qlib_dataset.py
+-python scripts/train_models.py
+-python scripts/refresh_predictions.py
++python scripts/run_live_trading.py
+ ```
++
++The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
+diff --git a/app/app.py b/app/app.py
+index fea2dc7..8d4fe72 100644
+--- a/app/app.py
++++ b/app/app.py
+@@ -23,6 +23,8 @@ st.subheader("Operator Notes")
+ st.write(
+     "Use the pages in the sidebar to control strategies, run paper sessions, inspect diagnostics, and review advisory summaries."
+ )
++st.subheader("Phase Capability Snapshot")
++st.json(payload.capabilities.model_dump(mode="json"))
+ if not payload.prediction_status.is_ready:
+     st.warning(
+         "Predictions are not currently ready. Qlib-dependent actions fail clearly, but the dashboard remains available."
+diff --git a/app/pages/01_Dashboard.py b/app/pages/01_Dashboard.py
+index d0ab5b2..8684b8a 100644
+--- a/app/pages/01_Dashboard.py
++++ b/app/pages/01_Dashboard.py
+@@ -22,6 +22,9 @@ st.json(payload.prediction_status.model_dump(mode="json"))
+ st.subheader("Health")
+ st.json(payload.health.model_dump(mode="json"))
+ 
++st.subheader("Phase Capabilities")
++st.json(payload.capabilities.model_dump(mode="json"))
++
+ if payload.last_session is not None:
+     st.subheader("Last Session")
+     st.json(payload.last_session.model_dump(mode="json"))
+diff --git a/app/pages/03_Data_and_Training.py b/app/pages/03_Data_and_Training.py
+index f930c48..64269e8 100644
+--- a/app/pages/03_Data_and_Training.py
++++ b/app/pages/03_Data_and_Training.py
+@@ -2,19 +2,36 @@ from __future__ import annotations
+ 
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service
++from app.components.runtime import get_platform_service, get_selected_strategy
+ from mytradingbot.ui_services.data_training import DataTrainingService
+ 
+ service = DataTrainingService(get_platform_service())
++payload = service.get_payload()
++strategy = get_selected_strategy() or payload.default_strategy
+ 
+ st.title("Data and Training")
+-st.caption("Run qlib dataset, training, and prediction refresh actions.")
++st.caption("Run repo-local data download/update, qlib dataset build, training, and prediction refresh actions.")
++
++st.subheader("Capabilities")
++st.json(payload.capabilities.model_dump(mode="json"))
++
++st.subheader("Works Without pyqlib")
++st.write(payload.works_without_pyqlib)
++
++st.subheader("Works Without Alpaca Credentials")
++st.write(payload.works_without_alpaca_credentials)
++
++if st.button("Download Market Data"):
++    st.json(service.download_market_data().model_dump(mode="json"))
++
++if st.button("Update Market Data"):
++    st.json(service.update_market_data().model_dump(mode="json"))
+ 
+ if st.button("Build Dataset"):
+-    st.json(service.build_dataset().model_dump(mode="json"))
++    st.json(service.build_dataset(strategy_name=strategy).model_dump(mode="json"))
+ 
+ if st.button("Train Models"):
+-    st.json(service.train_models().model_dump(mode="json"))
++    st.json(service.train_models(strategy_name=strategy).model_dump(mode="json"))
+ 
+ if st.button("Refresh Predictions"):
+-    st.json(service.refresh_predictions().model_dump(mode="json"))
++    st.json(service.refresh_predictions(strategy_name=strategy).model_dump(mode="json"))
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index b029615..74c24ab 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -2,74 +2,91 @@
+ 
+ ## Overview
+ 
+-This platform is a qlib-first, dashboard-first quant trading system built around a phase-1 paper-trading vertical slice.
++The canonical runtime flow is:
+ 
+-The implemented runtime flow is:
++`data/raw/alpaca/... parquet -> data/normalized/... parquet -> data/snapshots/market_snapshot.json -> data/qlib/dataset.parquet -> models/qlib/model.pkl -> models/predictions/latest.json -> signal -> strategy -> risk -> execution -> broker -> diagnostics/reporting`
+ 
+-`prediction artifact -> signal bundle -> strategy decision -> trade intent -> risk decision -> execution request -> broker result -> diagnostics/reporting`
++`src/mytradingbot/core/capabilities.py` is the central truth source for phase readiness.
+ 
+-## Core Guarantees
+-
+-- qlib remains the authority for direction and ranking
+-- LLM output is advisory only
+-- paper mode is the default operational path
+-- live trading is visible but validation-only in phase 1
+-- missing or stale prediction artifacts fail clearly
+-- strategies never call broker adapters directly
+-- Streamlit pages call `ui_services/`, not backend internals
+-
+-## Layers
+-
+-### `core`
+-
+-Repository-aware settings, enums, paths, exceptions, and shared typed runtime models.
+-
+-### `data`
+-
+-Runtime market snapshot loading and signal-bundle assembly.
+-
+-### `qlib_engine`
+-
+-Adapter-based qlib availability checks, dataset and training scaffolding, prediction refresh scaffolding, artifact freshness inspection, and runtime prediction loading.
+-
+-### `signals`
+-
+-Typed signal-layer exports for qlib predictions, market context, trade intents, and strategy decisions.
+-
+-### `strategies`
+-
+-Canonical strategy registry plus implementations for `scalping`, `intraday`, `short_term`, and `long_term`.
+-
+-`scalping` includes modular qlib gating, thresholds, microstructure filters, cooldown logic, flatten-near-close logic, adaptive sizing, and exit-plan generation.
++## Phase Capability Model
+ 
+-### `risk`
++- Phase 1: paper trading is operational through `src/mytradingbot/orchestration/service.py`, `src/mytradingbot/execution/service.py`, and `src/mytradingbot/brokers/paper.py`.
++- Phase 2: repo-local Alpaca download, incremental update, normalization, and snapshot build are provided by `src/mytradingbot/data/pipeline.py`.
++- Phase 3: qlib dataset packaging, training, and prediction refresh are provided by `src/mytradingbot/qlib_engine/service.py`, `src/mytradingbot/qlib_engine/dataset.py`, and `src/mytradingbot/qlib_engine/adapter.py`.
++- Phase 4: live trading remains guarded through `src/mytradingbot/brokers/alpaca.py`, `src/mytradingbot/risk/service.py`, and `scripts/run_live_trading.py`.
+ 
+-Risk approvals and rejections, including the explicit phase-1 live-mode hard block.
+-
+-### `execution`
+-
+-Execution request creation, dry-run skipping, and broker routing.
+-
+-### `brokers`
+-
+-An in-memory paper broker for the phase-1 operational path and an Alpaca scaffold that exposes live capability status without submitting real live orders.
+-
+-### `orchestration`
+-
+-End-to-end paper and dry-run session coordination, plus qlib maintenance entrypoints.
+-
+-### `diagnostics`
+-
+-Prediction health, stale-artifact diagnostics, and no-trade explanations.
+-
+-### `reporting`
+-
+-Post-session review construction from real session artifacts.
+-
+-### `llm`
+-
+-Advisory-only workflows for signal explanation, diagnostics summaries, strategy comparison, post-market review, export packs, and structured feedback import.
+-
+-### `ui_services`
++## Core Guarantees
+ 
+-Thin application services that prepare payloads for the Streamlit dashboard pages.
++- `src/mytradingbot/qlib_engine/service.py` is the only production authority for direction and ranking.
++- `src/mytradingbot/llm/service.py` remains advisory-only.
++- `src/mytradingbot/data/providers/alpaca_provider.py` does not leak Alpaca SDK enums outside the provider boundary.
++- `src/mytradingbot/data/schema.py` enforces an explicit transformation boundary between repo-local canonical parquet data and qlib-ready data.
++- `src/mytradingbot/strategies/scalping.py` emits a typed bracket plan before submission.
++- `src/mytradingbot/execution/service.py` enforces whole-share bracket constraints before broker submission.
++- `src/mytradingbot/brokers/paper.py` manages synthetic bracket exits for paper mode.
++
++## Layer Map
++
++- `src/mytradingbot/core/`: settings, repo-local paths, enums, shared models, and capability detection.
++- `src/mytradingbot/data/`: provider abstraction, Alpaca historical ingestion, parquet storage, normalization, schema validation, and snapshot building.
++- `src/mytradingbot/qlib_engine/`: qlib-ready dataset engineering, pyqlib adapter integration, model training, and prediction refresh.
++- `src/mytradingbot/signals/`: typed signal exports.
++- `src/mytradingbot/strategies/`: canonical strategies and scalping bracket planning.
++- `src/mytradingbot/risk/`: live guardrails and intent validation.
++- `src/mytradingbot/execution/`: broker execution constraints and routing.
++- `src/mytradingbot/brokers/`: paper broker plus guarded Alpaca live scaffold.
++- `src/mytradingbot/orchestration/`: end-to-end operator workflows shared by UI and CLI.
++- `src/mytradingbot/diagnostics/`: prediction freshness and no-trade diagnostics.
++- `src/mytradingbot/reporting/`: post-session bracket and traceability reporting.
++- `src/mytradingbot/llm/`: advisory-only operator tooling.
++- `src/mytradingbot/ui_services/`: shared UI service graph for Streamlit pages.
++
++## Data Schema Stages
++
++### Raw Provider Schema
++
++`src/mytradingbot/data/providers/alpaca_provider.py` writes raw parquet with Alpaca-style bar fields under `data/raw/alpaca/bars/<timeframe>/<symbol>.parquet`.
++
++### Normalized Repo Schema
++
++`src/mytradingbot/data/schema.py` normalizes the provider payload into:
++
++- `symbol`
++- `timestamp` in UTC
++- `timeframe`
++- `open`
++- `high`
++- `low`
++- `close`
++- `volume`
++- `trade_count`
++- `vwap`
++- `provider`
++- `adjustment`
++- `feed`
++
++This canonical schema is stored under `data/normalized/bars/<timeframe>/<symbol>.parquet`.
++
++### Qlib-Ready Schema
++
++`src/mytradingbot/data/schema.py` transforms canonical parquet into:
++
++- `instrument`
++- `datetime`
++- `open`
++- `high`
++- `low`
++- `close`
++- `volume`
++- `vwap`
++- `trade_count`
++- `timeframe`
++
++`src/mytradingbot/qlib_engine/dataset.py` then engineers training and prediction features into `data/qlib/dataset.parquet`.
++
++## Execution And Brackets
++
++- `src/mytradingbot/strategies/scalping.py` creates `BracketPlan` artifacts with planned entry, stop, target, fee/slippage assumptions, expected net profit, and reward/risk.
++- `src/mytradingbot/risk/service.py` rejects scalping buy intents that do not carry a bracket plan.
++- `src/mytradingbot/execution/service.py` rounds bracketed quantities down to whole shares when broker constraints require it, then re-validates the trade.
++- `src/mytradingbot/brokers/paper.py` arms synthetic brackets after entry fills and closes them on take-profit, stop-loss, or flatten commands without double-exit behavior.
+diff --git a/docs/FIRST_RUN.md b/docs/FIRST_RUN.md
+index a030bf7..ef8fbdd 100644
+--- a/docs/FIRST_RUN.md
++++ b/docs/FIRST_RUN.md
+@@ -1,6 +1,24 @@
+ # First Run
+ 
+-## 1. Install The Project
++## Works Without `pyqlib`
++
++- `app/app.py`
++- `app/pages/01_Dashboard.py`
++- `app/pages/02_Strategy_Control.py`
++- `app/pages/04_Paper_Trading.py` with explicit artifacts
++- `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
++
++## Works Without Alpaca Credentials
++
++- `app/app.py`
++- `app/pages/01_Dashboard.py`
++- `app/pages/02_Strategy_Control.py`
++- `app/pages/04_Paper_Trading.py` with explicit artifacts
++- `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, and `scripts/refresh_predictions.py` if repo-local normalized data and `pyqlib` already exist
++
++## First-Run Order
++
++1. Install the project.
+ 
+ ```bash
+ python -m venv .venv
+@@ -8,40 +26,41 @@ python -m venv .venv
+ pip install -e .[dev]
+ ```
+ 
+-## 2. Verify The Test Suite
++2. Verify the repo.
+ 
+ ```bash
+ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
++python scripts/validate_system.py
++python scripts/goalcheck.py
+ ```
+ 
+-## 3. Prepare Runtime Artifacts
++3. Choose one of these first operational paths.
+ 
+-Paper and dry-run sessions need both of these artifacts:
+-
+-- `models/predictions/latest.json`
+-- `data/runtime/market_snapshot.json`
+-
+-You can also pass explicit file paths to the paper trading CLI:
++Paper-only with explicit artifacts:
+ 
+ ```bash
+ python scripts/run_paper_trading.py --strategy scalping --mode paper --predictions-file <path> --market-data-file <path>
+ ```
+ 
+-## 4. Understand Qlib Availability
++Repo-local phased build:
+ 
+-- The dashboard launches even if `pyqlib` is not installed.
+-- Dataset build, training, and prediction refresh actions fail clearly until qlib is installed and configured.
+-- Existing runtime prediction artifacts can still be loaded for paper trading without `pyqlib`.
++```bash
++python scripts/run_daily_maintenance.py --action download --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d
++python scripts/build_qlib_dataset.py --strategy scalping
++python scripts/train_models.py --strategy scalping
++python scripts/refresh_predictions.py --strategy scalping
++python scripts/run_paper_trading.py --strategy scalping --mode paper
++```
+ 
+-## 5. Launch The Dashboard
++4. Launch the dashboard.
+ 
+ ```bash
+ streamlit run app/app.py
+ ```
+ 
+-## 6. First Operator Workflow
++## Phase Command Mapping
+ 
+-1. Open the dashboard.
+-2. Go to `Strategy Control` and confirm the selected strategy and mode.
+-3. Go to `Paper Trading` and run a `dry_run` or `paper` session.
+-4. Review `Diagnostics` and `LLM Copilot`.
++- Phase 1: `scripts/run_paper_trading.py`, `app/pages/04_Paper_Trading.py`
++- Phase 2: `scripts/run_daily_maintenance.py --action download`, `scripts/run_daily_maintenance.py --action update`
++- Phase 3: `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, `scripts/refresh_predictions.py`
++- Phase 4: `scripts/run_live_trading.py`
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index 66eb3b2..184d565 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -1,51 +1,55 @@
+ # Runbook
+ 
+-## Daily Workflow
++## Daily Maintenance Order
+ 
+-1. Launch `streamlit run app/app.py`.
+-2. Check `Dashboard` for prediction readiness and health.
+-3. Use `Strategy Control` to confirm the active strategy and mode.
+-4. Use `Data and Training` to inspect qlib action readiness.
+-5. Run a `dry_run` or `paper` session from `Paper Trading`.
+-6. Review orders, positions, and trade attempts.
+-7. Open `Diagnostics` to inspect stale artifacts and no-trade explanations.
+-8. Open `LLM Copilot` for advisory-only summaries.
++1. `python scripts/run_daily_maintenance.py --action update --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d`
++2. `python scripts/build_qlib_dataset.py --strategy scalping`
++3. `python scripts/train_models.py --strategy scalping`
++4. `python scripts/refresh_predictions.py --strategy scalping`
++5. `python scripts/run_paper_trading.py --strategy scalping --mode dry_run`
++6. `python scripts/run_paper_trading.py --strategy scalping --mode paper`
++7. `streamlit run app/app.py`
+ 
+-## Paper Trading Notes
++## Daily UI Order
+ 
+-- `paper` is the default operational mode.
+-- `dry_run` exercises the full pipeline but does not mutate broker state.
+-- Both paths require a prediction artifact and a market snapshot artifact.
++1. Open `app/pages/01_Dashboard.py` from the Streamlit sidebar.
++2. Check the phase capability snapshot and prediction freshness.
++3. Use `app/pages/03_Data_and_Training.py` for phase-2 and phase-3 actions.
++4. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
++5. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
+ 
+-## If No Trades Happen
++## If Phase 2 Fails
+ 
+ Check:
+ 
+-- prediction freshness
+-- missing prediction artifact
+-- predicted return threshold
+-- confidence threshold
+-- VWAP relationship
+-- spread and liquidity filters
+-- cooldown logic
+-- flatten-near-close logic
+-- risk rejection reasons
++- `alpaca-py` is installed through `pip install -e .[dev,broker]` or `pip install alpaca-py`
++- `ALPACA_API_KEY` or `BROKER__ALPACA_API_KEY` is set
++- `ALPACA_SECRET_KEY` or `BROKER__ALPACA_SECRET_KEY` is set
++- `data/raw/alpaca/bars/` and `data/normalized/bars/` are writable under the repo root
+ 
+-## If Qlib Actions Fail
++## If Phase 3 Fails
+ 
+-Expected phase-1 causes:
++Check:
+ 
+-- `pyqlib` is not installed
+-- no concrete qlib workflow is configured yet
+-- prediction artifact is missing or stale
++- `pyqlib` is installed through `pip install -e .[dev,qlib]` or `pip install pyqlib`
++- `data/normalized/bars/` contains parquet for the requested strategy timeframe
++- `data/qlib/dataset.parquet` exists before training
++- `models/qlib/model.pkl` exists before prediction refresh
+ 
+-The system should fail with explicit guidance and keep the dashboard available.
++## If No Trades Happen
+ 
+-## Live Trading Status
++Check:
++
++- `models/predictions/latest.json` freshness
++- `data/snapshots/market_snapshot.json` freshness
++- qlib return and confidence thresholds
++- scalping fee-adjusted bracket expectancy
++- whole-share execution rounding effects
++- cooldown and flatten-near-close logic
++- risk rejection reasons
+ 
+-Live trading is intentionally gated in phase 1.
++## Live Trading Status
+ 
+-- the Live Trading page is visible
+-- Alpaca live submission is disabled
+-- risk blocks live order approval
+-- the scaffold is validation-only
++- `scripts/run_live_trading.py` is validation-only
++- `src/mytradingbot/risk/service.py` still blocks live approval
++- `src/mytradingbot/brokers/alpaca.py` still reports live submission disabled
+diff --git a/docs/USER_MANUAL.md b/docs/USER_MANUAL.md
+index b9e13fa..ee2940b 100644
+--- a/docs/USER_MANUAL.md
++++ b/docs/USER_MANUAL.md
+@@ -1,15 +1,5 @@
+ # User Manual
+ 
+-## What This Platform Does
+-
+-This platform provides:
+-
+-- qlib workflow scaffolding for dataset, training, and prediction refresh
+-- typed signal-to-broker paper trading workflows
+-- a Streamlit dashboard as the main operator interface
+-- diagnostics and reporting grounded in recorded session artifacts
+-- advisory-only LLM assistance
+-
+ ## Supported Strategies
+ 
+ - `scalping`
+@@ -17,53 +7,84 @@ This platform provides:
+ - `short_term`
+ - `long_term`
+ 
+-## Main Pages
++## Page Map
++
++### `app/pages/01_Dashboard.py`
++
++Shows:
++
++- prediction freshness
++- platform health
++- phase capability snapshot
++- recent session summary
++
++### `app/pages/02_Strategy_Control.py`
++
++Lets the operator choose:
++
++- strategy
++- `dry_run`
++- `paper`
++- visible-but-gated `live`
++
++### `app/pages/03_Data_and_Training.py`
++
++Runs:
++
++- repo-local Alpaca historical download
++- incremental repo-local update
++- qlib dataset build
++- qlib model training
++- prediction refresh
+ 
+-### Dashboard
++The page also separates what works without `pyqlib` and what works without Alpaca credentials.
+ 
+-Shows health, prediction readiness, and recent session status.
++### `app/pages/04_Paper_Trading.py`
+ 
+-### Strategy Control
++Runs:
+ 
+-Lets you choose the active strategy and select `dry_run`, `paper`, or visible-but-gated `live`.
++- `dry_run`
++- `paper`
+ 
+-### Data and Training
++The paper workflow uses:
+ 
+-Lets you trigger qlib dataset, training, and prediction refresh scaffolding. These actions fail clearly until qlib is installed and configured.
++- `models/predictions/latest.json`
++- `data/snapshots/market_snapshot.json`
+ 
+-### Paper Trading
++or explicit CLI artifact paths passed to `scripts/run_paper_trading.py`.
+ 
+-Runs dry-run or paper sessions and displays:
++### `app/pages/05_Live_Trading.py`
+ 
+-- session summary
+-- orders
+-- positions
+-- trade attempts
++Shows the guarded phase-4 scaffold only. No real live orders are submitted.
+ 
+-### Live Trading
++### `app/pages/06_LLM_Copilot.py`
+ 
+-Shows the phase-1 live trading gate. No real live orders are submitted.
++Shows advisory-only summaries and explanations sourced from real session artifacts.
+ 
+-### LLM Copilot
++### `app/pages/07_Diagnostics.py`
+ 
+-Shows advisory-only:
++Shows prediction health, no-trade diagnostics, and post-session review notes, including bracket-plan traceability when present.
+ 
+-- signal explanation
+-- diagnostics summary
+-- strategy comparison
++### `app/pages/08_Settings.py`
+ 
+-### Diagnostics
++Shows resolved settings and repo-local paths from `src/mytradingbot/core/settings.py` and `src/mytradingbot/core/paths.py`.
+ 
+-Shows stale prediction health, no-trade explanations, and post-session notes.
++## Scalping Operator Notes
+ 
+-### Settings
++`src/mytradingbot/strategies/scalping.py` now requires a typed bracket plan before a buy can be submitted. The paper path records:
+ 
+-Shows resolved application settings and paths.
++- planned entry
++- planned stop
++- planned target
++- estimated fees
++- estimated slippage
++- net reward/risk
++- actual bracket exit reason when synthetic exits fire
+ 
+-## Main Safety Notes
++## Safety Notes
+ 
+-- paper mode first
+-- qlib remains the authority
+-- LLM is advisory only
+-- stale or missing predictions fail clearly
+-- live trading is gated in phase 1
++- qlib remains the authority for direction and ranking
++- LLM output from `src/mytradingbot/llm/service.py` is advisory only
++- missing or stale predictions fail clearly
++- phase 1 remains the default operational path
++- phase 4 remains guarded and validation-only
+diff --git a/pyproject.toml b/pyproject.toml
+index 45cac28..501f064 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -15,6 +15,7 @@ dependencies = [
+   "python-dotenv>=1.0.1",
+   "pandas>=2.2",
+   "numpy>=1.26",
++  "pyarrow>=18.0",
+   "streamlit>=1.40",
+   "plotly>=5.24",
+   "typer>=0.12",
+@@ -49,4 +50,4 @@ all = [
+ package-dir = {"" = "src"}
+ 
+ [tool.setuptools.packages.find]
+-where = ["src"]
+\ No newline at end of file
++where = ["src"]
+diff --git a/scripts/build_qlib_dataset.py b/scripts/build_qlib_dataset.py
+index 7683c8b..baa70f0 100644
+--- a/scripts/build_qlib_dataset.py
++++ b/scripts/build_qlib_dataset.py
+@@ -1,10 +1,21 @@
+ from __future__ import annotations
+ 
++import argparse
++
+ from mytradingbot.orchestration.service import TradingPlatformService
+ 
+ 
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description="Build the repo-local qlib dataset artifact.")
++    parser.add_argument("--strategy", default="scalping")
++    return parser
++
++
+ def main() -> int:
+-    result = TradingPlatformService.bootstrap_default().build_dataset()
++    args = build_parser().parse_args()
++    result = TradingPlatformService.bootstrap_default().build_dataset(
++        strategy_name=args.strategy
++    )
+     print(result.model_dump_json(indent=2))
+     return 0
+ 
+diff --git a/scripts/goalcheck.py b/scripts/goalcheck.py
+index cb7b5ec..16740e2 100644
+--- a/scripts/goalcheck.py
++++ b/scripts/goalcheck.py
+@@ -9,6 +9,7 @@ from mytradingbot.orchestration.service import TradingPlatformService
+ def main() -> int:
+     project_root = Path(__file__).resolve().parents[1]
+     service = TradingPlatformService.bootstrap_default()
++    capabilities = service.get_capabilities()
+     page_paths = [
+         project_root / "app/pages/01_Dashboard.py",
+         project_root / "app/pages/02_Strategy_Control.py",
+@@ -24,6 +25,10 @@ def main() -> int:
+         "strategies": service.get_strategy_names(),
+         "pages_present": all(path.exists() for path in page_paths),
+         "live_trading_gated": not AlpacaBrokerScaffold().get_live_capability_status().is_enabled,
++        "phase_1_status": capabilities.phase_1.status,
++        "phase_2_status": capabilities.phase_2.status,
++        "phase_3_status": capabilities.phase_3.status,
++        "phase_4_status": capabilities.phase_4.status,
+         "prediction_status_reason": service.get_prediction_status().reason,
+         "diagnostics_service_present": True,
+         "llm_advisory_present": True,
+diff --git a/scripts/refresh_predictions.py b/scripts/refresh_predictions.py
+index c2d21b8..caf4e9a 100644
+--- a/scripts/refresh_predictions.py
++++ b/scripts/refresh_predictions.py
+@@ -1,10 +1,21 @@
+ from __future__ import annotations
+ 
++import argparse
++
+ from mytradingbot.orchestration.service import TradingPlatformService
+ 
+ 
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description="Refresh runtime predictions from repo-local qlib artifacts.")
++    parser.add_argument("--strategy", default="scalping")
++    return parser
++
++
+ def main() -> int:
+-    result = TradingPlatformService.bootstrap_default().refresh_predictions()
++    args = build_parser().parse_args()
++    result = TradingPlatformService.bootstrap_default().refresh_predictions(
++        strategy_name=args.strategy
++    )
+     print(result.model_dump_json(indent=2))
+     return 0
+ 
+diff --git a/scripts/run_daily_maintenance.py b/scripts/run_daily_maintenance.py
+index e68c6e3..c57e26b 100644
+--- a/scripts/run_daily_maintenance.py
++++ b/scripts/run_daily_maintenance.py
+@@ -1,14 +1,47 @@
+ from __future__ import annotations
+ 
++import argparse
++
+ from mytradingbot.orchestration.service import TradingPlatformService
+ 
+ 
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description="Run canonical repo-local maintenance steps.")
++    parser.add_argument(
++        "--action",
++        choices=["download", "update", "all"],
++        default="update",
++        help="download=full raw refresh, update=incremental parquet update, all=update plus qlib build/train/refresh",
++    )
++    parser.add_argument("--strategy", default="scalping")
++    parser.add_argument("--symbols", nargs="*", default=None)
++    parser.add_argument("--timeframes", nargs="*", default=None)
++    return parser
++
++
+ def main() -> int:
++    args = build_parser().parse_args()
+     service = TradingPlatformService.bootstrap_default()
++    full_refresh = args.action == "download"
++    data_result = service.download_market_data(
++        symbols=args.symbols,
++        timeframes=args.timeframes,
++        full_refresh=full_refresh,
++    )
+     payload = {
+-        "prediction_status": service.get_prediction_status().model_dump(mode="json"),
+-        "refresh_result": service.refresh_predictions().model_dump(mode="json"),
++        "capabilities": service.get_capabilities().model_dump(mode="json"),
++        "data_pipeline": data_result.model_dump(mode="json"),
+     }
++    if args.action == "all":
++        payload["build_dataset"] = service.build_dataset(
++            strategy_name=args.strategy
++        ).model_dump(mode="json")
++        payload["train_models"] = service.train_models(
++            strategy_name=args.strategy
++        ).model_dump(mode="json")
++        payload["refresh_predictions"] = service.refresh_predictions(
++            strategy_name=args.strategy
++        ).model_dump(mode="json")
+     print(payload)
+     return 0
+ 
+diff --git a/scripts/train_models.py b/scripts/train_models.py
+index 14ddc91..38629ee 100644
+--- a/scripts/train_models.py
++++ b/scripts/train_models.py
+@@ -1,10 +1,21 @@
+ from __future__ import annotations
+ 
++import argparse
++
+ from mytradingbot.orchestration.service import TradingPlatformService
+ 
+ 
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description="Train qlib models from repo-local dataset artifacts.")
++    parser.add_argument("--strategy", default="scalping")
++    return parser
++
++
+ def main() -> int:
+-    result = TradingPlatformService.bootstrap_default().train_models()
++    args = build_parser().parse_args()
++    result = TradingPlatformService.bootstrap_default().train_models(
++        strategy_name=args.strategy
++    )
+     print(result.model_dump_json(indent=2))
+     return 0
+ 
+diff --git a/scripts/validate_system.py b/scripts/validate_system.py
+index 7ece781..a5e562c 100644
+--- a/scripts/validate_system.py
++++ b/scripts/validate_system.py
+@@ -8,11 +8,16 @@ from mytradingbot.orchestration.service import TradingPlatformService
+ def main() -> int:
+     project_root = Path(__file__).resolve().parents[1]
+     service = TradingPlatformService.bootstrap_default()
++    capabilities = service.get_capabilities()
+     payload = {
+         "import_ok": True,
+         "strategies": service.get_strategy_names(),
+         "pages_present": (project_root / "app/pages/01_Dashboard.py").exists(),
+         "live_trading_enabled": service.settings.runtime.live_trading_enabled,
++        "phase_1_status": capabilities.phase_1.status,
++        "phase_2_status": capabilities.phase_2.status,
++        "phase_3_status": capabilities.phase_3.status,
++        "phase_4_status": capabilities.phase_4.status,
+     }
+     print(payload)
+     return 0
+diff --git a/src/mytradingbot/brokers/base.py b/src/mytradingbot/brokers/base.py
+index bc96706..8705c62 100644
+--- a/src/mytradingbot/brokers/base.py
++++ b/src/mytradingbot/brokers/base.py
+@@ -5,7 +5,15 @@ from __future__ import annotations
+ import logging
+ from abc import ABC, abstractmethod
+ 
+-from mytradingbot.core.models import ExecutionRequest, ExecutionResult, FillEvent, PositionSnapshot
++from mytradingbot.core.models import (
++    BrokerBracketState,
++    ExecutionConstraints,
++    ExecutionRequest,
++    ExecutionResult,
++    FillEvent,
++    MarketSnapshot,
++    PositionSnapshot,
++)
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -28,3 +36,23 @@ class BaseBroker(ABC):
+     @abstractmethod
+     def list_fills(self) -> list[FillEvent]:
+         """Return tracked fill events."""
++
++    def get_execution_constraints(self) -> ExecutionConstraints:
++        """Return broker-specific execution constraints."""
++
++        return ExecutionConstraints()
++
++    def process_market_snapshot(self, snapshot: MarketSnapshot) -> list[ExecutionResult]:
++        """Process a market snapshot for managed synthetic orders."""
++
++        return []
++
++    def flatten_open_brackets(self, *, reason: str) -> list[ExecutionResult]:
++        """Force-close managed synthetic bracket positions."""
++
++        return []
++
++    def list_brackets(self) -> list[BrokerBracketState]:
++        """Return active or historical bracket state."""
++
++        return []
+diff --git a/src/mytradingbot/brokers/paper.py b/src/mytradingbot/brokers/paper.py
+index 2bfd577..8fa3e72 100644
+--- a/src/mytradingbot/brokers/paper.py
++++ b/src/mytradingbot/brokers/paper.py
+@@ -5,11 +5,15 @@ from __future__ import annotations
+ import logging
+ 
+ from mytradingbot.brokers.base import BaseBroker
++from mytradingbot.core.enums import RuntimeMode
+ from mytradingbot.core.models import (
++    BrokerBracketState,
+     BrokerOrder,
++    ExecutionConstraints,
+     ExecutionRequest,
+     ExecutionResult,
+     FillEvent,
++    MarketSnapshot,
+     PositionSnapshot,
+ )
+ 
+@@ -23,6 +27,7 @@ class PaperBroker(BaseBroker):
+         self._orders: list[BrokerOrder] = []
+         self._fills: list[FillEvent] = []
+         self._positions: dict[str, PositionSnapshot] = {}
++        self._brackets: dict[str, BrokerBracketState] = {}
+ 
+     def submit_order(self, request: ExecutionRequest) -> ExecutionResult:
+         fill_price = request.limit_price or 0.0
+@@ -33,6 +38,7 @@ class PaperBroker(BaseBroker):
+             mode=request.mode,
+             status="filled",
+             avg_fill_price=fill_price,
++            metadata={"strategy_name": request.strategy_name},
+         )
+         fill = FillEvent(
+             order_id=order.order_id,
+@@ -41,6 +47,14 @@ class PaperBroker(BaseBroker):
+             price=fill_price,
+         )
+         position = self._update_position(request, fill_price)
++        bracket_state = None
++        if request.bracket_plan is not None and request.side == "buy":
++            bracket_state = BrokerBracketState(
++                symbol=request.symbol,
++                entry_order_id=order.order_id,
++                bracket_plan=request.bracket_plan.with_quantity(request.quantity),
++            )
++            self._brackets[request.symbol] = bracket_state
+ 
+         self._orders.append(order)
+         self._fills.append(fill)
+@@ -50,6 +64,7 @@ class PaperBroker(BaseBroker):
+             order=order,
+             fills=[fill],
+             position=position,
++            bracket_state=bracket_state,
+         )
+ 
+     def list_orders(self) -> list[BrokerOrder]:
+@@ -61,6 +76,33 @@ class PaperBroker(BaseBroker):
+     def list_fills(self) -> list[FillEvent]:
+         return list(self._fills)
+ 
++    def get_execution_constraints(self) -> ExecutionConstraints:
++        return ExecutionConstraints(whole_shares_only_for_brackets=True, minimum_quantity=1.0)
++
++    def process_market_snapshot(self, snapshot: MarketSnapshot) -> list[ExecutionResult]:
++        bracket = self._brackets.get(snapshot.symbol)
++        if bracket is None or bracket.status != "armed":
++            return []
++
++        plan = bracket.bracket_plan
++        if snapshot.last_price >= plan.planned_take_profit_price:
++            return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="take_profit")]
++        if snapshot.last_price <= plan.planned_stop_loss_price:
++            return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="stop_loss")]
++        return []
++
++    def flatten_open_brackets(self, *, reason: str) -> list[ExecutionResult]:
++        results: list[ExecutionResult] = []
++        for symbol, bracket in list(self._brackets.items()):
++            if bracket.status != "armed":
++                continue
++            market_price = self._positions.get(symbol).market_price if symbol in self._positions else bracket.bracket_plan.planned_entry_price
++            results.append(self._close_bracket(symbol, price=market_price, reason=reason))
++        return results
++
++    def list_brackets(self) -> list[BrokerBracketState]:
++        return list(self._brackets.values())
++
+     def _update_position(self, request: ExecutionRequest, fill_price: float) -> PositionSnapshot:
+         signed_quantity = request.quantity if request.side == "buy" else -request.quantity
+         existing = self._positions.get(request.symbol)
+@@ -97,3 +139,53 @@ class PaperBroker(BaseBroker):
+ 
+         self._positions[request.symbol] = position
+         return position
++
++    def _close_bracket(self, symbol: str, *, price: float, reason: str) -> ExecutionResult:
++        bracket = self._brackets[symbol]
++        position = self._positions.get(symbol)
++        quantity = abs(position.quantity) if position else bracket.bracket_plan.planned_quantity
++        mode = self._orders[-1].mode if self._orders else RuntimeMode.PAPER
++        request = ExecutionRequest(
++            symbol=symbol,
++            side="sell",
++            quantity=quantity,
++            strategy_name="scalping",
++            mode=mode,
++            limit_price=price,
++            metadata={"exit_reason": reason},
++        )
++        order = BrokerOrder(
++            symbol=symbol,
++            side="sell",
++            quantity=quantity,
++            mode=mode,
++            status="filled",
++            avg_fill_price=price,
++            metadata={"exit_reason": reason},
++        )
++        fill = FillEvent(
++            order_id=order.order_id,
++            symbol=symbol,
++            quantity=quantity,
++            price=price,
++            metadata={"exit_reason": reason},
++        )
++        updated_position = self._update_position(request, price)
++        realized_pnl = (price - bracket.bracket_plan.planned_entry_price) * quantity
++        bracket.status = "closed"
++        bracket.closed_at = fill.filled_at
++        bracket.exit_reason = reason
++        bracket.exit_order_id = order.order_id
++        bracket.realized_pnl = realized_pnl
++
++        self._orders.append(order)
++        self._fills.append(fill)
++        return ExecutionResult(
++            reason=reason,
++            request=request,
++            order=order,
++            fills=[fill],
++            position=updated_position,
++            bracket_state=bracket,
++            realized_pnl=realized_pnl,
++        )
+diff --git a/src/mytradingbot/core/models.py b/src/mytradingbot/core/models.py
+index 6a86ae5..ca8f8b6 100644
+--- a/src/mytradingbot/core/models.py
++++ b/src/mytradingbot/core/models.py
+@@ -117,6 +117,63 @@ class ExitPlan(BaseModel):
+     flatten_near_close: bool = False
+ 
+ 
++class BracketPlan(BaseModel):
++    """Typed bracket entry/exit plan used by bracket-aware execution paths."""
++
++    planned_entry_price: float
++    planned_stop_loss_price: float
++    planned_take_profit_price: float
++    planned_quantity: float
++    risk_per_share: float
++    gross_reward_per_share: float
++    estimated_fees: float
++    estimated_slippage: float
++    estimated_fee_per_share: float
++    estimated_slippage_per_share: float
++    estimated_fixed_fees: float = 0.0
++    net_reward_per_share: float
++    reward_risk_ratio: float
++    expected_net_profit: float
++    time_in_force: str = "day"
++    valid_until: datetime | None = None
++    exit_reason_metadata: dict[str, str] = Field(default_factory=dict)
++
++    def with_quantity(self, quantity: float) -> "BracketPlan":
++        """Return a copy re-scored for a broker-valid quantity."""
++
++        if quantity <= 0:
++            return self.model_copy(
++                update={
++                    "planned_quantity": quantity,
++                    "estimated_fees": 0.0,
++                    "estimated_slippage": 0.0,
++                    "net_reward_per_share": 0.0,
++                    "reward_risk_ratio": 0.0,
++                    "expected_net_profit": 0.0,
++                }
++            )
++
++        estimated_fees = self.estimated_fixed_fees + (self.estimated_fee_per_share * quantity)
++        estimated_slippage = self.estimated_slippage_per_share * quantity
++        gross_reward_total = self.gross_reward_per_share * quantity
++        total_risk = self.risk_per_share * quantity
++        expected_net_profit = gross_reward_total - estimated_fees - estimated_slippage
++        net_reward_per_share = expected_net_profit / quantity
++        reward_risk_ratio = (
++            expected_net_profit / total_risk if total_risk > 0 else 0.0
++        )
++        return self.model_copy(
++            update={
++                "planned_quantity": quantity,
++                "estimated_fees": estimated_fees,
++                "estimated_slippage": estimated_slippage,
++                "net_reward_per_share": net_reward_per_share,
++                "reward_risk_ratio": reward_risk_ratio,
++                "expected_net_profit": expected_net_profit,
++            }
++        )
++
++
+ class TradeIntent(BaseModel):
+     """Intent generated by a strategy prior to risk approval."""
+ 
+@@ -125,11 +182,12 @@ class TradeIntent(BaseModel):
+     symbol: str
+     strategy_name: str
+     side: Literal["buy", "sell"]
+-    quantity: int
++    quantity: float
+     limit_price: float | None = None
+     predicted_return: float
+     confidence: float
+     exit_plan: ExitPlan = Field(default_factory=ExitPlan)
++    bracket_plan: BracketPlan | None = None
+     metadata: dict[str, Any] = Field(default_factory=dict)
+ 
+ 
+@@ -203,10 +261,11 @@ class ExecutionRequest(BaseModel):
+ 
+     symbol: str
+     side: Literal["buy", "sell"]
+-    quantity: int
++    quantity: float
+     strategy_name: str
+     mode: RuntimeMode
+     limit_price: float | None = None
++    bracket_plan: BracketPlan | None = None
+     metadata: dict[str, Any] = Field(default_factory=dict)
+ 
+     @classmethod
+@@ -218,21 +277,30 @@ class ExecutionRequest(BaseModel):
+             strategy_name=intent.strategy_name,
+             mode=mode,
+             limit_price=intent.limit_price,
++            bracket_plan=intent.bracket_plan,
+             metadata=intent.metadata,
+         )
+ 
+ 
++class ExecutionConstraints(BaseModel):
++    """Broker-side execution constraints applied before order submission."""
++
++    whole_shares_only_for_brackets: bool = False
++    minimum_quantity: float = 1.0
++
++
+ class BrokerOrder(BaseModel):
+     """Broker-facing order record."""
+ 
+     order_id: str = Field(default_factory=lambda: str(uuid4()))
+     symbol: str
+     side: Literal["buy", "sell"]
+-    quantity: int
++    quantity: float
+     mode: RuntimeMode
+     status: Literal["accepted", "filled", "rejected"] = "accepted"
+     submitted_at: datetime = Field(default_factory=utc_now)
+     avg_fill_price: float | None = None
++    metadata: dict[str, Any] = Field(default_factory=dict)
+ 
+ 
+ class FillEvent(BaseModel):
+@@ -241,21 +309,36 @@ class FillEvent(BaseModel):
+     fill_id: str = Field(default_factory=lambda: str(uuid4()))
+     order_id: str
+     symbol: str
+-    quantity: int
++    quantity: float
+     price: float
+     filled_at: datetime = Field(default_factory=utc_now)
++    metadata: dict[str, Any] = Field(default_factory=dict)
+ 
+ 
+ class PositionSnapshot(BaseModel):
+     """Current broker position state."""
+ 
+     symbol: str
+-    quantity: int
++    quantity: float
+     average_price: float
+     market_price: float
+     unrealized_pnl: float = 0.0
+ 
+ 
++class BrokerBracketState(BaseModel):
++    """Managed bracket order state for synthetic paper execution."""
++
++    symbol: str
++    entry_order_id: str
++    status: Literal["armed", "closed", "cancelled"] = "armed"
++    bracket_plan: BracketPlan
++    opened_at: datetime = Field(default_factory=utc_now)
++    closed_at: datetime | None = None
++    exit_reason: str | None = None
++    exit_order_id: str | None = None
++    realized_pnl: float | None = None
++
++
+ class ExecutionResult(BaseModel):
+     """Execution engine outcome after broker routing."""
+ 
+@@ -265,6 +348,8 @@ class ExecutionResult(BaseModel):
+     order: BrokerOrder | None = None
+     fills: list[FillEvent] = Field(default_factory=list)
+     position: PositionSnapshot | None = None
++    bracket_state: BrokerBracketState | None = None
++    realized_pnl: float | None = None
+ 
+     @classmethod
+     def skipped(cls, request: ExecutionRequest, reason: str) -> "ExecutionResult":
+diff --git a/src/mytradingbot/core/paths.py b/src/mytradingbot/core/paths.py
+index 9367639..be45f01 100644
+--- a/src/mytradingbot/core/paths.py
++++ b/src/mytradingbot/core/paths.py
+@@ -16,6 +16,11 @@ class RepoPaths(BaseModel):
+     src_dir: Path
+     configs_dir: Path
+     data_dir: Path
++    raw_data_dir: Path
++    normalized_data_dir: Path
++    snapshots_dir: Path
++    qlib_dir: Path
++    runtime_dir: Path
+     docs_dir: Path
+     logs_dir: Path
+     models_dir: Path
+@@ -26,11 +31,20 @@ class RepoPaths(BaseModel):
+     @classmethod
+     def discover(cls) -> "RepoPaths":
+         repo_root = Path(__file__).resolve().parents[3]
++        return cls.for_root(repo_root)
++
++    @classmethod
++    def for_root(cls, repo_root: Path) -> "RepoPaths":
+         return cls(
+             repo_root=repo_root,
+             src_dir=repo_root / "src",
+             configs_dir=repo_root / "configs",
+             data_dir=repo_root / "data",
++            raw_data_dir=repo_root / "data" / "raw",
++            normalized_data_dir=repo_root / "data" / "normalized",
++            snapshots_dir=repo_root / "data" / "snapshots",
++            qlib_dir=repo_root / "data" / "qlib",
++            runtime_dir=repo_root / "data" / "runtime",
+             docs_dir=repo_root / "docs",
+             logs_dir=repo_root / "logs",
+             models_dir=repo_root / "models",
+@@ -42,5 +56,15 @@ class RepoPaths(BaseModel):
+     def ensure_runtime_directories(self) -> None:
+         """Create the mutable runtime directories the app relies on."""
+ 
+-        for path in (self.data_dir, self.logs_dir, self.models_dir, self.reports_dir):
++        for path in (
++            self.data_dir,
++            self.raw_data_dir,
++            self.normalized_data_dir,
++            self.snapshots_dir,
++            self.qlib_dir,
++            self.runtime_dir,
++            self.logs_dir,
++            self.models_dir,
++            self.reports_dir,
++        ):
+             path.mkdir(parents=True, exist_ok=True)
+diff --git a/src/mytradingbot/core/settings.py b/src/mytradingbot/core/settings.py
+index 846a7d5..e57ac69 100644
+--- a/src/mytradingbot/core/settings.py
++++ b/src/mytradingbot/core/settings.py
+@@ -2,10 +2,12 @@
+ 
+ from __future__ import annotations
+ 
++import os
+ from pathlib import Path
+ 
+-from pydantic import BaseModel, Field
++from pydantic import AliasChoices, BaseModel, Field, model_validator
+ from pydantic_settings import BaseSettings, SettingsConfigDict
++from dotenv import dotenv_values
+ 
+ from mytradingbot.core.enums import RuntimeMode, StrategyName
+ from mytradingbot.core.paths import RepoPaths
+@@ -14,8 +16,17 @@ from mytradingbot.core.paths import RepoPaths
+ class RuntimeSettings(BaseModel):
+     """Runtime mode and operator behavior defaults."""
+ 
+-    default_mode: RuntimeMode = RuntimeMode.PAPER
+-    live_trading_enabled: bool = False
++    default_mode: RuntimeMode = Field(
++        default=RuntimeMode.PAPER,
++        validation_alias=AliasChoices("RUNTIME__DEFAULT_MODE", "DEFAULT_MODE"),
++    )
++    live_trading_enabled: bool = Field(
++        default=False,
++        validation_alias=AliasChoices(
++            "RUNTIME__LIVE_TRADING_ENABLED",
++            "LIVE_TRADING_ENABLED",
++        ),
++    )
+ 
+ 
+ class StrategySettings(BaseModel):
+@@ -30,22 +41,100 @@ class StrategySettings(BaseModel):
+ class BrokerSettings(BaseModel):
+     """Broker-related runtime settings."""
+ 
+-    alpaca_api_key: str = ""
+-    alpaca_secret_key: str = ""
+-    alpaca_base_url: str = "https://paper-api.alpaca.markets"
++    alpaca_api_key: str = Field(
++        default="",
++        validation_alias=AliasChoices("BROKER__ALPACA_API_KEY", "ALPACA_API_KEY"),
++    )
++    alpaca_secret_key: str = Field(
++        default="",
++        validation_alias=AliasChoices("BROKER__ALPACA_SECRET_KEY", "ALPACA_SECRET_KEY"),
++    )
++    alpaca_base_url: str = Field(
++        default="https://paper-api.alpaca.markets",
++        validation_alias=AliasChoices("BROKER__ALPACA_BASE_URL", "ALPACA_BASE_URL"),
++    )
++    alpaca_data_feed: str = Field(
++        default="iex",
++        validation_alias=AliasChoices("BROKER__ALPACA_DATA_FEED", "ALPACA_DATA_FEED"),
++    )
++    alpaca_adjustment: str = Field(
++        default="raw",
++        validation_alias=AliasChoices("BROKER__ALPACA_ADJUSTMENT", "ALPACA_ADJUSTMENT"),
++    )
++
++
++class DataPipelineSettings(BaseModel):
++    """Repo-local market data pipeline settings."""
++
++    default_provider: str = "alpaca"
++    default_timeframes: list[str] = Field(
++        default_factory=lambda: ["1m", "5m", "15m", "1d"]
++    )
++    batch_size: int = 100
++    request_page_limit: int = 10_000
++    request_concurrency: int = 2
++    retry_count: int = 3
++    retry_backoff_seconds: float = 1.0
++    request_throttle_seconds: float = 0.25
++    processing_workers: int = 1
++    parquet_compression: str = "snappy"
++    symbol_chunk_size: int = 50
++    qlib_symbol_chunk_size: int = 25
++    qlib_prediction_chunk_size: int = 25
++    snapshot_timeframe: str = "1m"
++    incremental_overlap_minutes: int = 5
++    scalping_lookback_bars: int = 30
++    default_symbols: list[str] = Field(default_factory=lambda: ["AAPL", "MSFT", "NVDA"])
++
++
++class QlibSettings(BaseModel):
++    """Qlib workflow defaults."""
++
++    label_horizon_bars: int = 5
++    train_ratio: float = 0.7
++    validation_ratio: float = 0.15
++    prediction_top_k: int = 20
++    handler_artifact_name: str = "handler.pkl"
++    model_artifact_name: str = "model.pkl"
++    dataset_artifact_name: str = "dataset.parquet"
++
++
++class ScalpingBracketSettings(BaseModel):
++    """Bracket-planning controls for scalping."""
++
++    minimum_reward_risk_ratio: float = 1.4
++    estimated_slippage_bps: float = 2.5
++    estimated_fee_per_share: float = 0.0
++    estimated_fixed_fees: float = 0.0
++    minimum_net_reward_per_share: float = 0.01
++    max_holding_seconds: int = 900
++    stop_loss_buffer_bps: float = 20.0
++    take_profit_multiplier: float = 1.8
++    whole_share_required_for_alpaca_brackets: bool = True
++    risk_budget_per_trade: float = 25.0
++    max_position_notional: float = 5_000.0
+ 
+ 
+ class LLMSettings(BaseModel):
+     """Optional LLM client configuration."""
+ 
+-    openai_api_key: str = ""
+-    enabled: bool = False
++    openai_api_key: str = Field(
++        default="",
++        validation_alias=AliasChoices("LLM__OPENAI_API_KEY", "OPENAI_API_KEY"),
++    )
++    enabled: bool = Field(
++        default=False,
++        validation_alias=AliasChoices("LLM__ENABLED", "LLM_ENABLED"),
++    )
+ 
+ 
+ class LoggingSettings(BaseModel):
+     """Logging defaults."""
+ 
+-    level: str = "INFO"
++    level: str = Field(
++        default="INFO",
++        validation_alias=AliasChoices("LOGGING__LEVEL", "LOG_LEVEL"),
++    )
+ 
+ 
+ class AppSettings(BaseSettings):
+@@ -61,17 +150,197 @@ class AppSettings(BaseSettings):
+     runtime: RuntimeSettings = RuntimeSettings()
+     strategies: StrategySettings = StrategySettings()
+     broker: BrokerSettings = BrokerSettings()
++    data: DataPipelineSettings = DataPipelineSettings()
++    qlib: QlibSettings = QlibSettings()
++    scalping: ScalpingBracketSettings = ScalpingBracketSettings()
+     llm: LLMSettings = LLMSettings()
+     logging: LoggingSettings = LoggingSettings()
+     paths: RepoPaths = Field(default_factory=RepoPaths.discover)
+     environment_name: str = "development"
+ 
++    @model_validator(mode="before")
++    @classmethod
++    def apply_flat_env_aliases(cls, data):
++        payload = dict(data or {})
++        file_values = _load_dotenv_values(payload.get("_env_file"))
++        runtime = dict(payload.get("runtime", {}))
++        broker = dict(payload.get("broker", {}))
++        llm = dict(payload.get("llm", {}))
++        logging_settings = dict(payload.get("logging", {}))
++
++        runtime.setdefault(
++            "default_mode",
++            _first_available("DEFAULT_MODE", file_values=file_values, fallback=runtime.get("default_mode")),
++        )
++        runtime.setdefault(
++            "live_trading_enabled",
++            _first_available(
++                "LIVE_TRADING_ENABLED",
++                file_values=file_values,
++                fallback=runtime.get("live_trading_enabled"),
++            ),
++        )
++        broker.setdefault(
++            "alpaca_api_key",
++            _first_available("ALPACA_API_KEY", file_values=file_values, fallback=broker.get("alpaca_api_key")),
++        )
++        broker.setdefault(
++            "alpaca_secret_key",
++            _first_available(
++                "ALPACA_SECRET_KEY",
++                file_values=file_values,
++                fallback=broker.get("alpaca_secret_key"),
++            ),
++        )
++        broker.setdefault(
++            "alpaca_base_url",
++            _first_available(
++                "ALPACA_BASE_URL",
++                file_values=file_values,
++                fallback=broker.get("alpaca_base_url"),
++            ),
++        )
++        broker.setdefault(
++            "alpaca_data_feed",
++            _first_available(
++                "ALPACA_DATA_FEED",
++                file_values=file_values,
++                fallback=broker.get("alpaca_data_feed"),
++            ),
++        )
++        broker.setdefault(
++            "alpaca_adjustment",
++            _first_available(
++                "ALPACA_ADJUSTMENT",
++                file_values=file_values,
++                fallback=broker.get("alpaca_adjustment"),
++            ),
++        )
++        llm.setdefault(
++            "openai_api_key",
++            _first_available("OPENAI_API_KEY", file_values=file_values, fallback=llm.get("openai_api_key")),
++        )
++        llm.setdefault(
++            "enabled",
++            _first_available("LLM_ENABLED", file_values=file_values, fallback=llm.get("enabled")),
++        )
++        logging_settings.setdefault(
++            "level",
++            _first_available("LOG_LEVEL", file_values=file_values, fallback=logging_settings.get("level")),
++        )
++
++        payload["runtime"] = runtime
++        payload["broker"] = broker
++        payload["llm"] = llm
++        payload["logging"] = logging_settings
++        return payload
++
+     def prediction_artifact_path(self) -> Path:
+         """Return the default runtime predictions artifact location."""
+ 
+         return self.paths.models_dir / "predictions" / "latest.json"
+ 
++    def market_snapshot_artifact_path(self) -> Path:
++        """Return the default market snapshot artifact location."""
++
++        return self.paths.snapshots_dir / "market_snapshot.json"
++
++    def qlib_dataset_artifact_path(self) -> Path:
++        """Return the default qlib-ready dataset artifact location."""
++
++        return self.paths.qlib_dir / self.qlib.dataset_artifact_name
++
++    def qlib_model_artifact_path(self) -> Path:
++        """Return the default trained qlib model artifact location."""
++
++        return self.paths.models_dir / "qlib" / self.qlib.model_artifact_name
++
+     def ensure_runtime_directories(self) -> None:
+         """Create runtime directories used by the platform."""
+ 
+         self.paths.ensure_runtime_directories()
++
++    def model_post_init(self, __context) -> None:
++        file_values = _load_dotenv_values(None)
++        default_mode = _first_available("DEFAULT_MODE", file_values=file_values, fallback=None)
++        if default_mode:
++            self.runtime.default_mode = RuntimeMode(default_mode)
++        self.runtime.live_trading_enabled = _coalesce_bool(
++            self.runtime.live_trading_enabled,
++            _first_available("LIVE_TRADING_ENABLED", file_values=file_values, fallback=None),
++        )
++        self.broker.alpaca_api_key = self.broker.alpaca_api_key or (
++            _first_available("ALPACA_API_KEY", file_values=file_values, fallback="") or ""
++        )
++        self.broker.alpaca_secret_key = self.broker.alpaca_secret_key or (
++            _first_available("ALPACA_SECRET_KEY", file_values=file_values, fallback="") or ""
++        )
++        self.broker.alpaca_base_url = self.broker.alpaca_base_url or (
++            _first_available(
++                "ALPACA_BASE_URL",
++                file_values=file_values,
++                fallback=self.broker.alpaca_base_url,
++            )
++            or self.broker.alpaca_base_url
++        )
++        self.broker.alpaca_data_feed = self.broker.alpaca_data_feed or (
++            _first_available(
++                "ALPACA_DATA_FEED",
++                file_values=file_values,
++                fallback=self.broker.alpaca_data_feed,
++            )
++            or self.broker.alpaca_data_feed
++        )
++        self.broker.alpaca_adjustment = self.broker.alpaca_adjustment or (
++            _first_available(
++                "ALPACA_ADJUSTMENT",
++                file_values=file_values,
++                fallback=self.broker.alpaca_adjustment,
++            )
++            or self.broker.alpaca_adjustment
++        )
++        self.llm.openai_api_key = self.llm.openai_api_key or (
++            _first_available("OPENAI_API_KEY", file_values=file_values, fallback="") or ""
++        )
++        self.llm.enabled = _coalesce_bool(
++            self.llm.enabled,
++            _first_available("LLM_ENABLED", file_values=file_values, fallback=None),
++        )
++        self.logging.level = self.logging.level or (
++            _first_available("LOG_LEVEL", file_values=file_values, fallback="INFO") or "INFO"
++        )
++
++
++def _coalesce_bool(current: bool, raw_value: str | bool | None) -> bool:
++    if raw_value is None or isinstance(raw_value, bool):
++        return current if raw_value is None else raw_value
++    return raw_value.lower() in {"1", "true", "yes", "on"}
++
++
++def _load_dotenv_values(env_file: str | os.PathLike[str] | None) -> dict[str, str]:
++    if env_file is None:
++        env_path = Path(".env")
++    else:
++        env_path = Path(env_file)
++    if not env_path.exists():
++        return {}
++    return {
++        key.strip(): value.strip() if isinstance(value, str) else value
++        for key, value in dotenv_values(env_path).items()
++        if key
++    }
++
++
++def _first_available(
++    key: str,
++    *,
++    file_values: dict[str, str],
++    fallback: str | bool | None,
++) -> str | bool | None:
++    env_value = os.getenv(key)
++    if env_value not in (None, ""):
++        return env_value
++    file_value = file_values.get(key)
++    if file_value not in (None, ""):
++        return file_value
++    return fallback
+diff --git a/src/mytradingbot/execution/service.py b/src/mytradingbot/execution/service.py
+index 2c205bd..6b27ce4 100644
+--- a/src/mytradingbot/execution/service.py
++++ b/src/mytradingbot/execution/service.py
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ import logging
++import math
+ 
+ from mytradingbot.brokers.base import BaseBroker
+ from mytradingbot.core.enums import RuntimeMode
+@@ -14,8 +15,9 @@ logger = logging.getLogger(__name__)
+ class ExecutionEngine:
+     """Translate risk-approved intents into broker execution requests."""
+ 
+-    def __init__(self, *, broker: BaseBroker) -> None:
++    def __init__(self, *, broker: BaseBroker, minimum_bracket_reward_risk: float = 1.4) -> None:
+         self.broker = broker
++        self.minimum_bracket_reward_risk = minimum_bracket_reward_risk
+ 
+     def execute(self, decision: RiskDecision, *, mode: RuntimeMode) -> ExecutionResult:
+         if not decision.approved or decision.intent is None:
+@@ -24,7 +26,11 @@ class ExecutionEngine:
+                 reason=decision.reason or "risk_rejected",
+             )
+ 
+-        request = ExecutionRequest.from_intent(decision.intent, mode)
++        intent = decision.intent.model_copy(deep=True)
++        adjusted_intent, rejection_reason = self._apply_execution_constraints(intent)
++        request = ExecutionRequest.from_intent(adjusted_intent or intent, mode)
++        if rejection_reason is not None or adjusted_intent is None:
++            return ExecutionResult.skipped(request=request, reason=rejection_reason or "execution_constraints_failed")
+         if mode is RuntimeMode.DRY_RUN:
+             return ExecutionResult.skipped(request=request, reason="dry_run_mode")
+ 
+@@ -35,3 +41,29 @@ class ExecutionEngine:
+             )
+ 
+         return self.broker.submit_order(request)
++
++    def _apply_execution_constraints(self, intent):
++        constraints = self.broker.get_execution_constraints()
++        if intent.bracket_plan is None:
++            return intent, None
++
++        raw_quantity = float(intent.quantity)
++        quantity = raw_quantity
++        if constraints.whole_shares_only_for_brackets:
++            quantity = float(math.floor(quantity))
++
++        if quantity < constraints.minimum_quantity:
++            return None, "invalid_broker_quantity"
++
++        adjusted_plan = intent.bracket_plan.with_quantity(quantity)
++        if (
++            adjusted_plan.reward_risk_ratio < self.minimum_bracket_reward_risk
++            or adjusted_plan.expected_net_profit <= 0
++        ):
++            return None, "bracket_plan_invalid_after_rounding"
++
++        intent.quantity = quantity
++        intent.bracket_plan = adjusted_plan
++        intent.metadata["raw_quantity"] = raw_quantity
++        intent.metadata["broker_quantity"] = quantity
++        return intent, None
+diff --git a/src/mytradingbot/orchestration/service.py b/src/mytradingbot/orchestration/service.py
+index 4052243..754f4ff 100644
+--- a/src/mytradingbot/orchestration/service.py
++++ b/src/mytradingbot/orchestration/service.py
+@@ -5,6 +5,7 @@ from __future__ import annotations
+ import logging
+ 
+ from mytradingbot.brokers.paper import PaperBroker
++from mytradingbot.core.capabilities import CapabilityService, CapabilitySnapshot
+ from mytradingbot.core.enums import RuntimeMode
+ from mytradingbot.core.models import (
+     ArtifactStatus,
+@@ -15,6 +16,7 @@ from mytradingbot.core.models import (
+     utc_now,
+ )
+ from mytradingbot.core.settings import AppSettings
++from mytradingbot.data.pipeline import MarketDataPipeline
+ from mytradingbot.data.service import MarketDataService
+ from mytradingbot.execution.service import ExecutionEngine
+ from mytradingbot.qlib_engine.service import QlibWorkflowService
+@@ -32,6 +34,7 @@ class TradingPlatformService:
+         settings: AppSettings | None = None,
+         *,
+         qlib_service: QlibWorkflowService | None = None,
++        data_pipeline: MarketDataPipeline | None = None,
+         market_data_service: MarketDataService | None = None,
+         strategy_registry: StrategyRegistry | None = None,
+         risk_engine: RiskEngine | None = None,
+@@ -40,9 +43,11 @@ class TradingPlatformService:
+     ) -> None:
+         self.settings = settings or AppSettings()
+         self.qlib_service = qlib_service or QlibWorkflowService(settings=self.settings)
++        self.data_pipeline = data_pipeline or MarketDataPipeline(settings=self.settings)
+         self.market_data_service = market_data_service or MarketDataService(
+             settings=self.settings
+         )
++        self.capability_service = CapabilityService(settings=self.settings)
+         self.strategy_registry = strategy_registry or StrategyRegistry.build_default()
+         self.risk_engine = risk_engine or RiskEngine()
+         self.broker = broker or PaperBroker()
+@@ -56,28 +61,53 @@ class TradingPlatformService:
+     def get_strategy_names(self) -> list[str]:
+         return self.strategy_registry.names()
+ 
++    def get_capabilities(self) -> CapabilitySnapshot:
++        return self.capability_service.detect()
++
+     def get_prediction_status(self) -> ArtifactStatus:
+         return self.qlib_service.get_runtime_prediction_status()
+ 
+     def get_health_status(self) -> HealthStatus:
+         prediction_status = self.get_prediction_status()
++        capabilities = self.get_capabilities()
+         if prediction_status.is_ready:
+-            return HealthStatus(summary="Platform ready for dry-run or paper sessions.", ok=True)
++            return HealthStatus(
++                summary="Platform ready for dry-run or paper sessions.",
++                ok=True,
++                issues=[],
++            )
+         reason = prediction_status.reason or "unknown"
+         return HealthStatus(
+             summary=f"Prediction artifact is {reason}.",
+             ok=False,
+-            issues=prediction_status.guidance,
++            issues=[
++                *prediction_status.guidance,
++                f"{capabilities.phase_2.name}: {capabilities.phase_2.status}",
++                f"{capabilities.phase_3.name}: {capabilities.phase_3.status}",
++            ],
++        )
++
++    def download_market_data(
++        self,
++        *,
++        symbols: list[str] | None = None,
++        timeframes: list[str] | None = None,
++        full_refresh: bool = False,
++    ):
++        return self.data_pipeline.download_update_normalize_and_snapshot(
++            symbols=symbols,
++            timeframes=timeframes,
++            full_refresh=full_refresh,
+         )
+ 
+-    def refresh_predictions(self):
+-        return self.qlib_service.refresh_predictions()
++    def refresh_predictions(self, *, strategy_name: str | None = None):
++        return self.qlib_service.refresh_predictions(strategy_name=strategy_name)
+ 
+-    def train_models(self):
+-        return self.qlib_service.train_models()
++    def train_models(self, *, strategy_name: str | None = None):
++        return self.qlib_service.train_models(strategy_name=strategy_name)
+ 
+-    def build_dataset(self):
+-        return self.qlib_service.build_dataset()
++    def build_dataset(self, *, strategy_name: str | None = None):
++        return self.qlib_service.build_dataset(strategy_name=strategy_name)
+ 
+     def run_session(
+         self,
+@@ -139,6 +169,17 @@ class TradingPlatformService:
+                 rejection_reasons.append(strategy_decision.reason or "strategy_rejected")
+                 attempts.append(trace)
+                 continue
++            if strategy_decision.intent.bracket_plan is not None:
++                plan = strategy_decision.intent.bracket_plan
++                trace.notes.append(
++                    "Bracket plan: "
++                    f"entry={plan.planned_entry_price:.4f}, "
++                    f"stop={plan.planned_stop_loss_price:.4f}, "
++                    f"target={plan.planned_take_profit_price:.4f}, "
++                    f"fees={plan.estimated_fees:.4f}, "
++                    f"slippage={plan.estimated_slippage:.4f}, "
++                    f"net_rr={plan.reward_risk_ratio:.4f}"
++                )
+ 
+             risk_decision = self.risk_engine.evaluate(
+                 intent=strategy_decision.intent,
+@@ -158,6 +199,13 @@ class TradingPlatformService:
+             trace.execution_outcome = execution_result
+             if execution_result.reason and execution_result.execution_skipped:
+                 rejection_reasons.append(execution_result.reason)
++            if execution_result.bracket_state is not None:
++                trace.notes.append(
++                    "Bracket state: "
++                    f"status={execution_result.bracket_state.status}, "
++                    f"exit_reason={execution_result.bracket_state.exit_reason}, "
++                    f"realized_pnl={execution_result.bracket_state.realized_pnl}"
++                )
+             attempts.append(trace)
+ 
+         orders = [] if normalized_mode is RuntimeMode.DRY_RUN else self.broker.list_orders()
+diff --git a/src/mytradingbot/qlib_engine/models.py b/src/mytradingbot/qlib_engine/models.py
+index 03390d1..f11ed83 100644
+--- a/src/mytradingbot/qlib_engine/models.py
++++ b/src/mytradingbot/qlib_engine/models.py
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ import logging
++from typing import Any
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -17,6 +18,8 @@ class QlibOperationResult(BaseModel):
+     ok: bool
+     message: str
+     guidance: list[str] = Field(default_factory=list)
++    artifacts: list[str] = Field(default_factory=list)
++    metadata: dict[str, Any] = Field(default_factory=dict)
+ 
+ 
+ class PredictionLoadResult(BaseModel):
+diff --git a/src/mytradingbot/qlib_engine/service.py b/src/mytradingbot/qlib_engine/service.py
+index fde2b39..fcb7baa 100644
+--- a/src/mytradingbot/qlib_engine/service.py
++++ b/src/mytradingbot/qlib_engine/service.py
+@@ -8,8 +8,13 @@ import logging
+ import time
+ from pathlib import Path
+ 
++import pandas as pd
++
+ from mytradingbot.core.models import ArtifactStatus, QlibPrediction
+ from mytradingbot.core.settings import AppSettings
++from mytradingbot.data.storage import ParquetBarStore
++from mytradingbot.qlib_engine.adapter import PyQlibWorkflowAdapter, QlibWorkflowAdapter
++from mytradingbot.qlib_engine.dataset import build_feature_dataset
+ from mytradingbot.qlib_engine.models import PredictionLoadResult, QlibOperationResult
+ 
+ logger = logging.getLogger(__name__)
+@@ -25,6 +30,7 @@ class QlibWorkflowService:
+         pyqlib_available: bool | None = None,
+         predictions_path: Path | None = None,
+         freshness_threshold_minutes: int = 60,
++        workflow_adapter: QlibWorkflowAdapter | None = None,
+     ) -> None:
+         self.settings = settings or AppSettings()
+         self.pyqlib_available = (
+@@ -32,41 +38,131 @@ class QlibWorkflowService:
+         )
+         self.predictions_path = predictions_path or self.settings.prediction_artifact_path()
+         self.freshness_threshold_minutes = freshness_threshold_minutes
++        self.workflow_adapter = workflow_adapter or PyQlibWorkflowAdapter()
++        self.store = ParquetBarStore(settings=self.settings)
++        self._qlib_initialized = False
+ 
+     def _detect_pyqlib(self) -> bool:
+         return importlib.util.find_spec("qlib") is not None
+ 
+-    def build_dataset(self) -> QlibOperationResult:
++    def build_dataset(self, strategy_name: str | None = None) -> QlibOperationResult:
+         if not self.pyqlib_available:
+             return self._missing_pyqlib_result("dataset build")
++        self._initialize_pyqlib_runtime()
++
++        normalized_dataset = self._load_feature_dataset(strategy_name=strategy_name)
++        if normalized_dataset.empty:
++            return QlibOperationResult(
++                ok=False,
++                message="Normalized repo-local parquet data is missing for the requested strategy/timeframe.",
++                guidance=[
++                    "Run the repo-local download/update and normalization workflow before building the qlib dataset.",
++                ],
++            )
++
++        artifact_path = self.settings.qlib_dataset_artifact_path()
++        try:
++            dataset_path = self.workflow_adapter.build_dataset(normalized_dataset, artifact_path)
++        except Exception as exc:
++            logger.exception("Qlib dataset build failed.")
++            return QlibOperationResult(
++                ok=False,
++                message=f"Qlib dataset build failed: {exc}",
++                guidance=[
++                    "Check normalized parquet schema compatibility and confirm pyqlib is installed correctly.",
++                ],
++            )
++
+         return QlibOperationResult(
+-            ok=False,
+-            message="Qlib dataset build scaffolding is present but no concrete workflow is configured yet.",
+-            guidance=[
+-                "Add a concrete qlib dataset workflow configuration before running dataset builds.",
+-            ],
++            ok=True,
++            message="Qlib-ready dataset artifact built from repo-local normalized parquet data.",
++            artifacts=[str(dataset_path)],
++            metadata={"rows": len(normalized_dataset)},
+         )
+ 
+-    def train_models(self) -> QlibOperationResult:
++    def train_models(self, strategy_name: str | None = None) -> QlibOperationResult:
+         if not self.pyqlib_available:
+             return self._missing_pyqlib_result("model training")
++        self._initialize_pyqlib_runtime()
++
++        dataset = self._read_dataset_artifact()
++        if dataset.empty:
++            return QlibOperationResult(
++                ok=False,
++                message="Qlib dataset artifact is missing or empty.",
++                guidance=[
++                    "Run the qlib dataset build workflow before training models.",
++                ],
++            )
++
++        strategy = strategy_name or self.settings.strategies.default_strategy.value
++        model_path = self.settings.qlib_model_artifact_path()
++        try:
++            trained_model_path = self.workflow_adapter.train_model(dataset, model_path, strategy)
++        except Exception as exc:
++            logger.exception("Qlib model training failed.")
++            return QlibOperationResult(
++                ok=False,
++                message=f"Qlib model training failed: {exc}",
++                guidance=[
++                    "Confirm pyqlib and its model dependencies are installed, then rebuild the dataset if needed.",
++                ],
++            )
++
+         return QlibOperationResult(
+-            ok=False,
+-            message="Qlib training scaffolding is present but no concrete workflow is configured yet.",
+-            guidance=[
+-                "Add a concrete qlib training workflow configuration before running training.",
+-            ],
++            ok=True,
++            message="Qlib model training completed from the repo-local dataset artifact.",
++            artifacts=[str(trained_model_path)],
++            metadata={"rows": int(dataset['label'].notna().sum()) if 'label' in dataset.columns else 0},
+         )
+ 
+-    def refresh_predictions(self) -> QlibOperationResult:
++    def refresh_predictions(self, strategy_name: str | None = None) -> QlibOperationResult:
+         if not self.pyqlib_available:
+             return self._missing_pyqlib_result("prediction refresh")
++        self._initialize_pyqlib_runtime()
++
++        dataset = self._read_dataset_artifact()
++        if dataset.empty:
++            return QlibOperationResult(
++                ok=False,
++                message="Qlib dataset artifact is missing or empty.",
++                guidance=[
++                    "Run qlib dataset build before refreshing predictions.",
++                ],
++            )
++
++        model_path = self.settings.qlib_model_artifact_path()
++        if not model_path.exists():
++            return QlibOperationResult(
++                ok=False,
++                message="Trained qlib model artifact is missing.",
++                guidance=[
++                    "Run qlib training before refreshing predictions.",
++                ],
++            )
++
++        strategy = strategy_name or self.settings.strategies.default_strategy.value
++        try:
++            output_path = self.workflow_adapter.generate_predictions(
++                dataset,
++                model_path,
++                self.predictions_path,
++                strategy,
++            )
++        except Exception as exc:
++            logger.exception("Prediction refresh failed.")
++            return QlibOperationResult(
++                ok=False,
++                message=f"Prediction refresh failed: {exc}",
++                guidance=[
++                    "Check the trained model artifact and rebuild the dataset if schema or feature columns changed.",
++                ],
++            )
++
+         return QlibOperationResult(
+-            ok=False,
+-            message="Qlib prediction refresh requires a configured workflow artifact writer.",
+-            guidance=[
+-                "Install mytradingbot-next[qlib] and wire a qlib workflow that writes predictions to the configured artifact path.",
+-            ],
++            ok=True,
++            message="Predictions refreshed from the repo-local qlib workflow artifacts.",
++            artifacts=[str(output_path)],
+         )
+ 
+     def get_runtime_prediction_status(self) -> ArtifactStatus:
+@@ -143,3 +239,30 @@ class QlibWorkflowService:
+     @staticmethod
+     def _now_timestamp() -> float:
+         return time.time()
++
++    def _load_feature_dataset(self, *, strategy_name: str | None) -> pd.DataFrame:
++        strategy = strategy_name or self.settings.strategies.default_strategy.value
++        return build_feature_dataset(
++            settings=self.settings,
++            strategy_name=strategy,
++            store=self.store,
++        )
++
++    def _read_dataset_artifact(self) -> pd.DataFrame:
++        dataset_path = self.settings.qlib_dataset_artifact_path()
++        if not dataset_path.exists():
++            return pd.DataFrame()
++        return pd.read_parquet(dataset_path)
++
++    def _initialize_pyqlib_runtime(self) -> None:
++        if self._qlib_initialized or not self.pyqlib_available:
++            return
++        import qlib
++
++        self.settings.paths.qlib_dir.mkdir(parents=True, exist_ok=True)
++        qlib.init(
++            default_conf="client",
++            provider_uri=str(self.settings.paths.qlib_dir),
++            region="us",
++        )
++        self._qlib_initialized = True
+diff --git a/src/mytradingbot/reporting/service.py b/src/mytradingbot/reporting/service.py
+index 85d26f4..cbaf55d 100644
+--- a/src/mytradingbot/reporting/service.py
++++ b/src/mytradingbot/reporting/service.py
+@@ -13,6 +13,27 @@ class ReportingService:
+     """Generate structured reports from completed session artifacts."""
+ 
+     def build_post_session_review(self, result: SessionResult) -> PostSessionReport:
++        bracket_notes: list[str] = []
++        for attempt in result.trade_attempts:
++            strategy_outcome = attempt.strategy_outcome
++            if strategy_outcome and strategy_outcome.intent and strategy_outcome.intent.bracket_plan:
++                plan = strategy_outcome.intent.bracket_plan
++                bracket_notes.append(
++                    "Bracket review: "
++                    f"{attempt.symbol} entry={plan.planned_entry_price:.4f} "
++                    f"stop={plan.planned_stop_loss_price:.4f} "
++                    f"target={plan.planned_take_profit_price:.4f} "
++                    f"fees={plan.estimated_fees:.4f} "
++                    f"slippage={plan.estimated_slippage:.4f} "
++                    f"net_rr={plan.reward_risk_ratio:.4f}"
++                )
++            execution = attempt.execution_outcome
++            if execution and execution.bracket_state:
++                bracket_notes.append(
++                    "Bracket outcome: "
++                    f"{attempt.symbol} exit_reason={execution.bracket_state.exit_reason} "
++                    f"realized_pnl={execution.bracket_state.realized_pnl}"
++                )
+         return PostSessionReport(
+             session_id=result.session_summary.session_id,
+             strategy_name=result.session_summary.strategy_name,
+@@ -22,5 +43,6 @@ class ReportingService:
+             notes=[
+                 f"Health summary: {result.health_status.summary}",
+                 f"Prediction status ready: {result.prediction_status.is_ready}",
++                *bracket_notes,
+             ],
+         )
+diff --git a/src/mytradingbot/risk/service.py b/src/mytradingbot/risk/service.py
+index 71a0f67..2f584d6 100644
+--- a/src/mytradingbot/risk/service.py
++++ b/src/mytradingbot/risk/service.py
+@@ -27,6 +27,10 @@ class RiskEngine:
+             checks.append("positive_quantity_required")
+             return RiskDecision.reject(reason="invalid_quantity", checks=checks)
+ 
++        if intent.strategy_name == "scalping" and intent.side == "buy" and intent.bracket_plan is None:
++            checks.append("bracket_plan_required")
++            return RiskDecision.reject(reason="missing_bracket_plan", checks=checks)
++
+         if intent.quantity > self.max_position_size:
+             checks.append("max_position_size")
+             return RiskDecision.reject(
+@@ -35,4 +39,6 @@ class RiskEngine:
+             )
+ 
+         checks.extend(["mode_allowed", "position_limit_ok"])
++        if intent.bracket_plan is not None:
++            checks.append("bracket_plan_present")
+         return RiskDecision.approve(intent=intent, checks=checks)
+diff --git a/src/mytradingbot/strategies/base.py b/src/mytradingbot/strategies/base.py
+index 8a7fbba..2b87097 100644
+--- a/src/mytradingbot/strategies/base.py
++++ b/src/mytradingbot/strategies/base.py
+@@ -28,7 +28,7 @@ class BaseStrategy(ABC):
+         self,
+         signal: SignalBundle,
+         *,
+-        quantity: int,
++        quantity: float,
+         metadata: dict[str, float | str | bool] | None = None,
+     ) -> TradeIntent:
+         side = "buy" if signal.prediction.direction == "long" else "sell"
+diff --git a/src/mytradingbot/strategies/scalping.py b/src/mytradingbot/strategies/scalping.py
+index 3cca3d5..784ce9e 100644
+--- a/src/mytradingbot/strategies/scalping.py
++++ b/src/mytradingbot/strategies/scalping.py
+@@ -4,7 +4,8 @@ from __future__ import annotations
+ 
+ import logging
+ 
+-from mytradingbot.core.models import ExitPlan, SignalBundle, StrategyDecision
++from mytradingbot.core.models import BracketPlan, ExitPlan, SignalBundle, StrategyDecision
++from mytradingbot.core.settings import AppSettings
+ from mytradingbot.strategies.base import BaseStrategy
+ 
+ logger = logging.getLogger(__name__)
+@@ -23,6 +24,10 @@ class ScalpingStrategy(BaseStrategy):
+     flatten_near_close_minutes = 10
+     timeout_seconds = 900
+ 
++    def __init__(self, settings: AppSettings | None = None) -> None:
++        self.settings = settings or AppSettings()
++        self.timeout_seconds = self.settings.scalping.max_holding_seconds
++
+     def evaluate(self, signal: SignalBundle) -> StrategyDecision:
+         passed_filters: list[str] = []
+         failed_filters: list[str] = []
+@@ -41,19 +46,36 @@ class ScalpingStrategy(BaseStrategy):
+                 passed_filters=passed_filters,
+             )
+ 
+-        quantity = self._adaptive_quantity(signal)
++        bracket_plan = self._build_bracket_plan(signal)
++        if bracket_plan is None:
++            return StrategyDecision.reject(
++                strategy_name=self.name,
++                symbol=signal.symbol,
++                reason="fee_adjusted_expectancy",
++                failed_filters=["fee_adjusted_expectancy"],
++                passed_filters=passed_filters,
++            )
++
+         intent = self._intent_from_signal(
+             signal,
+-            quantity=quantity,
++            quantity=bracket_plan.planned_quantity,
+             metadata={
+-                "adaptive_target_size": quantity,
++                "adaptive_target_size": bracket_plan.planned_quantity,
+                 "flatten_near_close": True,
+                 "timeout_seconds": self.timeout_seconds,
+             },
+         )
+         intent.exit_plan = self._build_exit_plan(signal)
++        intent.bracket_plan = bracket_plan
+         passed_filters.extend(
+-            ["adaptive_target_sizing", "take_profit", "stop_loss", "timeout_exit"]
++            [
++                "adaptive_target_sizing",
++                "take_profit",
++                "stop_loss",
++                "timeout_exit",
++                "fee_adjusted_expectancy",
++                "bracket_plan_valid",
++            ]
+         )
+ 
+         return StrategyDecision.approve(
+@@ -156,19 +178,25 @@ class ScalpingStrategy(BaseStrategy):
+         else:
+             passed_filters.append("flatten_near_close_logic")
+ 
+-    def _adaptive_quantity(self, signal: SignalBundle) -> int:
+-        raw_size = (
++    def _adaptive_quantity(self, signal: SignalBundle, *, risk_per_share: float) -> float:
++        raw_signal_size = (
+             abs(signal.prediction.predicted_return)
+             * 1000
+             * signal.prediction.confidence
+             * signal.market.liquidity_score
+         )
+-        return max(1, min(10, int(round(raw_size))))
++        risk_budget_size = (
++            self.settings.scalping.risk_budget_per_trade / risk_per_share
++            if risk_per_share > 0
++            else 0.0
++        )
++        notional_cap_size = self.settings.scalping.max_position_notional / signal.market.last_price
++        liquidity_cap_size = max(1.0, signal.market.volume * 0.00002)
++        return max(0.0, min(raw_signal_size, risk_budget_size, notional_cap_size, liquidity_cap_size))
+ 
+     def _build_exit_plan(self, signal: SignalBundle) -> ExitPlan:
+         entry = signal.market.last_price
+-        take_profit_delta = max(0.003, min(0.02, abs(signal.prediction.predicted_return) * 0.75))
+-        stop_loss_delta = max(0.002, take_profit_delta / 2)
++        take_profit_delta, stop_loss_delta = self._target_deltas(signal)
+         if signal.prediction.direction == "long":
+             take_profit = entry * (1 + take_profit_delta)
+             stop_loss = entry * (1 - stop_loss_delta)
+@@ -182,3 +210,71 @@ class ScalpingStrategy(BaseStrategy):
+             timeout_seconds=self.timeout_seconds,
+             flatten_near_close=True,
+         )
++
++    def _build_bracket_plan(self, signal: SignalBundle) -> BracketPlan | None:
++        entry = signal.market.last_price
++        take_profit_delta, stop_loss_delta = self._target_deltas(signal)
++        is_long = signal.prediction.direction == "long"
++
++        if is_long:
++            take_profit = entry * (1 + take_profit_delta)
++            stop_loss = entry * (1 - stop_loss_delta)
++        else:
++            take_profit = entry * (1 - take_profit_delta)
++            stop_loss = entry * (1 + stop_loss_delta)
++
++        risk_per_share = abs(entry - stop_loss)
++        gross_reward_per_share = abs(take_profit - entry)
++        if risk_per_share <= 0 or gross_reward_per_share <= 0:
++            return None
++
++        planned_quantity = self._adaptive_quantity(signal, risk_per_share=risk_per_share)
++        if planned_quantity < 1:
++            return None
++
++        estimated_fee_per_share = self.settings.scalping.estimated_fee_per_share
++        estimated_slippage_per_share = (
++            entry * self.settings.scalping.estimated_slippage_bps / 10_000
++        )
++        base_plan = BracketPlan(
++            planned_entry_price=round(entry, 4),
++            planned_stop_loss_price=round(stop_loss, 4),
++            planned_take_profit_price=round(take_profit, 4),
++            planned_quantity=planned_quantity,
++            risk_per_share=risk_per_share,
++            gross_reward_per_share=gross_reward_per_share,
++            estimated_fees=0.0,
++            estimated_slippage=0.0,
++            estimated_fee_per_share=estimated_fee_per_share,
++            estimated_slippage_per_share=estimated_slippage_per_share,
++            estimated_fixed_fees=self.settings.scalping.estimated_fixed_fees,
++            net_reward_per_share=0.0,
++            reward_risk_ratio=0.0,
++            expected_net_profit=0.0,
++            time_in_force="day",
++            exit_reason_metadata={
++                "take_profit": "take_profit",
++                "stop_loss": "stop_loss",
++                "near_close_flatten": "near_close_flatten",
++                "timeout": "timeout_exit",
++            },
++        ).with_quantity(planned_quantity)
++
++        if base_plan.net_reward_per_share < self.settings.scalping.minimum_net_reward_per_share:
++            return None
++        if base_plan.reward_risk_ratio < self.settings.scalping.minimum_reward_risk_ratio:
++            return None
++        if base_plan.expected_net_profit <= 0:
++            return None
++
++        return base_plan
++
++    def _target_deltas(self, signal: SignalBundle) -> tuple[float, float]:
++        volatility_multiplier = {"low": 0.8, "normal": 1.0, "high": 1.2}[signal.market.volatility_regime]
++        base_take_profit = max(0.003, min(0.02, abs(signal.prediction.predicted_return) * 0.75))
++        base_stop_loss = max(
++            self.settings.scalping.stop_loss_buffer_bps / 10_000,
++            (signal.market.spread_bps / 10_000) * 2,
++            base_take_profit / self.settings.scalping.take_profit_multiplier,
++        )
++        return base_take_profit * volatility_multiplier, base_stop_loss * volatility_multiplier
+diff --git a/src/mytradingbot/ui_services/dashboard.py b/src/mytradingbot/ui_services/dashboard.py
+index 3a47ca7..34f6eb8 100644
+--- a/src/mytradingbot/ui_services/dashboard.py
++++ b/src/mytradingbot/ui_services/dashboard.py
+@@ -6,6 +6,7 @@ import logging
+ 
+ from pydantic import BaseModel
+ 
++from mytradingbot.core.capabilities import CapabilitySnapshot
+ from mytradingbot.core.models import ArtifactStatus, HealthStatus, SessionSummary
+ from mytradingbot.orchestration.service import TradingPlatformService
+ 
+@@ -18,6 +19,7 @@ class DashboardPayload(BaseModel):
+     health: HealthStatus
+     prediction_status: ArtifactStatus
+     available_strategies: list[str]
++    capabilities: CapabilitySnapshot
+     last_session: SessionSummary | None = None
+ 
+ 
+@@ -32,6 +34,7 @@ class DashboardService:
+             health=self.platform_service.get_health_status(),
+             prediction_status=self.platform_service.get_prediction_status(),
+             available_strategies=self.platform_service.get_strategy_names(),
++            capabilities=self.platform_service.get_capabilities(),
+             last_session=(
+                 self.platform_service.last_session_result.session_summary
+                 if self.platform_service.last_session_result
+diff --git a/src/mytradingbot/ui_services/data_training.py b/src/mytradingbot/ui_services/data_training.py
+index c88c8cc..4670568 100644
+--- a/src/mytradingbot/ui_services/data_training.py
++++ b/src/mytradingbot/ui_services/data_training.py
+@@ -4,23 +4,80 @@ from __future__ import annotations
+ 
+ import logging
+ 
++from pydantic import BaseModel
++
++from mytradingbot.core.capabilities import CapabilitySnapshot
+ from mytradingbot.orchestration.service import TradingPlatformService
+ from mytradingbot.qlib_engine.models import QlibOperationResult
++from mytradingbot.data.models import MarketDataPipelineResult
+ 
+ logger = logging.getLogger(__name__)
+ 
+ 
++class DataTrainingPayload(BaseModel):
++    """Operator payload for phase-2/3 maintenance pages."""
++
++    capabilities: CapabilitySnapshot
++    default_strategy: str
++    default_timeframes: list[str]
++    works_without_pyqlib: list[str]
++    works_without_alpaca_credentials: list[str]
++
++
+ class DataTrainingService:
+     """Thin UI service around qlib maintenance operations."""
+ 
+     def __init__(self, platform_service: TradingPlatformService) -> None:
+         self.platform_service = platform_service
+ 
+-    def build_dataset(self) -> QlibOperationResult:
+-        return self.platform_service.build_dataset()
++    def get_payload(self) -> DataTrainingPayload:
++        settings = self.platform_service.settings
++        return DataTrainingPayload(
++            capabilities=self.platform_service.get_capabilities(),
++            default_strategy=settings.strategies.default_strategy.value,
++            default_timeframes=settings.data.default_timeframes,
++            works_without_pyqlib=[
++                "download_market_data",
++                "update_market_data",
++                "build_market_snapshot",
++                "paper_trading_with_explicit_artifacts",
++            ],
++            works_without_alpaca_credentials=[
++                "dashboard",
++                "paper_trading_with_explicit_artifacts",
++                "qlib_artifact_inspection",
++            ],
++        )
++
++    def download_market_data(
++        self,
++        *,
++        symbols: list[str] | None = None,
++        timeframes: list[str] | None = None,
++    ) -> MarketDataPipelineResult:
++        return self.platform_service.download_market_data(
++            symbols=symbols,
++            timeframes=timeframes,
++            full_refresh=True,
++        )
++
++    def update_market_data(
++        self,
++        *,
++        symbols: list[str] | None = None,
++        timeframes: list[str] | None = None,
++    ) -> MarketDataPipelineResult:
++        return self.platform_service.download_market_data(
++            symbols=symbols,
++            timeframes=timeframes,
++            full_refresh=False,
++        )
++
++    def build_dataset(self, *, strategy_name: str | None = None) -> QlibOperationResult:
++        return self.platform_service.build_dataset(strategy_name=strategy_name)
+ 
+-    def train_models(self) -> QlibOperationResult:
+-        return self.platform_service.train_models()
++    def train_models(self, *, strategy_name: str | None = None) -> QlibOperationResult:
++        return self.platform_service.train_models(strategy_name=strategy_name)
+ 
+-    def refresh_predictions(self) -> QlibOperationResult:
+-        return self.platform_service.refresh_predictions()
++    def refresh_predictions(self, *, strategy_name: str | None = None) -> QlibOperationResult:
++        return self.platform_service.refresh_predictions(strategy_name=strategy_name)
+diff --git a/src/mytradingbot_next.egg-info/PKG-INFO b/src/mytradingbot_next.egg-info/PKG-INFO
+index b16ada1..5bc84b3 100644
+--- a/src/mytradingbot_next.egg-info/PKG-INFO
++++ b/src/mytradingbot_next.egg-info/PKG-INFO
+@@ -10,6 +10,7 @@ Requires-Dist: PyYAML>=6.0.1
+ Requires-Dist: python-dotenv>=1.0.1
+ Requires-Dist: pandas>=2.2
+ Requires-Dist: numpy>=1.26
++Requires-Dist: pyarrow>=18.0
+ Requires-Dist: streamlit>=1.40
+ Requires-Dist: plotly>=5.24
+ Requires-Dist: typer>=0.12
+@@ -34,48 +35,52 @@ Requires-Dist: openai>=1.40; extra == "all"
+ 
+ # MyTradingBot Next
+ 
+-MyTradingBot Next is a clean, qlib-first quant trading platform built from scratch for modular strategy development, dashboard-driven operation, paper/live workflows, diagnostics, reporting, and advisory-only LLM tooling.
++MyTradingBot Next is a qlib-first, dashboard-first quant trading platform with a production-ready phase-1 paper workflow and explicit phase-2 through phase-4 rollout support inside this repository.
+ 
+-## Goals
++## Phase Map
+ 
+-- qlib-based dataset, training, and prediction workflows
+-- canonical strategy support for `scalping`, `intraday`, `short_term`, and `long_term`
+-- paper trading first
+-- live trading with explicit safeguards
+-- Streamlit dashboard-first UX
+-- diagnostics, validation, and reporting
+-- advisory-only LLM tools for operator assistance
++- Phase 1: `scripts/run_paper_trading.py` plus `app/app.py` run paper and dry-run sessions from real artifacts.
++- Phase 2: `scripts/run_daily_maintenance.py --action download` and `scripts/run_daily_maintenance.py --action update` drive the repo-local Alpaca historical data pipeline.
++- Phase 3: `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, and `scripts/refresh_predictions.py` build qlib-ready artifacts from repo-local parquet data.
++- Phase 4: `scripts/run_live_trading.py` remains visible and validation-only. No real live order submission is enabled.
+ 
+-## Phase 1 Status
++## Works Without `pyqlib`
+ 
+-Phase 1 delivers a fully runnable paper-trading path with:
++- `app/app.py`
++- `app/pages/01_Dashboard.py`
++- `app/pages/02_Strategy_Control.py`
++- `app/pages/04_Paper_Trading.py` when explicit prediction and market snapshot artifacts are provided
++- `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
++- `scripts/run_daily_maintenance.py --action download` and `scripts/run_daily_maintenance.py --action update` only if Alpaca credentials and `alpaca-py` are available
+ 
+-- typed signal, strategy, risk, execution, broker, and trace artifacts
+-- qlib adapter scaffolding with explicit stale or missing prediction failures
+-- a working in-memory paper broker
+-- a Streamlit dashboard and all required pages
+-- diagnostics and reporting services grounded in session artifacts
+-- advisory-only LLM summaries and explanations
++## Works Without Alpaca Credentials
+ 
+-Live trading is visible in the codebase and UI, but it remains validation-only and explicitly gated.
++- `app/app.py`
++- `app/pages/01_Dashboard.py`
++- `app/pages/02_Strategy_Control.py`
++- `app/pages/04_Paper_Trading.py` with explicit artifacts
++- `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
++- `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, and `scripts/refresh_predictions.py` only if repo-local normalized data and `pyqlib` are already available
+ 
+-## Runtime Artifacts
++## Canonical Data And Qlib Flow
+ 
+-Paper and dry-run sessions require:
++1. `scripts/run_daily_maintenance.py --action download` writes raw parquet to `data/raw/alpaca/bars/<timeframe>/<symbol>.parquet`.
++2. `scripts/run_daily_maintenance.py --action update` performs incremental parquet updates and normalization into `data/normalized/bars/<timeframe>/<symbol>.parquet`.
++3. `src/mytradingbot/data/schema.py` validates the canonical repo schema and transforms it into the qlib-ready schema.
++4. `scripts/build_qlib_dataset.py --strategy scalping` builds `data/qlib/dataset.parquet`.
++5. `scripts/train_models.py --strategy scalping` writes `models/qlib/model.pkl`.
++6. `scripts/refresh_predictions.py --strategy scalping` writes `models/predictions/latest.json`.
++7. `scripts/run_paper_trading.py --strategy scalping --mode paper` runs the strategy -> risk -> execution -> broker path against the refreshed artifacts.
+ 
+-- a runtime predictions artifact, default path: `models/predictions/latest.json`
+-- a runtime market snapshot artifact, default path: `data/runtime/market_snapshot.json`
++`src/mytradingbot/data/providers/alpaca_provider.py` is the canonical phase-2 provider. `src/mytradingbot/data/providers/file_ingest_provider.py` exists for fixtures, offline imports, and tests only.
+ 
+-The dashboard still loads if these artifacts are missing or if `pyqlib` is unavailable. Qlib-dependent maintenance actions fail clearly with guidance instead of falling back silently.
++## Runtime Artifact Paths
+ 
+-## Main Areas
+-
+-- `app/` Streamlit dashboard
+-- `configs/` configuration
+-- `scripts/` thin operational wrappers
+-- `src/mytradingbot/` package code
+-- `tests/` validation
+-- `docs/` architecture and operator docs
++- `models/predictions/latest.json`
++- `data/snapshots/market_snapshot.json`
++- `data/runtime/market_snapshot.json` as the current paper-session compatibility mirror
++- `data/qlib/dataset.parquet`
++- `models/qlib/model.pkl`
+ 
+ ## Initial Setup
+ 
+@@ -87,14 +92,18 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
+ streamlit run app/app.py
+ ```
+ 
+-## Common Commands
++## Canonical Commands
+ 
+ ```bash
+ python scripts/validate_system.py
+ python scripts/goalcheck.py
+-python scripts/run_live_trading.py
++python scripts/run_daily_maintenance.py --action download --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d
++python scripts/run_daily_maintenance.py --action update --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d
++python scripts/build_qlib_dataset.py --strategy scalping
++python scripts/train_models.py --strategy scalping
++python scripts/refresh_predictions.py --strategy scalping
+ python scripts/run_paper_trading.py --strategy scalping --mode paper --predictions-file <path> --market-data-file <path>
+-python scripts/build_qlib_dataset.py
+-python scripts/train_models.py
+-python scripts/refresh_predictions.py
++python scripts/run_live_trading.py
+ ```
++
++The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
+diff --git a/src/mytradingbot_next.egg-info/SOURCES.txt b/src/mytradingbot_next.egg-info/SOURCES.txt
+index e803837..41802db 100644
+--- a/src/mytradingbot_next.egg-info/SOURCES.txt
++++ b/src/mytradingbot_next.egg-info/SOURCES.txt
+@@ -6,6 +6,7 @@ src/mytradingbot/brokers/alpaca.py
+ src/mytradingbot/brokers/base.py
+ src/mytradingbot/brokers/paper.py
+ src/mytradingbot/core/__init__.py
++src/mytradingbot/core/capabilities.py
+ src/mytradingbot/core/enums.py
+ src/mytradingbot/core/exceptions.py
+ src/mytradingbot/core/logging_utils.py
+@@ -13,7 +14,14 @@ src/mytradingbot/core/models.py
+ src/mytradingbot/core/paths.py
+ src/mytradingbot/core/settings.py
+ src/mytradingbot/data/__init__.py
++src/mytradingbot/data/models.py
++src/mytradingbot/data/pipeline.py
++src/mytradingbot/data/schema.py
+ src/mytradingbot/data/service.py
++src/mytradingbot/data/storage.py
++src/mytradingbot/data/providers/alpaca_provider.py
++src/mytradingbot/data/providers/base.py
++src/mytradingbot/data/providers/file_ingest_provider.py
+ src/mytradingbot/diagnostics/__init__.py
+ src/mytradingbot/diagnostics/service.py
+ src/mytradingbot/execution/__init__.py
+@@ -24,6 +32,8 @@ src/mytradingbot/llm/service.py
+ src/mytradingbot/orchestration/__init__.py
+ src/mytradingbot/orchestration/service.py
+ src/mytradingbot/qlib_engine/__init__.py
++src/mytradingbot/qlib_engine/adapter.py
++src/mytradingbot/qlib_engine/dataset.py
+ src/mytradingbot/qlib_engine/models.py
+ src/mytradingbot/qlib_engine/service.py
+ src/mytradingbot/reporting/__init__.py
+diff --git a/src/mytradingbot_next.egg-info/requires.txt b/src/mytradingbot_next.egg-info/requires.txt
+index 8ee632d..5e03655 100644
+--- a/src/mytradingbot_next.egg-info/requires.txt
++++ b/src/mytradingbot_next.egg-info/requires.txt
+@@ -4,6 +4,7 @@ PyYAML>=6.0.1
+ python-dotenv>=1.0.1
+ pandas>=2.2
+ numpy>=1.26
++pyarrow>=18.0
+ streamlit>=1.40
+ plotly>=5.24
+ typer>=0.12
+diff --git a/tests/conftest.py b/tests/conftest.py
+index c53f3a8..74b4a9e 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -17,6 +17,7 @@ from mytradingbot.core.models import MarketSnapshot, QlibPrediction, SignalBundl
+ from mytradingbot.core.enums import RuntimeMode
+ from mytradingbot.core.models import (
+     ArtifactStatus,
++    BracketPlan,
+     HealthStatus,
+     SessionResult,
+     SessionSummary,
+@@ -65,6 +66,24 @@ def signal_bundle_factory():
+ 
+ @pytest.fixture
+ def approved_trade_intent() -> TradeIntent:
++    bracket_plan = BracketPlan(
++        planned_entry_price=100.0,
++        planned_stop_loss_price=99.0,
++        planned_take_profit_price=102.0,
++        planned_quantity=2.0,
++        risk_per_share=1.0,
++        gross_reward_per_share=2.0,
++        estimated_fees=0.0,
++        estimated_slippage=0.0,
++        estimated_fee_per_share=0.0,
++        estimated_slippage_per_share=0.0,
++        estimated_fixed_fees=0.0,
++        net_reward_per_share=2.0,
++        reward_risk_ratio=2.0,
++        expected_net_profit=4.0,
++        time_in_force="day",
++        exit_reason_metadata={"stop_loss": "risk_exit", "take_profit": "target_exit"},
++    )
+     return TradeIntent(
+         symbol="AAPL",
+         strategy_name="scalping",
+@@ -73,6 +92,7 @@ def approved_trade_intent() -> TradeIntent:
+         limit_price=100.0,
+         predicted_return=0.012,
+         confidence=0.84,
++        bracket_plan=bracket_plan,
+     )
+ 
+ 
+diff --git a/tests/integration/test_scripts.py b/tests/integration/test_scripts.py
+index 7578b7f..0dc4a71 100644
+--- a/tests/integration/test_scripts.py
++++ b/tests/integration/test_scripts.py
+@@ -59,3 +59,44 @@ def test_run_paper_trading_script_executes_without_crashing(
+ 
+     assert result.returncode == 0
+     assert "session_summary" in result.stdout.lower()
++
++
++def test_build_train_and_refresh_scripts_report_clear_prerequisite_status(script_runner) -> None:
++    build = script_runner("scripts/build_qlib_dataset.py", "--strategy", "scalping")
++    train = script_runner("scripts/train_models.py", "--strategy", "scalping")
++    refresh = script_runner("scripts/refresh_predictions.py", "--strategy", "scalping")
++
++    assert build.returncode == 0
++    assert any(
++        message in build.stdout.lower()
++        for message in [
++            "pyqlib",
++            "normalized repo-local parquet data is missing",
++            "qlib-ready dataset artifact built",
++        ]
++    )
++    assert train.returncode == 0
++    assert any(
++        message in train.stdout.lower()
++        for message in [
++            "pyqlib",
++            "qlib dataset artifact is missing",
++            "qlib model training completed",
++        ]
++    )
++    assert refresh.returncode == 0
++    assert any(
++        message in refresh.stdout.lower()
++        for message in [
++            "pyqlib",
++            "qlib dataset artifact is missing",
++            "predictions refreshed",
++        ]
++    )
++
++
++def test_run_daily_maintenance_reports_missing_alpaca_credentials(script_runner) -> None:
++    result = script_runner("scripts/run_daily_maintenance.py", "--action", "update")
++
++    assert result.returncode == 0
++    assert "credentials" in result.stdout.lower()
+diff --git a/tests/unit/brokers/test_paper_broker.py b/tests/unit/brokers/test_paper_broker.py
+index 8f6580e..46e332a 100644
+--- a/tests/unit/brokers/test_paper_broker.py
++++ b/tests/unit/brokers/test_paper_broker.py
+@@ -1,5 +1,5 @@
+ from mytradingbot.core.enums import RuntimeMode
+-from mytradingbot.core.models import ExecutionRequest
++from mytradingbot.core.models import BracketPlan, ExecutionRequest, MarketSnapshot
+ 
+ 
+ def test_paper_broker_records_order_and_position() -> None:
+@@ -20,3 +20,108 @@ def test_paper_broker_records_order_and_position() -> None:
+     assert result.order is not None
+     assert broker.list_positions()
+     assert broker.list_orders()
++
++
++def test_paper_broker_triggers_synthetic_take_profit_exit_once() -> None:
++    from mytradingbot.brokers.paper import PaperBroker
++
++    broker = PaperBroker()
++    bracket = BracketPlan(
++        planned_entry_price=100.0,
++        planned_stop_loss_price=99.0,
++        planned_take_profit_price=102.0,
++        planned_quantity=2.0,
++        risk_per_share=1.0,
++        gross_reward_per_share=2.0,
++        estimated_fees=0.0,
++        estimated_slippage=0.0,
++        estimated_fee_per_share=0.0,
++        estimated_slippage_per_share=0.0,
++        estimated_fixed_fees=0.0,
++        net_reward_per_share=2.0,
++        reward_risk_ratio=2.0,
++        expected_net_profit=4.0,
++        time_in_force="day",
++        exit_reason_metadata={"take_profit": "target_exit"},
++    )
++    request = ExecutionRequest(
++        symbol="AAPL",
++        side="buy",
++        quantity=2,
++        strategy_name="scalping",
++        mode=RuntimeMode.PAPER,
++        limit_price=100.0,
++        bracket_plan=bracket,
++    )
++
++    broker.submit_order(request)
++    exits = broker.process_market_snapshot(
++        MarketSnapshot(
++            symbol="AAPL",
++            last_price=102.1,
++            vwap=101.5,
++            spread_bps=1.0,
++            volume=1_000_000,
++            liquidity_score=0.8,
++            liquidity_stress=0.2,
++            order_book_imbalance=0.3,
++            liquidity_sweep_detected=False,
++            volatility_regime="normal",
++        )
++    )
++    duplicate = broker.process_market_snapshot(
++        MarketSnapshot(
++            symbol="AAPL",
++            last_price=102.2,
++            vwap=101.6,
++            spread_bps=1.0,
++            volume=1_100_000,
++            liquidity_score=0.8,
++            liquidity_stress=0.2,
++            order_book_imbalance=0.3,
++            liquidity_sweep_detected=False,
++            volatility_regime="normal",
++        )
++    )
++
++    assert len(exits) == 1
++    assert exits[0].reason == "take_profit"
++    assert duplicate == []
++
++
++def test_paper_broker_flattens_open_brackets_near_close() -> None:
++    from mytradingbot.brokers.paper import PaperBroker
++
++    broker = PaperBroker()
++    request = ExecutionRequest(
++        symbol="AAPL",
++        side="buy",
++        quantity=2,
++        strategy_name="scalping",
++        mode=RuntimeMode.PAPER,
++        limit_price=100.0,
++        bracket_plan=BracketPlan(
++            planned_entry_price=100.0,
++            planned_stop_loss_price=99.0,
++            planned_take_profit_price=102.0,
++            planned_quantity=2.0,
++            risk_per_share=1.0,
++            gross_reward_per_share=2.0,
++            estimated_fees=0.0,
++            estimated_slippage=0.0,
++            estimated_fee_per_share=0.0,
++            estimated_slippage_per_share=0.0,
++            estimated_fixed_fees=0.0,
++            net_reward_per_share=2.0,
++            reward_risk_ratio=2.0,
++            expected_net_profit=4.0,
++            time_in_force="day",
++            exit_reason_metadata={"near_close_flatten": "session_exit"},
++        ),
++    )
++
++    broker.submit_order(request)
++    exits = broker.flatten_open_brackets(reason="near_close_flatten")
++
++    assert len(exits) == 1
++    assert exits[0].reason == "near_close_flatten"
+diff --git a/tests/unit/core/test_settings.py b/tests/unit/core/test_settings.py
+index 8542b29..12e2ed6 100644
+--- a/tests/unit/core/test_settings.py
++++ b/tests/unit/core/test_settings.py
+@@ -14,3 +14,46 @@ def test_strategy_names_are_canonical() -> None:
+         "short_term",
+         "long_term",
+     ]
++
++
++def test_repo_local_pipeline_paths_stay_under_repo_root() -> None:
++    settings = AppSettings()
++
++    assert settings.paths.raw_data_dir.is_relative_to(settings.paths.repo_root)
++    assert settings.paths.normalized_data_dir.is_relative_to(settings.paths.repo_root)
++    assert settings.paths.snapshots_dir.is_relative_to(settings.paths.repo_root)
++    assert settings.paths.qlib_dir.is_relative_to(settings.paths.repo_root)
++    assert settings.paths.runtime_dir.is_relative_to(settings.paths.repo_root)
++
++
++def test_data_pipeline_defaults_include_minute_timeframes() -> None:
++    settings = AppSettings()
++
++    assert settings.data.default_timeframes == ["1m", "5m", "15m", "1d"]
++    assert settings.data.request_page_limit >= 1000
++    assert settings.data.request_concurrency >= 1
++    assert settings.data.processing_workers >= 1
++
++
++def test_flat_env_aliases_load_broker_credentials(monkeypatch) -> None:
++    monkeypatch.setenv("ALPACA_API_KEY", "key")
++    monkeypatch.setenv("ALPACA_SECRET_KEY", "secret")
++
++    settings = AppSettings()
++
++    assert settings.broker.alpaca_api_key == "key"
++    assert settings.broker.alpaca_secret_key == "secret"
++
++
++def test_dotenv_flat_aliases_load_broker_credentials(tmp_path, monkeypatch) -> None:
++    env_file = tmp_path / ".env"
++    env_file.write_text(
++        "ALPACA_API_KEY=key_from_file\nALPACA_SECRET_KEY=secret_from_file\n",
++        encoding="utf-8",
++    )
++    monkeypatch.chdir(tmp_path)
++
++    settings = AppSettings()
++
++    assert settings.broker.alpaca_api_key == "key_from_file"
++    assert settings.broker.alpaca_secret_key == "secret_from_file"
+diff --git a/tests/unit/execution/test_service.py b/tests/unit/execution/test_service.py
+index bfc88a4..7a9443e 100644
+--- a/tests/unit/execution/test_service.py
++++ b/tests/unit/execution/test_service.py
+@@ -33,3 +33,62 @@ def test_execution_engine_routes_paper_order_to_broker(
+ 
+     assert result.order is not None
+     assert broker.list_orders()
++
++
++def test_execution_engine_rounds_down_fractional_bracket_quantity_before_submission(
++    approved_trade_intent,
++) -> None:
++    from mytradingbot.brokers.paper import PaperBroker
++    from mytradingbot.execution.service import ExecutionEngine
++
++    approved_trade_intent.quantity = 2.8
++    approved_trade_intent.bracket_plan.planned_quantity = 2.8
++
++    decision = RiskEngine().evaluate(intent=approved_trade_intent, mode=RuntimeMode.PAPER)
++    broker = PaperBroker()
++    engine = ExecutionEngine(broker=broker)
++
++    result = engine.execute(decision, mode=RuntimeMode.PAPER)
++
++    assert result.order is not None
++    assert result.order.quantity == 2
++
++
++def test_execution_engine_skips_trade_when_whole_share_quantity_rounds_to_zero(
++    approved_trade_intent,
++) -> None:
++    from mytradingbot.brokers.paper import PaperBroker
++    from mytradingbot.execution.service import ExecutionEngine
++
++    approved_trade_intent.quantity = 0.8
++    approved_trade_intent.bracket_plan.planned_quantity = 0.8
++
++    decision = RiskEngine().evaluate(intent=approved_trade_intent, mode=RuntimeMode.PAPER)
++    broker = PaperBroker()
++    engine = ExecutionEngine(broker=broker)
++
++    result = engine.execute(decision, mode=RuntimeMode.PAPER)
++
++    assert result.execution_skipped
++    assert result.reason == "invalid_broker_quantity"
++
++
++def test_execution_engine_rejects_trade_when_rounding_breaks_bracket_expectancy(
++    approved_trade_intent,
++) -> None:
++    from mytradingbot.brokers.paper import PaperBroker
++    from mytradingbot.execution.service import ExecutionEngine
++
++    approved_trade_intent.quantity = 1.6
++    approved_trade_intent.bracket_plan.planned_quantity = 1.6
++    approved_trade_intent.bracket_plan.estimated_fixed_fees = 1.5
++    approved_trade_intent.bracket_plan.reward_risk_ratio = 1.6
++
++    decision = RiskEngine().evaluate(intent=approved_trade_intent, mode=RuntimeMode.PAPER)
++    broker = PaperBroker()
++    engine = ExecutionEngine(broker=broker, minimum_bracket_reward_risk=1.5)
++
++    result = engine.execute(decision, mode=RuntimeMode.PAPER)
++
++    assert result.execution_skipped
++    assert result.reason == "bracket_plan_invalid_after_rounding"
+diff --git a/tests/unit/qlib_engine/test_service.py b/tests/unit/qlib_engine/test_service.py
+index 522cce8..dcd8b1b 100644
+--- a/tests/unit/qlib_engine/test_service.py
++++ b/tests/unit/qlib_engine/test_service.py
+@@ -1,8 +1,13 @@
+ from __future__ import annotations
+ 
+ import json
++from pathlib import Path
+ from datetime import datetime, timedelta, timezone
+ 
++import pandas as pd
++
++from mytradingbot.core.paths import RepoPaths
++from mytradingbot.core.settings import AppSettings
+ from mytradingbot.qlib_engine.service import QlibWorkflowService
+ 
+ 
+@@ -82,6 +87,186 @@ def test_prediction_artifact_loads_typed_predictions(tmp_path) -> None:
+     assert result.predictions[0].symbol == "AAPL"
+ 
+ 
++class _FakeQlibAdapter:
++    def build_dataset(self, frame: pd.DataFrame, artifact_path: Path) -> Path:
++        artifact_path.parent.mkdir(parents=True, exist_ok=True)
++        frame.to_parquet(artifact_path, index=False)
++        return artifact_path
++
++    def train_model(self, frame: pd.DataFrame, artifact_path: Path, strategy_name: str) -> Path:
++        artifact_path.parent.mkdir(parents=True, exist_ok=True)
++        artifact_path.write_text(
++            json.dumps({"strategy": strategy_name, "rows": len(frame)}),
++            encoding="utf-8",
++        )
++        return artifact_path
++
++    def generate_predictions(
++        self,
++        frame: pd.DataFrame,
++        model_path: Path,
++        output_path: Path,
++        strategy_name: str,
++    ) -> Path:
++        output_path.parent.mkdir(parents=True, exist_ok=True)
++        latest_rows = frame.sort_values("datetime").groupby("instrument").tail(1)
++        payload = []
++        for rank, row in enumerate(latest_rows.itertuples(index=False), start=1):
++            payload.append(
++                {
++                    "symbol": row.instrument,
++                    "score": float(row.feature_return_1),
++                    "predicted_return": float(row.label),
++                    "confidence": 0.75,
++                    "rank": rank,
++                    "direction": "long" if float(row.label) >= 0 else "short",
++                    "horizon": strategy_name,
++                }
++            )
++        output_path.write_text(json.dumps(payload), encoding="utf-8")
++        return output_path
++
++
++def _write_normalized_bars(root: Path, timeframe: str = "1m") -> None:
++    normalized_path = root / "data" / "normalized" / "bars" / timeframe
++    normalized_path.mkdir(parents=True, exist_ok=True)
++    pd.DataFrame(
++        [
++            {
++                "symbol": "AAPL",
++                "timestamp": pd.Timestamp("2026-01-02T14:30:00Z"),
++                "timeframe": timeframe,
++                "open": 100.0,
++                "high": 101.0,
++                "low": 99.5,
++                "close": 100.5,
++                "volume": 1_000,
++                "trade_count": 100,
++                "vwap": 100.3,
++                "provider": "alpaca",
++                "adjustment": "raw",
++                "feed": "iex",
++            },
++            {
++                "symbol": "AAPL",
++                "timestamp": pd.Timestamp("2026-01-02T14:31:00Z"),
++                "timeframe": timeframe,
++                "open": 100.5,
++                "high": 101.2,
++                "low": 100.2,
++                "close": 101.1,
++                "volume": 1_100,
++                "trade_count": 110,
++                "vwap": 100.7,
++                "provider": "alpaca",
++                "adjustment": "raw",
++                "feed": "iex",
++            },
++            {
++                "symbol": "AAPL",
++                "timestamp": pd.Timestamp("2026-01-02T14:32:00Z"),
++                "timeframe": timeframe,
++                "open": 101.1,
++                "high": 101.4,
++                "low": 100.8,
++                "close": 101.3,
++                "volume": 1_200,
++                "trade_count": 120,
++                "vwap": 101.0,
++                "provider": "alpaca",
++                "adjustment": "raw",
++                "feed": "iex",
++            },
++            {
++                "symbol": "AAPL",
++                "timestamp": pd.Timestamp("2026-01-02T14:33:00Z"),
++                "timeframe": timeframe,
++                "open": 101.3,
++                "high": 101.6,
++                "low": 101.0,
++                "close": 101.7,
++                "volume": 1_300,
++                "trade_count": 130,
++                "vwap": 101.4,
++                "provider": "alpaca",
++                "adjustment": "raw",
++                "feed": "iex",
++            },
++            {
++                "symbol": "AAPL",
++                "timestamp": pd.Timestamp("2026-01-02T14:34:00Z"),
++                "timeframe": timeframe,
++                "open": 101.7,
++                "high": 102.0,
++                "low": 101.5,
++                "close": 102.0,
++                "volume": 1_350,
++                "trade_count": 140,
++                "vwap": 101.8,
++                "provider": "alpaca",
++                "adjustment": "raw",
++                "feed": "iex",
++            },
++            {
++                "symbol": "AAPL",
++                "timestamp": pd.Timestamp("2026-01-02T14:35:00Z"),
++                "timeframe": timeframe,
++                "open": 102.0,
++                "high": 102.2,
++                "low": 101.8,
++                "close": 102.1,
++                "volume": 1_400,
++                "trade_count": 145,
++                "vwap": 102.0,
++                "provider": "alpaca",
++                "adjustment": "raw",
++                "feed": "iex",
++            },
++        ]
++    ).to_parquet(normalized_path / "AAPL.parquet", index=False)
++
++
++def test_build_train_and_refresh_use_repo_local_normalized_data(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    _write_normalized_bars(tmp_path)
++    service = QlibWorkflowService(
++        settings=settings,
++        pyqlib_available=True,
++        workflow_adapter=_FakeQlibAdapter(),
++    )
++
++    build_result = service.build_dataset(strategy_name="scalping")
++    train_result = service.train_models(strategy_name="scalping")
++    refresh_result = service.refresh_predictions(strategy_name="scalping")
++
++    assert build_result.ok
++    assert settings.qlib_dataset_artifact_path().exists()
++    assert train_result.ok
++    assert settings.qlib_model_artifact_path().exists()
++    assert refresh_result.ok
++    assert settings.prediction_artifact_path().exists()
++
++
++def test_build_dataset_fails_clearly_when_normalized_data_is_missing(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    service = QlibWorkflowService(
++        settings=settings,
++        pyqlib_available=True,
++        workflow_adapter=_FakeQlibAdapter(),
++    )
++
++    result = service.build_dataset(strategy_name="scalping")
++
++    assert not result.ok
++    assert "normalized" in result.message.lower()
++
++
++def test_qlib_service_does_not_reference_demo_get_data_path() -> None:
++    source = Path("src/mytradingbot/qlib_engine/service.py").read_text(encoding="utf-8")
++
++    assert "get_data" not in source
++
++
+ def test_prediction_artifact_with_utf8_bom_loads_cleanly(tmp_path) -> None:
+     artifact_path = tmp_path / "latest.json"
+     artifact_path.write_text(
+diff --git a/tests/unit/risk/test_service.py b/tests/unit/risk/test_service.py
+index 73efbf2..f995d5e 100644
+--- a/tests/unit/risk/test_service.py
++++ b/tests/unit/risk/test_service.py
+@@ -26,3 +26,12 @@ def test_risk_engine_rejects_trade_above_position_limit(approved_trade_intent) -
+ 
+     assert not decision.approved
+     assert decision.reason == "max_position_size_exceeded"
++
++
++def test_risk_engine_rejects_scalping_buy_without_bracket_plan(approved_trade_intent) -> None:
++    approved_trade_intent.bracket_plan = None
++
++    decision = RiskEngine().evaluate(intent=approved_trade_intent, mode=RuntimeMode.PAPER)
++
++    assert not decision.approved
++    assert decision.reason == "missing_bracket_plan"
+diff --git a/tests/unit/strategies/test_scalping_strategy.py b/tests/unit/strategies/test_scalping_strategy.py
+index d9b9157..a4db1e8 100644
+--- a/tests/unit/strategies/test_scalping_strategy.py
++++ b/tests/unit/strategies/test_scalping_strategy.py
+@@ -1,3 +1,4 @@
++from mytradingbot.core.settings import AppSettings, ScalpingBracketSettings
+ from mytradingbot.strategies.scalping import ScalpingStrategy
+ 
+ 
+@@ -48,3 +49,34 @@ def test_scalping_generates_exit_plan_for_valid_signal(signal_bundle_factory) ->
+     assert decision.intent.exit_plan.take_profit is not None
+     assert decision.intent.exit_plan.stop_loss is not None
+     assert decision.intent.exit_plan.timeout_seconds is not None
++    assert decision.intent.bracket_plan is not None
++    assert decision.intent.bracket_plan.reward_risk_ratio > 0
++
++
++def test_scalping_rejects_trade_when_fee_adjusted_expectancy_is_poor(
++    signal_bundle_factory,
++) -> None:
++    strategy = ScalpingStrategy(
++        settings=AppSettings(
++            scalping=ScalpingBracketSettings(
++                estimated_slippage_bps=40.0,
++                estimated_fee_per_share=0.5,
++                minimum_reward_risk_ratio=1.5,
++                minimum_net_reward_per_share=0.5,
++            )
++        )
++    )
++
++    decision = strategy.evaluate(
++        signal_bundle_factory(
++            predicted_return=0.0055,
++            confidence=0.8,
++            last_price=10.0,
++            vwap=9.9,
++            spread_bps=0.5,
++            liquidity_score=0.9,
++        )
++    )
++
++    assert not decision.should_trade
++    assert "fee_adjusted_expectancy" in decision.failed_filters

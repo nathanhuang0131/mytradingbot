@@ -6,6 +6,7 @@ src/mytradingbot/brokers/alpaca.py
 src/mytradingbot/brokers/base.py
 src/mytradingbot/brokers/paper.py
 src/mytradingbot/core/__init__.py
+src/mytradingbot/core/capabilities.py
 src/mytradingbot/core/enums.py
 src/mytradingbot/core/exceptions.py
 src/mytradingbot/core/logging_utils.py
@@ -13,7 +14,14 @@ src/mytradingbot/core/models.py
 src/mytradingbot/core/paths.py
 src/mytradingbot/core/settings.py
 src/mytradingbot/data/__init__.py
+src/mytradingbot/data/models.py
+src/mytradingbot/data/pipeline.py
+src/mytradingbot/data/schema.py
 src/mytradingbot/data/service.py
+src/mytradingbot/data/storage.py
+src/mytradingbot/data/providers/alpaca_provider.py
+src/mytradingbot/data/providers/base.py
+src/mytradingbot/data/providers/file_ingest_provider.py
 src/mytradingbot/diagnostics/__init__.py
 src/mytradingbot/diagnostics/service.py
 src/mytradingbot/execution/__init__.py
@@ -24,6 +32,8 @@ src/mytradingbot/llm/service.py
 src/mytradingbot/orchestration/__init__.py
 src/mytradingbot/orchestration/service.py
 src/mytradingbot/qlib_engine/__init__.py
+src/mytradingbot/qlib_engine/adapter.py
+src/mytradingbot/qlib_engine/dataset.py
 src/mytradingbot/qlib_engine/models.py
 src/mytradingbot/qlib_engine/service.py
 src/mytradingbot/reporting/__init__.py

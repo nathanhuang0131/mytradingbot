@@ -23,6 +23,8 @@ st.subheader("Operator Notes")
 st.write(
     "Use the pages in the sidebar to control strategies, run paper sessions, inspect diagnostics, and review advisory summaries."
 )
+st.subheader("Phase Capability Snapshot")
+st.json(payload.capabilities.model_dump(mode="json"))
 if not payload.prediction_status.is_ready:
     st.warning(
         "Predictions are not currently ready. Qlib-dependent actions fail clearly, but the dashboard remains available."

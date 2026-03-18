@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from mytradingbot.brokers.paper import PaperBroker
+from mytradingbot.core.capabilities import CapabilityService, CapabilitySnapshot
 from mytradingbot.core.enums import RuntimeMode
 from mytradingbot.core.models import (
     ArtifactStatus,
@@ -15,6 +16,7 @@ from mytradingbot.core.models import (
     utc_now,
 )
 from mytradingbot.core.settings import AppSettings
+from mytradingbot.data.pipeline import MarketDataPipeline
 from mytradingbot.data.service import MarketDataService
 from mytradingbot.execution.service import ExecutionEngine
 from mytradingbot.qlib_engine.service import QlibWorkflowService
@@ -32,6 +34,7 @@ class TradingPlatformService:
         settings: AppSettings | None = None,
         *,
         qlib_service: QlibWorkflowService | None = None,
+        data_pipeline: MarketDataPipeline | None = None,
         market_data_service: MarketDataService | None = None,
         strategy_registry: StrategyRegistry | None = None,
         risk_engine: RiskEngine | None = None,
@@ -40,9 +43,11 @@ class TradingPlatformService:
     ) -> None:
         self.settings = settings or AppSettings()
         self.qlib_service = qlib_service or QlibWorkflowService(settings=self.settings)
+        self.data_pipeline = data_pipeline or MarketDataPipeline(settings=self.settings)
         self.market_data_service = market_data_service or MarketDataService(
             settings=self.settings
         )
+        self.capability_service = CapabilityService(settings=self.settings)
         self.strategy_registry = strategy_registry or StrategyRegistry.build_default()
         self.risk_engine = risk_engine or RiskEngine()
         self.broker = broker or PaperBroker()
@@ -56,28 +61,53 @@ class TradingPlatformService:
     def get_strategy_names(self) -> list[str]:
         return self.strategy_registry.names()
 
+    def get_capabilities(self) -> CapabilitySnapshot:
+        return self.capability_service.detect()
+
     def get_prediction_status(self) -> ArtifactStatus:
         return self.qlib_service.get_runtime_prediction_status()
 
     def get_health_status(self) -> HealthStatus:
         prediction_status = self.get_prediction_status()
+        capabilities = self.get_capabilities()
         if prediction_status.is_ready:
-            return HealthStatus(summary="Platform ready for dry-run or paper sessions.", ok=True)
+            return HealthStatus(
+                summary="Platform ready for dry-run or paper sessions.",
+                ok=True,
+                issues=[],
+            )
         reason = prediction_status.reason or "unknown"
         return HealthStatus(
             summary=f"Prediction artifact is {reason}.",
             ok=False,
-            issues=prediction_status.guidance,
+            issues=[
+                *prediction_status.guidance,
+                f"{capabilities.phase_2.name}: {capabilities.phase_2.status}",
+                f"{capabilities.phase_3.name}: {capabilities.phase_3.status}",
+            ],
         )
 
-    def refresh_predictions(self):
-        return self.qlib_service.refresh_predictions()
+    def download_market_data(
+        self,
+        *,
+        symbols: list[str] | None = None,
+        timeframes: list[str] | None = None,
+        full_refresh: bool = False,
+    ):
+        return self.data_pipeline.download_update_normalize_and_snapshot(
+            symbols=symbols,
+            timeframes=timeframes,
+            full_refresh=full_refresh,
+        )
 
-    def train_models(self):
-        return self.qlib_service.train_models()
+    def refresh_predictions(self, *, strategy_name: str | None = None):
+        return self.qlib_service.refresh_predictions(strategy_name=strategy_name)
 
-    def build_dataset(self):
-        return self.qlib_service.build_dataset()
+    def train_models(self, *, strategy_name: str | None = None):
+        return self.qlib_service.train_models(strategy_name=strategy_name)
+
+    def build_dataset(self, *, strategy_name: str | None = None):
+        return self.qlib_service.build_dataset(strategy_name=strategy_name)
 
     def run_session(
         self,
@@ -139,6 +169,17 @@ class TradingPlatformService:
                 rejection_reasons.append(strategy_decision.reason or "strategy_rejected")
                 attempts.append(trace)
                 continue
+            if strategy_decision.intent.bracket_plan is not None:
+                plan = strategy_decision.intent.bracket_plan
+                trace.notes.append(
+                    "Bracket plan: "
+                    f"entry={plan.planned_entry_price:.4f}, "
+                    f"stop={plan.planned_stop_loss_price:.4f}, "
+                    f"target={plan.planned_take_profit_price:.4f}, "
+                    f"fees={plan.estimated_fees:.4f}, "
+                    f"slippage={plan.estimated_slippage:.4f}, "
+                    f"net_rr={plan.reward_risk_ratio:.4f}"
+                )
 
             risk_decision = self.risk_engine.evaluate(
                 intent=strategy_decision.intent,
@@ -158,6 +199,13 @@ class TradingPlatformService:
             trace.execution_outcome = execution_result
             if execution_result.reason and execution_result.execution_skipped:
                 rejection_reasons.append(execution_result.reason)
+            if execution_result.bracket_state is not None:
+                trace.notes.append(
+                    "Bracket state: "
+                    f"status={execution_result.bracket_state.status}, "
+                    f"exit_reason={execution_result.bracket_state.exit_reason}, "
+                    f"realized_pnl={execution_result.bracket_state.realized_pnl}"
+                )
             attempts.append(trace)
 
         orders = [] if normalized_mode is RuntimeMode.DRY_RUN else self.broker.list_orders()

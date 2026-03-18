@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+import argparse
+
 from mytradingbot.orchestration.service import TradingPlatformService
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Train qlib models from repo-local dataset artifacts.")
+    parser.add_argument("--strategy", default="scalping")
+    return parser
+
+
 def main() -> int:
-    result = TradingPlatformService.bootstrap_default().train_models()
+    args = build_parser().parse_args()
+    result = TradingPlatformService.bootstrap_default().train_models(
+        strategy_name=args.strategy
+    )
     print(result.model_dump_json(indent=2))
     return 0
 

@@ -26,3 +26,12 @@ def test_risk_engine_rejects_trade_above_position_limit(approved_trade_intent) -
 
     assert not decision.approved
     assert decision.reason == "max_position_size_exceeded"
+
+
+def test_risk_engine_rejects_scalping_buy_without_bracket_plan(approved_trade_intent) -> None:
+    approved_trade_intent.bracket_plan = None
+
+    decision = RiskEngine().evaluate(intent=approved_trade_intent, mode=RuntimeMode.PAPER)
+
+    assert not decision.approved
+    assert decision.reason == "missing_bracket_plan"

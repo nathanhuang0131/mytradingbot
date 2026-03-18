@@ -22,6 +22,9 @@ st.json(payload.prediction_status.model_dump(mode="json"))
 st.subheader("Health")
 st.json(payload.health.model_dump(mode="json"))
 
+st.subheader("Phase Capabilities")
+st.json(payload.capabilities.model_dump(mode="json"))
+
 if payload.last_session is not None:
     st.subheader("Last Session")
     st.json(payload.last_session.model_dump(mode="json"))

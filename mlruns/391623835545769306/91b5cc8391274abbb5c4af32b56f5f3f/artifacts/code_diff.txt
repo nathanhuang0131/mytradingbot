@@ -1,0 +1,327 @@
+diff --git a/README.md b/README.md
+index b4578e3..e0674f4 100644
+--- a/README.md
++++ b/README.md
+@@ -72,3 +72,21 @@ python scripts/run_live_trading.py
+ ```
+ 
+ The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
++## Canonical Institutional Runtime
++
++This repository is operated from the repo-local root only:
++
++`C:\Users\User\Documents\MyTradingBot_Next`
++
++The canonical Python environment is:
++
++`mytradingbot`
++
++All runtime artifacts, datasets, models, predictions, reports, and paper-trading outputs must remain repo-local. No code path should write outside this repository root.
++
++### Canonical environment setup
++
++```powershell
++conda activate mytradingbot
++Set-Location 'C:\Users\User\Documents\MyTradingBot_Next'
++$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
+\ No newline at end of file
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 74c24ab..c4732b0 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -90,3 +90,128 @@ This canonical schema is stored under `data/normalized/bars/<timeframe>/<symbol>
+ - `src/mytradingbot/risk/service.py` rejects scalping buy intents that do not carry a bracket plan.
+ - `src/mytradingbot/execution/service.py` rounds bracketed quantities down to whole shares when broker constraints require it, then re-validates the trade.
+ - `src/mytradingbot/brokers/paper.py` arms synthetic brackets after entry fills and closes them on take-profit, stop-loss, or flatten commands without double-exit behavior.
++## Signal Audit and Session Reporting Layer
++
++### Purpose
++
++The signal-audit and session-reporting layer provides institutional-grade observability for the trading decision path.
++
++Its purpose is to ensure that every candidate symbol evaluated by the strategy is traceable from model output through strategy filters, risk checks, execution decisions, and final paper-trading outcome.
++
++### Design goals
++
++The audit/reporting layer is designed to provide:
++
++- deterministic repo-local artifact generation
++- explainability for every final decision
++- standardized rejection reason taxonomy
++- separation of strategy logic from reporting logic
++- machine-readable and analyst-friendly outputs
++- testable artifact contracts
++
++### Architectural responsibilities
++
++The reporting layer should be split into focused responsibilities:
++
++#### 1. signal decision model
++A typed model representing a single candidate decision, including:
++- symbol
++- timestamp
++- strategy
++- signal side
++- bracket consideration
++- raw model outputs
++- filter outcomes
++- risk outputs
++- final status
++- rejection reason code/detail
++
++#### 2. session summary model
++A typed model representing one paper-trading session, including:
++- session id
++- start/end time
++- strategy
++- mode
++- input artifacts used
++- counts of candidates, accepted decisions, rejected decisions, submitted orders
++- grouped rejection statistics
++- generated artifact paths
++- environment/build metadata where safe
++
++#### 3. writers / serializers
++Dedicated writers should emit:
++- JSON
++- CSV
++- human-readable summary
++
++Writers must be resilient to partial optional fields and must not crash when specific strategy metrics are unavailable.
++
++#### 4. taxonomy
++Rejection reason codes must live in a centralized typed module so the same codes are used by:
++- strategies
++- execution
++- reporting
++- tests
++- documentation
++
++### Separation of concerns
++
++Strategy modules should focus on decision logic.
++
++Reporting modules should focus on:
++- collecting decision-state snapshots
++- serializing audit artifacts
++- generating session summaries
++
++Execution modules should focus on:
++- routing accepted decisions
++- broker submission
++- capturing submission outcome
++
++This separation avoids bloated strategy code and keeps the system maintainable.
++
++### Artifact flow
++
++A typical institutional run produces artifacts in this sequence:
++
++1. market data refresh artifacts
++2. qlib dataset artifact
++3. trained model artifact
++4. refreshed predictions artifact
++5. signal decision audit artifacts
++6. paper-trading session summary artifact
++7. validation summaries
++
++### Failure philosophy
++
++The reporting layer must not silently hide failures.
++
++Rules:
++- missing required runtime inputs should fail loudly
++- optional metrics may be omitted, but omission should be explicit
++- every final decision should still produce a valid audit record
++- session summary should be produced even when zero trades are placed
++
++### No-trade sessions
++
++The architecture treats a no-trade session as a valid operational outcome when:
++- the runtime path completed successfully
++- prediction and decision artifacts were produced
++- all candidate symbols were rejected or skipped for explicit reasons
++
++This is distinct from:
++- runtime failure
++- misconfiguration
++- missing data
++- broken broker integration
++
++### Operational readiness
++
++This architecture supports institutional-grade paper trading by emphasizing:
++- reproducibility
++- observability
++- artifact discipline
++- typed contracts
++- test-backed behavior
++
++It does not by itself imply live-trading readiness. Live deployment remains a separate gated phase.
+\ No newline at end of file
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index 184d565..2ce7c16 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -53,3 +53,113 @@ Check:
+ - `scripts/run_live_trading.py` is validation-only
+ - `src/mytradingbot/risk/service.py` still blocks live approval
+ - `src/mytradingbot/brokers/alpaca.py` still reports live submission disabled
++
++---
++
++## docs/RUNBOOK.md
++
++```md
++## Decision Audit / Rejection Reason Investigation
++
++This runbook section explains how to investigate why a paper-trading session placed trades, rejected trades, or produced no trades.
++
++### Where to look
++
++Primary audit/report locations:
++
++- `reports/signals/`
++- `reports/paper_trading/`
++
++Expected outputs per run:
++
++- timestamped JSON decision-audit artifact
++- timestamped CSV decision-audit artifact
++- session summary artifact
++- optional human-readable summary text/markdown
++
++### What the decision audit contains
++
++For each symbol considered by the strategy, inspect:
++
++- timestamp
++- strategy
++- symbol
++- side considered
++- whether bracket logic was evaluated
++- raw qlib score
++- predicted return / target return
++- filter outcomes
++- risk sizing result
++- bracket calculation result
++- final decision status
++- rejection reason code
++- rejection detail
++
++### Standard decision outcomes
++
++Expected final decision statuses include:
++
++- `accepted_buy`
++- `accepted_bracket_buy`
++- `accepted_short`
++- `accepted_bracket_short`
++- `rejected`
++- `skipped`
++- `no_action`
++
++### Standard rejection taxonomy
++
++Common rejection reason codes include:
++
++- `score_below_threshold`
++- `target_return_below_threshold`
++- `spread_too_wide`
++- `liquidity_too_low`
++- `volatility_regime_blocked`
++- `imbalance_not_confirmed`
++- `liquidity_sweep_not_confirmed`
++- `risk_budget_exceeded`
++- `position_exists`
++- `cooldown_active`
++- `bracket_invalid`
++- `broker_rejected`
++- `missing_market_data`
++- `invalid_signal_payload`
++- `execution_guard_blocked`
++
++### How to investigate a no-trade paper session
++
++When a run places zero trades:
++
++1. confirm the pipeline itself completed successfully
++2. confirm the model and prediction artifacts were refreshed
++3. open the latest paper-trading session summary
++4. inspect rejection counts by reason
++5. inspect the detailed signal audit for each candidate
++6. determine whether the issue is:
++   - normal selectivity
++   - insufficient candidate quality
++   - overly restrictive filters
++   - stale or incomplete market data
++   - risk gating
++   - a runtime/config defect
++
++A no-trade session is acceptable if all candidates were explicitly rejected for strategy or risk reasons and the run completed cleanly.
++
++### Quick triage checklist
++
++Use this sequence:
++
++1. check `models/predictions/latest.json`
++2. check latest `reports/paper_trading/` summary
++3. check latest `reports/signals/` audit JSON/CSV
++4. review rejection counts by reason
++5. confirm whether any candidates passed score thresholds
++6. confirm whether spread/liquidity/microstructure filters are too restrictive
++7. confirm whether risk sizing or bracket validation blocked otherwise valid entries
++
++### Operational expectation
++
++Every buy, bracket buy, short, bracket short, rejection, skip, or no-action outcome must be explainable from the audit outputs.
++
++If any final decision cannot be reconstructed from reports and logs, treat that as an observability defect and fix it before trusting the strategy.
+\ No newline at end of file
+diff --git a/success_criteria.md b/success_criteria.md
+index 66fd2d4..2f6c64d 100644
+--- a/success_criteria.md
++++ b/success_criteria.md
+@@ -137,4 +137,39 @@ Do not declare completion unless:
+ - dashboard launches
+ - docs exist
+ - strategy selection works
+-- paper workflow is runnable
+\ No newline at end of file
++- paper workflow is runnable
++
++
++---
++
++## SUCCESS.md
++
++```md
++# SUCCESS
++
++## Verified operating baseline
++
++The repository has a verified repo-local runtime path under the `mytradingbot` environment.
++
++Canonical working directory:
++
++`C:\Users\User\Documents\MyTradingBot_Next`
++
++Canonical environment:
++
++`mytradingbot`
++
++## Verified command order
++
++```powershell
++conda activate mytradingbot
++Set-Location 'C:\Users\User\Documents\MyTradingBot_Next'
++$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
++python -m pytest -q tests
++python scripts\run_daily_maintenance.py --action update --symbols AAPL MSFT NVDA --timeframes 1m
++python scripts\build_qlib_dataset.py --strategy scalping
++python scripts\train_models.py --strategy scalping
++python scripts\refresh_predictions.py --strategy scalping
++python scripts\run_paper_trading.py --strategy scalping --mode paper
++python scripts\validate_system.py
++python scripts\goalcheck.py
+\ No newline at end of file

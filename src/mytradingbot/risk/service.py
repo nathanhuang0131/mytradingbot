@@ -23,6 +23,14 @@ class RiskEngine:
             checks.append("live_mode_guard")
             return RiskDecision.reject(reason="live_mode_disabled", checks=checks)
 
+        if intent.metadata.get("circuit_breaker_blocked", False):
+            checks.append("execution_guard")
+            return RiskDecision.reject(reason="execution_guard_blocked", checks=checks)
+
+        if intent.metadata.get("position_exists", False):
+            checks.append("position_exists")
+            return RiskDecision.reject(reason="position_exists", checks=checks)
+
         if intent.quantity <= 0:
             checks.append("positive_quantity_required")
             return RiskDecision.reject(reason="invalid_quantity", checks=checks)

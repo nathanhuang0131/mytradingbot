@@ -33,6 +33,9 @@ Runs:
 
 - repo-local Alpaca historical download
 - incremental repo-local update
+- top-liquidity universe generation
+- training data quality checks
+- alpha-robust training
 - qlib dataset build
 - qlib model training
 - prediction refresh
@@ -86,5 +89,19 @@ Shows resolved settings and repo-local paths from `src/mytradingbot/core/setting
 - qlib remains the authority for direction and ranking
 - LLM output from `src/mytradingbot/llm/service.py` is advisory only
 - missing or stale predictions fail clearly
+- missing or stale market snapshots fail clearly
 - phase 1 remains the default operational path
 - phase 4 remains guarded and validation-only
+
+## Decision Audit Notes
+
+- `reports/signals/<session_id>_decision_audit.json` stores every evaluated candidate, including rejections and skips.
+- `reports/paper_trading/<session_id>_paper_session.json` stores the per-session paper summary.
+- `reports/analytics/<session_id>_analytics.md` summarizes signal-source distribution.
+- `data/ledger/signal_outcomes.csv` and `data/ledger/incidents.csv` are analytics-ready append-only ledgers.
+
+## Signal Source Meanings
+
+- `qlib_candidate_only`: qlib proposed a candidate but deterministic rules rejected it.
+- `qlib_plus_rules`: qlib proposed a candidate and deterministic rules validated it into an actionable path.
+- `no_valid_signal`: no actionable signal remained after runtime checks.

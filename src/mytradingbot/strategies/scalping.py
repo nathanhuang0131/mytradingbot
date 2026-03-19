@@ -168,6 +168,11 @@ class ScalpingStrategy(BaseStrategy):
         passed_filters: list[str],
         failed_filters: list[str],
     ) -> None:
+        if signal.metadata.get("position_exists", False):
+            failed_filters.append("duplicate_position")
+        else:
+            passed_filters.append("duplicate_position")
+
         if signal.metadata.get("cooldown_active", False):
             failed_filters.append("cooldown_logic")
         else:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from mytradingbot.core.paths import RepoPaths
+from mytradingbot.core.settings import AppSettings
 from mytradingbot.core.enums import RuntimeMode
 from mytradingbot.data.service import MarketDataService
 from mytradingbot.orchestration.service import TradingPlatformService
@@ -46,13 +48,16 @@ def test_dry_run_session_keeps_broker_state_unchanged(tmp_path) -> None:
         ),
         encoding="utf-8",
     )
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
 
     service = TradingPlatformService(
+        settings=settings,
         qlib_service=QlibWorkflowService(
+            settings=settings,
             pyqlib_available=False,
             predictions_path=predictions_path,
         ),
-        market_data_service=MarketDataService(market_snapshot_path=market_path),
+        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
     )
 
     result = service.run_session(strategy_name="intraday", mode=RuntimeMode.DRY_RUN)

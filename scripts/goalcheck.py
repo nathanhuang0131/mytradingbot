@@ -30,6 +30,9 @@ def main() -> int:
         "phase_3_status": capabilities.phase_3.status,
         "phase_4_status": capabilities.phase_4.status,
         "prediction_status_reason": service.get_prediction_status().reason,
+        "institutional_pipeline_present": (project_root / "scripts/run_institutional_pipeline.py").exists(),
+        "alpha_training_present": (project_root / "scripts/run_alpha_robust_training.py").exists(),
+        "top_liquidity_universe_script_present": (project_root / "scripts/generate_top_liquidity_universe.py").exists(),
         "diagnostics_service_present": True,
         "llm_advisory_present": True,
     }

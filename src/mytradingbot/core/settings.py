@@ -78,13 +78,90 @@ class DataPipelineSettings(BaseModel):
     request_throttle_seconds: float = 0.25
     processing_workers: int = 1
     parquet_compression: str = "snappy"
-    symbol_chunk_size: int = 50
+    symbol_chunk_size: int = 5
     qlib_symbol_chunk_size: int = 25
     qlib_prediction_chunk_size: int = 25
     snapshot_timeframe: str = "1m"
     incremental_overlap_minutes: int = 5
     scalping_lookback_bars: int = 30
+    full_refresh_1m_trading_days: int = 90
+    full_refresh_5m_trading_days: int = 180
+    full_refresh_15m_trading_days: int = 252
+    full_refresh_1d_trading_days: int = 756
+    time_chunk_1m_trading_days: int = 5
+    time_chunk_5m_trading_days: int = 20
+    time_chunk_15m_trading_days: int = 30
+    time_chunk_1d_trading_days: int = 252
+    require_complete_symbol_coverage: bool = True
+    allow_normalize_without_download: bool = False
     default_symbols: list[str] = Field(default_factory=lambda: ["AAPL", "MSFT", "NVDA"])
+
+    def default_full_refresh_lookback(self, timeframe: str) -> int:
+        mapping = {
+            "1m": self.full_refresh_1m_trading_days,
+            "5m": self.full_refresh_5m_trading_days,
+            "15m": self.full_refresh_15m_trading_days,
+            "1d": self.full_refresh_1d_trading_days,
+        }
+        return mapping[timeframe]
+
+    def default_time_chunk_lookback(self, timeframe: str) -> int:
+        mapping = {
+            "1m": self.time_chunk_1m_trading_days,
+            "5m": self.time_chunk_5m_trading_days,
+            "15m": self.time_chunk_15m_trading_days,
+            "1d": self.time_chunk_1d_trading_days,
+        }
+        return mapping[timeframe]
+
+
+class UniverseSettings(BaseModel):
+    """Universe-generation defaults."""
+
+    top_n: int = 800
+    lookback_days: int = 30
+    minimum_price: float = 5.0
+    minimum_average_volume: int = 500_000
+    minimum_coverage_ratio: float = 0.8
+    asset_class: str = "us_equity"
+    include_etfs: bool = False
+
+
+class FreshnessSettings(BaseModel):
+    """Artifact freshness thresholds."""
+
+    predictions_max_age_minutes: int = 60
+    market_snapshot_max_age_minutes: int = 15
+    dataset_max_age_hours: int = 24
+    model_max_age_hours: int = 24
+
+
+class RuntimeSafetySettings(BaseModel):
+    """Persistent runtime-state and circuit-breaker defaults."""
+
+    sqlite_filename: str = "institutional_runtime.sqlite3"
+    max_consecutive_broker_rejects: int = 3
+    max_consecutive_execution_failures: int = 3
+    max_consecutive_replace_stop_failures: int = 3
+    supervised_loop_interval_seconds: int = 60
+
+
+class TrainingSettings(BaseModel):
+    """Alpha-robust training defaults."""
+
+    minimum_eligible_symbols: int = 150
+    minimum_label_coverage_ratio: float = 0.7
+    minimum_recent_test_rows: int = 500
+    minimum_cross_sectional_rows: int = 5_000
+    timeframe_minimum_trading_days: dict[str, int] = Field(
+        default_factory=lambda: {"1m": 60, "5m": 120, "15m": 180, "1d": 504}
+    )
+    timeframe_preferred_trading_days: dict[str, int] = Field(
+        default_factory=lambda: {"1m": 90, "5m": 180, "15m": 252, "1d": 756}
+    )
+    timeframe_minimum_coverage_ratio: dict[str, float] = Field(
+        default_factory=lambda: {"1m": 0.8, "5m": 0.85, "15m": 0.85, "1d": 0.9}
+    )
 
 
 class QlibSettings(BaseModel):
@@ -151,6 +228,10 @@ class AppSettings(BaseSettings):
     strategies: StrategySettings = StrategySettings()
     broker: BrokerSettings = BrokerSettings()
     data: DataPipelineSettings = DataPipelineSettings()
+    universe: UniverseSettings = UniverseSettings()
+    freshness: FreshnessSettings = FreshnessSettings()
+    runtime_safety: RuntimeSafetySettings = RuntimeSafetySettings()
+    training: TrainingSettings = TrainingSettings()
     qlib: QlibSettings = QlibSettings()
     scalping: ScalpingBracketSettings = ScalpingBracketSettings()
     llm: LLMSettings = LLMSettings()

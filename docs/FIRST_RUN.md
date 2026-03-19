@@ -45,10 +45,10 @@ python scripts/run_paper_trading.py --strategy scalping --mode paper --predictio
 Repo-local phased build:
 
 ```bash
-python scripts/run_daily_maintenance.py --action download --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d
-python scripts/build_qlib_dataset.py --strategy scalping
-python scripts/train_models.py --strategy scalping
-python scripts/refresh_predictions.py --strategy scalping
+python scripts/generate_top_liquidity_universe.py --top-n 800 --lookback-days 30 --min-price 5 --min-avg-volume 500000
+python scripts/run_daily_maintenance.py --action download --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
+python scripts/check_training_data_quality.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
+python scripts/run_alpha_robust_training.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
 python scripts/run_paper_trading.py --strategy scalping --mode paper
 ```
 
@@ -62,5 +62,14 @@ streamlit run app/app.py
 
 - Phase 1: `scripts/run_paper_trading.py`, `app/pages/04_Paper_Trading.py`
 - Phase 2: `scripts/run_daily_maintenance.py --action download`, `scripts/run_daily_maintenance.py --action update`
-- Phase 3: `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, `scripts/refresh_predictions.py`
+- Phase 3: `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, `scripts/refresh_predictions.py`, `scripts/check_training_data_quality.py`, `scripts/run_alpha_robust_training.py`
 - Phase 4: `scripts/run_live_trading.py`
+
+## Downloader Window Rules
+
+- `scripts/run_daily_maintenance.py --action download` resolves explicit start windows when `--start-date` is omitted.
+- `1m` defaults to 90 trading days.
+- `5m` defaults to 180 trading days.
+- `15m` defaults to 252 trading days.
+- `1d` defaults to 756 trading days.
+- `reports/data/raw_download_summary.md` is the first artifact to inspect after a large universe download.

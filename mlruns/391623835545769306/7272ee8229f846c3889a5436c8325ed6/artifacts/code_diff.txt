@@ -1,0 +1,1650 @@
+diff --git a/.codex/environment.md b/.codex/environment.md
+index ae8ce32..78e046d 100644
+--- a/.codex/environment.md
++++ b/.codex/environment.md
+@@ -16,3 +16,14 @@ Dependencies:
+ ```
+ pip install -e .[dev]
+ ```
++```md
++## Repository operating rules
++
++- Always operate from the repo-local root: `C:\Users\User\Documents\MyTradingBot_Next`
++- Do not introduce writes outside the repository root
++- Prefer the canonical `mytradingbot` environment
++- Preserve the working end-to-end pipeline unless a change is clearly required
++- All signal decisions must be observable and reportable
++- Every buy, bracket buy, short, bracket short, rejection, skip, or no-action must be traceable through logs and audit artifacts
++- Favor typed, modular, testable changes
++- When changing runtime behavior, update docs and tests in the same patch
+\ No newline at end of file
+diff --git a/README.md b/README.md
+index b4578e3..8627785 100644
+--- a/README.md
++++ b/README.md
+@@ -72,3 +72,44 @@ python scripts/run_live_trading.py
+ ```
+ 
+ The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
++## Canonical Institutional Runtime
++
++This repository is operated from the repo-local root only:
++
++`C:\Users\User\Documents\MyTradingBot_Next`
++
++The canonical Python environment is:
++
++`mytradingbot`
++
++All runtime artifacts, datasets, models, predictions, reports, and paper-trading outputs must remain repo-local. No code path should write outside this repository root.
++
++### Canonical environment setup
++
++```powershell
++conda activate mytradingbot
++Set-Location 'C:\Users\User\Documents\MyTradingBot_Next'
++$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
++python -m pytest -q tests
++python scripts\run_institutional_pipeline.py --strategy scalping --use-top-liquidity-universe --timeframes 1m 5m 15m 1d --mode paper
++```
++
++## V2 Commands
++
++```powershell
++python scripts\generate_top_liquidity_universe.py --top-n 800 --lookback-days 30 --min-price 5 --min-avg-volume 500000
++python scripts\run_daily_maintenance.py --action download --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
++python scripts\check_training_data_quality.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
++python scripts\run_alpha_robust_training.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
++python scripts\run_institutional_pipeline.py --strategy scalping --use-top-liquidity-universe --timeframes 1m 5m 15m 1d --mode paper
++```
++
++## V2 Guarantees
++
++- `src/mytradingbot/data/pipeline.py` will not normalize stale local raw parquet if the requested download/update wrote no new usable raw data.
++- `src/mytradingbot/data/providers/alpaca_provider.py` uses deterministic chunking and guarded time-window splitting for large symbol sets.
++- `reports/data/raw_download_summary.json`, `reports/data/raw_download_summary.md`, and `reports/data/raw_symbol_coverage.csv` are the downloader truth artifacts.
++- `src/mytradingbot/universe/ranking.py` ranks by average dollar volume first, then average volume, then price, then symbol.
++- `src/mytradingbot/training/data_quality.py` enforces multi-timeframe sufficiency before the institutional training runner proceeds.
++- `src/mytradingbot/runtime/store.py` keeps restart-safe runtime state under `data/state/`.
++- `src/mytradingbot/runtime/service.py` writes decision-audit, paper-session, analytics, and incident artifacts even when zero trades occur.
+diff --git a/app/pages/03_Data_and_Training.py b/app/pages/03_Data_and_Training.py
+index 64269e8..db259ac 100644
+--- a/app/pages/03_Data_and_Training.py
++++ b/app/pages/03_Data_and_Training.py
+@@ -35,3 +35,12 @@ if st.button("Train Models"):
+ 
+ if st.button("Refresh Predictions"):
+     st.json(service.refresh_predictions(strategy_name=strategy).model_dump(mode="json"))
++
++if st.button("Generate Top Liquidity Universe"):
++    st.json(service.generate_top_liquidity_universe().model_dump(mode="json"))
++
++if st.button("Check Training Data Quality"):
++    st.json(service.check_training_data_quality(strategy_name=strategy).model_dump(mode="json"))
++
++if st.button("Run Alpha Robust Training"):
++    st.json(service.run_alpha_robust_training(strategy_name=strategy).model_dump(mode="json"))
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 74c24ab..49811f8 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -21,6 +21,9 @@ The canonical runtime flow is:
+ - `src/mytradingbot/llm/service.py` remains advisory-only.
+ - `src/mytradingbot/data/providers/alpaca_provider.py` does not leak Alpaca SDK enums outside the provider boundary.
+ - `src/mytradingbot/data/schema.py` enforces an explicit transformation boundary between repo-local canonical parquet data and qlib-ready data.
++- `src/mytradingbot/training/data_quality.py` is the multi-timeframe sufficiency gate for alpha-robust training.
++- `src/mytradingbot/runtime/store.py` provides restart-safe runtime state under `data/state/`.
++- `src/mytradingbot/runtime/service.py` centralizes freshness checks, decision audit writing, and incident persistence.
+ - `src/mytradingbot/strategies/scalping.py` emits a typed bracket plan before submission.
+ - `src/mytradingbot/execution/service.py` enforces whole-share bracket constraints before broker submission.
+ - `src/mytradingbot/brokers/paper.py` manages synthetic bracket exits for paper mode.
+@@ -36,6 +39,8 @@ The canonical runtime flow is:
+ - `src/mytradingbot/execution/`: broker execution constraints and routing.
+ - `src/mytradingbot/brokers/`: paper broker plus guarded Alpaca live scaffold.
+ - `src/mytradingbot/orchestration/`: end-to-end operator workflows shared by UI and CLI.
++- `src/mytradingbot/runtime/`: persistent runtime state, incident storage, and decision/session audit wiring.
++- `src/mytradingbot/training/`: training data quality checks, chronological split definitions, and alpha-robust orchestration.
+ - `src/mytradingbot/diagnostics/`: prediction freshness and no-trade diagnostics.
+ - `src/mytradingbot/reporting/`: post-session bracket and traceability reporting.
+ - `src/mytradingbot/llm/`: advisory-only operator tooling.
+@@ -90,3 +95,143 @@ This canonical schema is stored under `data/normalized/bars/<timeframe>/<symbol>
+ - `src/mytradingbot/risk/service.py` rejects scalping buy intents that do not carry a bracket plan.
+ - `src/mytradingbot/execution/service.py` rounds bracketed quantities down to whole shares when broker constraints require it, then re-validates the trade.
+ - `src/mytradingbot/brokers/paper.py` arms synthetic brackets after entry fills and closes them on take-profit, stop-loss, or flatten commands without double-exit behavior.
++## Signal Audit and Session Reporting Layer
++
++### Purpose
++
++The signal-audit and session-reporting layer provides institutional-grade observability for the trading decision path.
++
++Its purpose is to ensure that every candidate symbol evaluated by the strategy is traceable from model output through strategy filters, risk checks, execution decisions, and final paper-trading outcome.
++
++### Design goals
++
++The audit/reporting layer is designed to provide:
++
++- deterministic repo-local artifact generation
++- explainability for every final decision
++- standardized rejection reason taxonomy
++- separation of strategy logic from reporting logic
++- machine-readable and analyst-friendly outputs
++- testable artifact contracts
++
++### Architectural responsibilities
++
++The reporting layer should be split into focused responsibilities:
++
++#### 1. signal decision model
++A typed model representing a single candidate decision, including:
++- symbol
++- timestamp
++- strategy
++- signal side
++- bracket consideration
++- raw model outputs
++- filter outcomes
++- risk outputs
++- final status
++- rejection reason code/detail
++
++#### 2. session summary model
++A typed model representing one paper-trading session, including:
++- session id
++- start/end time
++- strategy
++- mode
++- input artifacts used
++- counts of candidates, accepted decisions, rejected decisions, submitted orders
++- grouped rejection statistics
++- generated artifact paths
++- environment/build metadata where safe
++
++#### 3. writers / serializers
++Dedicated writers should emit:
++- JSON
++- CSV
++- human-readable summary
++
++Writers must be resilient to partial optional fields and must not crash when specific strategy metrics are unavailable.
++
++#### 4. taxonomy
++Rejection reason codes must live in a centralized typed module so the same codes are used by:
++- strategies
++- execution
++- reporting
++- tests
++- documentation
++
++### Separation of concerns
++
++Strategy modules should focus on decision logic.
++
++Reporting modules should focus on:
++- collecting decision-state snapshots
++- serializing audit artifacts
++- generating session summaries
++
++Execution modules should focus on:
++- routing accepted decisions
++- broker submission
++- capturing submission outcome
++
++This separation avoids bloated strategy code and keeps the system maintainable.
++
++### Artifact flow
++
++A typical institutional run produces artifacts in this sequence:
++
++1. market data refresh artifacts
++2. qlib dataset artifact
++3. trained model artifact
++4. refreshed predictions artifact
++5. signal decision audit artifacts
++6. paper-trading session summary artifact
++7. validation summaries
++
++## Downloader Truth Rules
++
++- `src/mytradingbot/data/pipeline.py` resolves explicit full-refresh windows per timeframe instead of issuing unconstrained multi-symbol intraday requests.
++- `src/mytradingbot/data/providers/alpaca_provider.py` uses symbol chunking and guarded time-window splitting so large universes do not silently truncate at the first page.
++- `src/mytradingbot/data/reports.py` emits downloader truth artifacts before normalization is allowed to continue.
++
++## Training Sufficiency Rules
++
++- `1m` target lookback: 60 to 90 trading days.
++- `5m` target lookback: 120 to 180 trading days.
++- `15m` target lookback: 180 to 252 trading days.
++- `1d` target lookback: 2 to 3 years.
++
++`src/mytradingbot/training/service.py` writes the resulting evidence to `reports/training/` and `data/universe/latest_training_eligible_universe.json`.
++
++### Failure philosophy
++
++The reporting layer must not silently hide failures.
++
++Rules:
++- missing required runtime inputs should fail loudly
++- optional metrics may be omitted, but omission should be explicit
++- every final decision should still produce a valid audit record
++- session summary should be produced even when zero trades are placed
++
++### No-trade sessions
++
++The architecture treats a no-trade session as a valid operational outcome when:
++- the runtime path completed successfully
++- prediction and decision artifacts were produced
++- all candidate symbols were rejected or skipped for explicit reasons
++
++This is distinct from:
++- runtime failure
++- misconfiguration
++- missing data
++- broken broker integration
++
++### Operational readiness
++
++This architecture supports institutional-grade paper trading by emphasizing:
++- reproducibility
++- observability
++- artifact discipline
++- typed contracts
++- test-backed behavior
++
++It does not by itself imply live-trading readiness. Live deployment remains a separate gated phase.
+diff --git a/docs/FIRST_RUN.md b/docs/FIRST_RUN.md
+index ef8fbdd..0ebdeaf 100644
+--- a/docs/FIRST_RUN.md
++++ b/docs/FIRST_RUN.md
+@@ -45,10 +45,10 @@ python scripts/run_paper_trading.py --strategy scalping --mode paper --predictio
+ Repo-local phased build:
+ 
+ ```bash
+-python scripts/run_daily_maintenance.py --action download --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d
+-python scripts/build_qlib_dataset.py --strategy scalping
+-python scripts/train_models.py --strategy scalping
+-python scripts/refresh_predictions.py --strategy scalping
++python scripts/generate_top_liquidity_universe.py --top-n 800 --lookback-days 30 --min-price 5 --min-avg-volume 500000
++python scripts/run_daily_maintenance.py --action download --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
++python scripts/check_training_data_quality.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
++python scripts/run_alpha_robust_training.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
+ python scripts/run_paper_trading.py --strategy scalping --mode paper
+ ```
+ 
+@@ -62,5 +62,14 @@ streamlit run app/app.py
+ 
+ - Phase 1: `scripts/run_paper_trading.py`, `app/pages/04_Paper_Trading.py`
+ - Phase 2: `scripts/run_daily_maintenance.py --action download`, `scripts/run_daily_maintenance.py --action update`
+-- Phase 3: `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, `scripts/refresh_predictions.py`
++- Phase 3: `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, `scripts/refresh_predictions.py`, `scripts/check_training_data_quality.py`, `scripts/run_alpha_robust_training.py`
+ - Phase 4: `scripts/run_live_trading.py`
++
++## Downloader Window Rules
++
++- `scripts/run_daily_maintenance.py --action download` resolves explicit start windows when `--start-date` is omitted.
++- `1m` defaults to 90 trading days.
++- `5m` defaults to 180 trading days.
++- `15m` defaults to 252 trading days.
++- `1d` defaults to 756 trading days.
++- `reports/data/raw_download_summary.md` is the first artifact to inspect after a large universe download.
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index 184d565..bc9015a 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -2,13 +2,27 @@
+ 
+ ## Daily Maintenance Order
+ 
+-1. `python scripts/run_daily_maintenance.py --action update --symbols AAPL MSFT NVDA --timeframes 1m 5m 15m 1d`
+-2. `python scripts/build_qlib_dataset.py --strategy scalping`
+-3. `python scripts/train_models.py --strategy scalping`
+-4. `python scripts/refresh_predictions.py --strategy scalping`
+-5. `python scripts/run_paper_trading.py --strategy scalping --mode dry_run`
+-6. `python scripts/run_paper_trading.py --strategy scalping --mode paper`
+-7. `streamlit run app/app.py`
++1. `python scripts/generate_top_liquidity_universe.py --top-n 800 --lookback-days 30 --min-price 5 --min-avg-volume 500000`
++2. `python scripts/run_daily_maintenance.py --action update --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d`
++3. `python scripts/check_training_data_quality.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d`
++4. `python scripts/build_qlib_dataset.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json`
++5. `python scripts/train_models.py --strategy scalping`
++6. `python scripts/refresh_predictions.py --strategy scalping`
++7. `python scripts/run_paper_trading.py --strategy scalping --mode dry_run`
++8. `python scripts/run_paper_trading.py --strategy scalping --mode paper`
++9. `streamlit run app/app.py`
++
++## Canonical Institutional Order
++
++`python scripts/run_institutional_pipeline.py --strategy scalping --use-top-liquidity-universe --timeframes 1m 5m 15m 1d --mode paper`
++
++## Raw Download Coverage Reports
++
++Inspect:
++
++- `reports/data/raw_download_summary.json`
++- `reports/data/raw_download_summary.md`
++- `reports/data/raw_symbol_coverage.csv`
+ 
+ ## Daily UI Order
+ 
+@@ -35,6 +49,8 @@ Check:
+ - `data/normalized/bars/` contains parquet for the requested strategy timeframe
+ - `data/qlib/dataset.parquet` exists before training
+ - `models/qlib/model.pkl` exists before prediction refresh
++- `reports/training/training_data_quality_report.md` passes the timeframe sufficiency rules
++- `data/universe/latest_training_eligible_universe.json` contains enough symbols for the configured floor
+ 
+ ## If No Trades Happen
+ 
+@@ -53,3 +69,119 @@ Check:
+ - `scripts/run_live_trading.py` is validation-only
+ - `src/mytradingbot/risk/service.py` still blocks live approval
+ - `src/mytradingbot/brokers/alpaca.py` still reports live submission disabled
++
++---
++
++## docs/RUNBOOK.md
++
++```md
++## Decision Audit / Rejection Reason Investigation
++
++This runbook section explains how to investigate why a paper-trading session placed trades, rejected trades, or produced no trades.
++
++### Where to look
++
++Primary audit/report locations:
++
++- `reports/signals/`
++- `reports/paper_trading/`
++- `reports/analytics/`
++- `data/ledger/`
++
++Expected outputs per run:
++
++- timestamped JSON decision-audit artifact
++- timestamped CSV decision-audit artifact
++- session summary artifact
++- optional human-readable summary text/markdown
++
++### What the decision audit contains
++
++For each symbol considered by the strategy, inspect:
++
++- timestamp
++- strategy
++- symbol
++- side considered
++- whether bracket logic was evaluated
++- raw qlib score
++- predicted return / target return
++- filter outcomes
++- risk sizing result
++- bracket calculation result
++- final decision status
++- rejection reason code
++- rejection detail
++
++### Standard decision outcomes
++
++Expected final decision statuses include:
++
++- `accepted_buy`
++- `accepted_bracket_buy`
++- `accepted_short`
++- `accepted_bracket_short`
++- `rejected`
++- `skipped`
++- `no_action`
++
++### Standard rejection taxonomy
++
++Common rejection reason codes include:
++
++- `score_below_threshold`
++- `target_return_below_threshold`
++- `spread_too_wide`
++- `liquidity_too_low`
++- `volatility_regime_blocked`
++- `imbalance_not_confirmed`
++- `liquidity_sweep_not_confirmed`
++- `risk_budget_exceeded`
++- `position_exists`
++- `cooldown_active`
++- `bracket_invalid`
++- `broker_rejected`
++- `missing_market_data`
++- `invalid_signal_payload`
++- `execution_guard_blocked`
++- `stale_predictions`
++- `stale_market_snapshot`
++- `strategy_exception`
++- `broker_state_unreconciled`
++
++### How to investigate a no-trade paper session
++
++When a run places zero trades:
++
++1. confirm the pipeline itself completed successfully
++2. confirm the model and prediction artifacts were refreshed
++3. open the latest paper-trading session summary
++4. inspect rejection counts by reason
++5. inspect the detailed signal audit for each candidate
++6. determine whether the issue is:
++   - normal selectivity
++   - insufficient candidate quality
++   - overly restrictive filters
++   - stale or incomplete market data
++   - risk gating
++   - a runtime/config defect
++
++A no-trade session is acceptable if all candidates were explicitly rejected for strategy or risk reasons and the run completed cleanly.
++
++### Quick triage checklist
++
++Use this sequence:
++
++1. check `models/predictions/latest.json`
++2. check latest `reports/paper_trading/` summary
++3. check latest `reports/signals/` audit JSON/CSV
++4. review rejection counts by reason
++5. confirm whether any candidates passed score thresholds
++6. confirm whether spread/liquidity/microstructure filters are too restrictive
++7. confirm whether risk sizing or bracket validation blocked otherwise valid entries
++
++### Operational expectation
++
++Every buy, bracket buy, short, bracket short, rejection, skip, or no-action outcome must be explainable from the audit outputs.
++
++If any final decision cannot be reconstructed from reports and logs, treat that as an observability defect and fix it before trusting the strategy.
+diff --git a/docs/USER_MANUAL.md b/docs/USER_MANUAL.md
+index ee2940b..f6e2c84 100644
+--- a/docs/USER_MANUAL.md
++++ b/docs/USER_MANUAL.md
+@@ -33,6 +33,9 @@ Runs:
+ 
+ - repo-local Alpaca historical download
+ - incremental repo-local update
++- top-liquidity universe generation
++- training data quality checks
++- alpha-robust training
+ - qlib dataset build
+ - qlib model training
+ - prediction refresh
+@@ -86,5 +89,19 @@ Shows resolved settings and repo-local paths from `src/mytradingbot/core/setting
+ - qlib remains the authority for direction and ranking
+ - LLM output from `src/mytradingbot/llm/service.py` is advisory only
+ - missing or stale predictions fail clearly
++- missing or stale market snapshots fail clearly
+ - phase 1 remains the default operational path
+ - phase 4 remains guarded and validation-only
++
++## Decision Audit Notes
++
++- `reports/signals/<session_id>_decision_audit.json` stores every evaluated candidate, including rejections and skips.
++- `reports/paper_trading/<session_id>_paper_session.json` stores the per-session paper summary.
++- `reports/analytics/<session_id>_analytics.md` summarizes signal-source distribution.
++- `data/ledger/signal_outcomes.csv` and `data/ledger/incidents.csv` are analytics-ready append-only ledgers.
++
++## Signal Source Meanings
++
++- `qlib_candidate_only`: qlib proposed a candidate but deterministic rules rejected it.
++- `qlib_plus_rules`: qlib proposed a candidate and deterministic rules validated it into an actionable path.
++- `no_valid_signal`: no actionable signal remained after runtime checks.
+diff --git a/pyproject.toml b/pyproject.toml
+index 501f064..3d68255 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
+ 
+ [project]
+ name = "mytradingbot-next"
+-version = "0.1.0"
++version = "0.2.0"
+ description = "A qlib-first, dashboard-first quant trading platform."
+ readme = "README.md"
+ requires-python = ">=3.11"
+diff --git a/scripts/build_qlib_dataset.py b/scripts/build_qlib_dataset.py
+index baa70f0..e7e1a3d 100644
+--- a/scripts/build_qlib_dataset.py
++++ b/scripts/build_qlib_dataset.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import argparse
++from pathlib import Path
+ 
+ from mytradingbot.orchestration.service import TradingPlatformService
+ 
+@@ -8,13 +9,17 @@ from mytradingbot.orchestration.service import TradingPlatformService
+ def build_parser() -> argparse.ArgumentParser:
+     parser = argparse.ArgumentParser(description="Build the repo-local qlib dataset artifact.")
+     parser.add_argument("--strategy", default="scalping")
++    parser.add_argument("--symbols", nargs="*", default=None)
++    parser.add_argument("--symbols-file", type=Path, default=None)
+     return parser
+ 
+ 
+ def main() -> int:
+     args = build_parser().parse_args()
+     result = TradingPlatformService.bootstrap_default().build_dataset(
+-        strategy_name=args.strategy
++        strategy_name=args.strategy,
++        symbols=args.symbols,
++        symbols_file=args.symbols_file,
+     )
+     print(result.model_dump_json(indent=2))
+     return 0
+diff --git a/scripts/goalcheck.py b/scripts/goalcheck.py
+index 16740e2..2c4bb91 100644
+--- a/scripts/goalcheck.py
++++ b/scripts/goalcheck.py
+@@ -30,6 +30,9 @@ def main() -> int:
+         "phase_3_status": capabilities.phase_3.status,
+         "phase_4_status": capabilities.phase_4.status,
+         "prediction_status_reason": service.get_prediction_status().reason,
++        "institutional_pipeline_present": (project_root / "scripts/run_institutional_pipeline.py").exists(),
++        "alpha_training_present": (project_root / "scripts/run_alpha_robust_training.py").exists(),
++        "top_liquidity_universe_script_present": (project_root / "scripts/generate_top_liquidity_universe.py").exists(),
+         "diagnostics_service_present": True,
+         "llm_advisory_present": True,
+     }
+diff --git a/scripts/run_daily_maintenance.py b/scripts/run_daily_maintenance.py
+index c57e26b..b493a68 100644
+--- a/scripts/run_daily_maintenance.py
++++ b/scripts/run_daily_maintenance.py
+@@ -1,6 +1,9 @@
+ from __future__ import annotations
+ 
+ import argparse
++import logging
++from datetime import datetime
++from pathlib import Path
+ 
+ from mytradingbot.orchestration.service import TradingPlatformService
+ 
+@@ -15,18 +18,37 @@ def build_parser() -> argparse.ArgumentParser:
+     )
+     parser.add_argument("--strategy", default="scalping")
+     parser.add_argument("--symbols", nargs="*", default=None)
++    parser.add_argument("--symbols-file", type=Path, default=None)
+     parser.add_argument("--timeframes", nargs="*", default=None)
++    parser.add_argument("--start-date", type=str, default=None)
++    parser.add_argument("--end-date", type=str, default=None)
++    parser.add_argument("--normalize-only", action="store_true")
++    parser.add_argument("--verbose", action="store_true")
+     return parser
+ 
+ 
++def _parse_datetime(value: str | None) -> datetime | None:
++    if value is None:
++        return None
++    parsed = datetime.fromisoformat(value)
++    return parsed
++
++
+ def main() -> int:
+     args = build_parser().parse_args()
++    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+     service = TradingPlatformService.bootstrap_default()
+     full_refresh = args.action == "download"
++    start_at = _parse_datetime(args.start_date)
++    end_at = _parse_datetime(args.end_date)
+     data_result = service.download_market_data(
+         symbols=args.symbols,
++        symbols_file=args.symbols_file,
+         timeframes=args.timeframes,
++        start_at=start_at,
++        end_at=end_at,
+         full_refresh=full_refresh,
++        normalize_only=args.normalize_only,
+     )
+     payload = {
+         "capabilities": service.get_capabilities().model_dump(mode="json"),
+diff --git a/scripts/validate_system.py b/scripts/validate_system.py
+index a5e562c..b090c6d 100644
+--- a/scripts/validate_system.py
++++ b/scripts/validate_system.py
+@@ -14,6 +14,12 @@ def main() -> int:
+         "strategies": service.get_strategy_names(),
+         "pages_present": (project_root / "app/pages/01_Dashboard.py").exists(),
+         "live_trading_enabled": service.settings.runtime.live_trading_enabled,
++        "institutional_pipeline_present": (project_root / "scripts/run_institutional_pipeline.py").exists(),
++        "alpha_training_present": (project_root / "scripts/run_alpha_robust_training.py").exists(),
++        "universe_generator_present": (project_root / "scripts/generate_top_liquidity_universe.py").exists(),
++        "runtime_state_store_path": str(
++            service.settings.paths.state_dir / service.settings.runtime_safety.sqlite_filename
++        ),
+         "phase_1_status": capabilities.phase_1.status,
+         "phase_2_status": capabilities.phase_2.status,
+         "phase_3_status": capabilities.phase_3.status,
+diff --git a/src/mytradingbot/brokers/paper.py b/src/mytradingbot/brokers/paper.py
+index 8fa3e72..0b25538 100644
+--- a/src/mytradingbot/brokers/paper.py
++++ b/src/mytradingbot/brokers/paper.py
+@@ -16,6 +16,7 @@ from mytradingbot.core.models import (
+     MarketSnapshot,
+     PositionSnapshot,
+ )
++from mytradingbot.runtime.store import RuntimeStateStore
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -23,11 +24,21 @@ logger = logging.getLogger(__name__)
+ class PaperBroker(BaseBroker):
+     """Simple in-memory paper broker with immediate simulated fills."""
+ 
+-    def __init__(self) -> None:
++    def __init__(self, *, runtime_store: RuntimeStateStore | None = None) -> None:
++        self.runtime_store = runtime_store
+         self._orders: list[BrokerOrder] = []
+         self._fills: list[FillEvent] = []
+         self._positions: dict[str, PositionSnapshot] = {}
+         self._brackets: dict[str, BrokerBracketState] = {}
++        if self.runtime_store is not None:
++            self._orders = self.runtime_store.list_orders()
++            self._fills = self.runtime_store.list_fills()
++            self._positions = {
++                position.symbol: position for position in self.runtime_store.list_positions()
++            }
++            self._brackets = {
++                bracket.symbol: bracket for bracket in self.runtime_store.list_brackets()
++            }
+ 
+     def submit_order(self, request: ExecutionRequest) -> ExecutionResult:
+         fill_price = request.limit_price or 0.0
+@@ -36,6 +47,7 @@ class PaperBroker(BaseBroker):
+             side=request.side,
+             quantity=request.quantity,
+             mode=request.mode,
++            client_order_id=request.client_order_id,
+             status="filled",
+             avg_fill_price=fill_price,
+             metadata={"strategy_name": request.strategy_name},
+@@ -58,6 +70,7 @@ class PaperBroker(BaseBroker):
+ 
+         self._orders.append(order)
+         self._fills.append(fill)
++        self._persist_state(order=order, fill=fill, position=position, bracket_state=bracket_state)
+ 
+         return ExecutionResult(
+             request=request,
+@@ -180,6 +193,7 @@ class PaperBroker(BaseBroker):
+ 
+         self._orders.append(order)
+         self._fills.append(fill)
++        self._persist_state(order=order, fill=fill, position=updated_position, bracket_state=bracket)
+         return ExecutionResult(
+             reason=reason,
+             request=request,
+@@ -189,3 +203,17 @@ class PaperBroker(BaseBroker):
+             bracket_state=bracket,
+             realized_pnl=realized_pnl,
+         )
++
++    def _persist_state(
++        self,
++        *,
++        order: BrokerOrder,
++        fill: FillEvent,
++        position: PositionSnapshot,
++        bracket_state: BrokerBracketState | None,
++    ) -> None:
++        if self.runtime_store is None:
++            return
++        self.runtime_store.record_position(position)
++        if bracket_state is not None:
++            self.runtime_store.record_bracket(bracket_state)
+diff --git a/src/mytradingbot/core/models.py b/src/mytradingbot/core/models.py
+index ca8f8b6..77f69a7 100644
+--- a/src/mytradingbot/core/models.py
++++ b/src/mytradingbot/core/models.py
+@@ -265,6 +265,7 @@ class ExecutionRequest(BaseModel):
+     strategy_name: str
+     mode: RuntimeMode
+     limit_price: float | None = None
++    client_order_id: str | None = None
+     bracket_plan: BracketPlan | None = None
+     metadata: dict[str, Any] = Field(default_factory=dict)
+ 
+@@ -277,6 +278,11 @@ class ExecutionRequest(BaseModel):
+             strategy_name=intent.strategy_name,
+             mode=mode,
+             limit_price=intent.limit_price,
++            client_order_id=(
++                str(intent.metadata.get("client_order_id"))
++                if intent.metadata.get("client_order_id") is not None
++                else None
++            ),
+             bracket_plan=intent.bracket_plan,
+             metadata=intent.metadata,
+         )
+@@ -297,6 +303,7 @@ class BrokerOrder(BaseModel):
+     side: Literal["buy", "sell"]
+     quantity: float
+     mode: RuntimeMode
++    client_order_id: str | None = None
+     status: Literal["accepted", "filled", "rejected"] = "accepted"
+     submitted_at: datetime = Field(default_factory=utc_now)
+     avg_fill_price: float | None = None
+diff --git a/src/mytradingbot/core/paths.py b/src/mytradingbot/core/paths.py
+index be45f01..873b42c 100644
+--- a/src/mytradingbot/core/paths.py
++++ b/src/mytradingbot/core/paths.py
+@@ -21,10 +21,20 @@ class RepoPaths(BaseModel):
+     snapshots_dir: Path
+     qlib_dir: Path
+     runtime_dir: Path
++    universe_dir: Path
++    ledger_dir: Path
++    state_dir: Path
+     docs_dir: Path
+     logs_dir: Path
+     models_dir: Path
+     reports_dir: Path
++    reports_data_dir: Path
++    reports_universe_dir: Path
++    reports_training_dir: Path
++    reports_pipeline_dir: Path
++    reports_signals_dir: Path
++    reports_paper_trading_dir: Path
++    reports_analytics_dir: Path
+     scripts_dir: Path
+     tests_dir: Path
+ 
+@@ -45,10 +55,20 @@ class RepoPaths(BaseModel):
+             snapshots_dir=repo_root / "data" / "snapshots",
+             qlib_dir=repo_root / "data" / "qlib",
+             runtime_dir=repo_root / "data" / "runtime",
++            universe_dir=repo_root / "data" / "universe",
++            ledger_dir=repo_root / "data" / "ledger",
++            state_dir=repo_root / "data" / "state",
+             docs_dir=repo_root / "docs",
+             logs_dir=repo_root / "logs",
+             models_dir=repo_root / "models",
+             reports_dir=repo_root / "reports",
++            reports_data_dir=repo_root / "reports" / "data",
++            reports_universe_dir=repo_root / "reports" / "universe",
++            reports_training_dir=repo_root / "reports" / "training",
++            reports_pipeline_dir=repo_root / "reports" / "pipeline",
++            reports_signals_dir=repo_root / "reports" / "signals",
++            reports_paper_trading_dir=repo_root / "reports" / "paper_trading",
++            reports_analytics_dir=repo_root / "reports" / "analytics",
+             scripts_dir=repo_root / "scripts",
+             tests_dir=repo_root / "tests",
+         )
+@@ -63,8 +83,18 @@ class RepoPaths(BaseModel):
+             self.snapshots_dir,
+             self.qlib_dir,
+             self.runtime_dir,
++            self.universe_dir,
++            self.ledger_dir,
++            self.state_dir,
+             self.logs_dir,
+             self.models_dir,
+             self.reports_dir,
++            self.reports_data_dir,
++            self.reports_universe_dir,
++            self.reports_training_dir,
++            self.reports_pipeline_dir,
++            self.reports_signals_dir,
++            self.reports_paper_trading_dir,
++            self.reports_analytics_dir,
+         ):
+             path.mkdir(parents=True, exist_ok=True)
+diff --git a/src/mytradingbot/core/settings.py b/src/mytradingbot/core/settings.py
+index e57ac69..7505532 100644
+--- a/src/mytradingbot/core/settings.py
++++ b/src/mytradingbot/core/settings.py
+@@ -78,14 +78,91 @@ class DataPipelineSettings(BaseModel):
+     request_throttle_seconds: float = 0.25
+     processing_workers: int = 1
+     parquet_compression: str = "snappy"
+-    symbol_chunk_size: int = 50
++    symbol_chunk_size: int = 5
+     qlib_symbol_chunk_size: int = 25
+     qlib_prediction_chunk_size: int = 25
+     snapshot_timeframe: str = "1m"
+     incremental_overlap_minutes: int = 5
+     scalping_lookback_bars: int = 30
++    full_refresh_1m_trading_days: int = 90
++    full_refresh_5m_trading_days: int = 180
++    full_refresh_15m_trading_days: int = 252
++    full_refresh_1d_trading_days: int = 756
++    time_chunk_1m_trading_days: int = 5
++    time_chunk_5m_trading_days: int = 20
++    time_chunk_15m_trading_days: int = 30
++    time_chunk_1d_trading_days: int = 252
++    require_complete_symbol_coverage: bool = True
++    allow_normalize_without_download: bool = False
+     default_symbols: list[str] = Field(default_factory=lambda: ["AAPL", "MSFT", "NVDA"])
+ 
++    def default_full_refresh_lookback(self, timeframe: str) -> int:
++        mapping = {
++            "1m": self.full_refresh_1m_trading_days,
++            "5m": self.full_refresh_5m_trading_days,
++            "15m": self.full_refresh_15m_trading_days,
++            "1d": self.full_refresh_1d_trading_days,
++        }
++        return mapping[timeframe]
++
++    def default_time_chunk_lookback(self, timeframe: str) -> int:
++        mapping = {
++            "1m": self.time_chunk_1m_trading_days,
++            "5m": self.time_chunk_5m_trading_days,
++            "15m": self.time_chunk_15m_trading_days,
++            "1d": self.time_chunk_1d_trading_days,
++        }
++        return mapping[timeframe]
++
++
++class UniverseSettings(BaseModel):
++    """Universe-generation defaults."""
++
++    top_n: int = 800
++    lookback_days: int = 30
++    minimum_price: float = 5.0
++    minimum_average_volume: int = 500_000
++    minimum_coverage_ratio: float = 0.8
++    asset_class: str = "us_equity"
++    include_etfs: bool = False
++
++
++class FreshnessSettings(BaseModel):
++    """Artifact freshness thresholds."""
++
++    predictions_max_age_minutes: int = 60
++    market_snapshot_max_age_minutes: int = 15
++    dataset_max_age_hours: int = 24
++    model_max_age_hours: int = 24
++
++
++class RuntimeSafetySettings(BaseModel):
++    """Persistent runtime-state and circuit-breaker defaults."""
++
++    sqlite_filename: str = "institutional_runtime.sqlite3"
++    max_consecutive_broker_rejects: int = 3
++    max_consecutive_execution_failures: int = 3
++    max_consecutive_replace_stop_failures: int = 3
++    supervised_loop_interval_seconds: int = 60
++
++
++class TrainingSettings(BaseModel):
++    """Alpha-robust training defaults."""
++
++    minimum_eligible_symbols: int = 150
++    minimum_label_coverage_ratio: float = 0.7
++    minimum_recent_test_rows: int = 500
++    minimum_cross_sectional_rows: int = 5_000
++    timeframe_minimum_trading_days: dict[str, int] = Field(
++        default_factory=lambda: {"1m": 60, "5m": 120, "15m": 180, "1d": 504}
++    )
++    timeframe_preferred_trading_days: dict[str, int] = Field(
++        default_factory=lambda: {"1m": 90, "5m": 180, "15m": 252, "1d": 756}
++    )
++    timeframe_minimum_coverage_ratio: dict[str, float] = Field(
++        default_factory=lambda: {"1m": 0.8, "5m": 0.85, "15m": 0.85, "1d": 0.9}
++    )
++
+ 
+ class QlibSettings(BaseModel):
+     """Qlib workflow defaults."""
+@@ -151,6 +228,10 @@ class AppSettings(BaseSettings):
+     strategies: StrategySettings = StrategySettings()
+     broker: BrokerSettings = BrokerSettings()
+     data: DataPipelineSettings = DataPipelineSettings()
++    universe: UniverseSettings = UniverseSettings()
++    freshness: FreshnessSettings = FreshnessSettings()
++    runtime_safety: RuntimeSafetySettings = RuntimeSafetySettings()
++    training: TrainingSettings = TrainingSettings()
+     qlib: QlibSettings = QlibSettings()
+     scalping: ScalpingBracketSettings = ScalpingBracketSettings()
+     llm: LLMSettings = LLMSettings()
+diff --git a/src/mytradingbot/orchestration/service.py b/src/mytradingbot/orchestration/service.py
+index 754f4ff..a40a4a6 100644
+--- a/src/mytradingbot/orchestration/service.py
++++ b/src/mytradingbot/orchestration/service.py
+@@ -3,6 +3,8 @@
+ from __future__ import annotations
+ 
+ import logging
++from datetime import datetime
++from pathlib import Path
+ 
+ from mytradingbot.brokers.paper import PaperBroker
+ from mytradingbot.core.capabilities import CapabilityService, CapabilitySnapshot
+@@ -18,10 +20,14 @@ from mytradingbot.core.models import (
+ from mytradingbot.core.settings import AppSettings
+ from mytradingbot.data.pipeline import MarketDataPipeline
+ from mytradingbot.data.service import MarketDataService
++from mytradingbot.diagnostics.service import DiagnosticsService
+ from mytradingbot.execution.service import ExecutionEngine
+ from mytradingbot.qlib_engine.service import QlibWorkflowService
+ from mytradingbot.risk.service import RiskEngine
++from mytradingbot.reporting.service import ReportingService
++from mytradingbot.runtime.service import RuntimeStateService
+ from mytradingbot.strategies.registry import StrategyRegistry
++from mytradingbot.universe.storage import UniverseStorage
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -39,6 +45,9 @@ class TradingPlatformService:
+         strategy_registry: StrategyRegistry | None = None,
+         risk_engine: RiskEngine | None = None,
+         execution_engine: ExecutionEngine | None = None,
++        runtime_state_service: RuntimeStateService | None = None,
++        reporting_service: ReportingService | None = None,
++        diagnostics_service: DiagnosticsService | None = None,
+         broker: PaperBroker | None = None,
+     ) -> None:
+         self.settings = settings or AppSettings()
+@@ -50,8 +59,16 @@ class TradingPlatformService:
+         self.capability_service = CapabilityService(settings=self.settings)
+         self.strategy_registry = strategy_registry or StrategyRegistry.build_default()
+         self.risk_engine = risk_engine or RiskEngine()
+-        self.broker = broker or PaperBroker()
++        self.runtime_state_service = runtime_state_service or RuntimeStateService(
++            settings=self.settings
++        )
++        self.broker = broker or PaperBroker(
++            runtime_store=self.runtime_state_service.store
++        )
+         self.execution_engine = execution_engine or ExecutionEngine(broker=self.broker)
++        self.universe_storage = UniverseStorage(settings=self.settings)
++        self.reporting_service = reporting_service or ReportingService()
++        self.diagnostics_service = diagnostics_service or DiagnosticsService()
+         self.last_session_result: SessionResult | None = None
+ 
+     @classmethod
+@@ -91,13 +108,21 @@ class TradingPlatformService:
+         self,
+         *,
+         symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
+         timeframes: list[str] | None = None,
++        start_at: datetime | None = None,
++        end_at: datetime | None = None,
+         full_refresh: bool = False,
++        normalize_only: bool = False,
+     ):
++        resolved_symbols = self.resolve_symbols(symbols=symbols, symbols_file=symbols_file)
+         return self.data_pipeline.download_update_normalize_and_snapshot(
+-            symbols=symbols,
++            symbols=resolved_symbols,
+             timeframes=timeframes,
++            start_at=start_at,
++            end_at=end_at,
+             full_refresh=full_refresh,
++            normalize_only=normalize_only,
+         )
+ 
+     def refresh_predictions(self, *, strategy_name: str | None = None):
+@@ -106,8 +131,30 @@ class TradingPlatformService:
+     def train_models(self, *, strategy_name: str | None = None):
+         return self.qlib_service.train_models(strategy_name=strategy_name)
+ 
+-    def build_dataset(self, *, strategy_name: str | None = None):
+-        return self.qlib_service.build_dataset(strategy_name=strategy_name)
++    def build_dataset(
++        self,
++        *,
++        strategy_name: str | None = None,
++        symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
++    ):
++        resolved_symbols = self.resolve_symbols(symbols=symbols, symbols_file=symbols_file)
++        return self.qlib_service.build_dataset(
++            strategy_name=strategy_name,
++            symbols=resolved_symbols,
++        )
++
++    def resolve_symbols(
++        self,
++        *,
++        symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
++    ) -> list[str] | None:
++        if symbols:
++            return sorted({symbol.strip().upper() for symbol in symbols if symbol and symbol.strip()})
++        if symbols_file is None:
++            return None
++        return self.universe_storage.load_symbols(symbols_file)
+ 
+     def run_session(
+         self,
+@@ -116,12 +163,102 @@ class TradingPlatformService:
+         mode: RuntimeMode | str,
+     ) -> SessionResult:
+         normalized_mode = mode if isinstance(mode, RuntimeMode) else RuntimeMode(mode)
+-        summary = SessionSummary(strategy_name=strategy_name, mode=normalized_mode)
++        context = self.runtime_state_service.create_session_context(
++            strategy=strategy_name,
++            mode=normalized_mode,
++        )
++        summary = SessionSummary(
++            session_id=context.session_id,
++            strategy_name=strategy_name,
++            mode=normalized_mode,
++        )
++        incidents = []
+ 
+         prediction_result = self.qlib_service.load_predictions()
++        market_status = self.runtime_state_service.market_snapshot_status(
++            market_snapshot_path=self.market_data_service.market_snapshot_path
++        )
++        if self.runtime_state_service.has_circuit_breaker_block():
++            summary.status = "failed"
++            summary.completed_at = utc_now()
++            incidents.append(
++                self.runtime_state_service.build_incident(
++                    context=context,
++                    code="execution_guard_blocked",
++                    summary="Circuit breaker is active; new entries are halted.",
++                    severity="critical",
++                )
++            )
++            result = SessionResult(
++                session_summary=summary,
++                prediction_status=prediction_result.status,
++                health_status=HealthStatus(
++                    summary="Runtime circuit breaker halted the session.",
++                    ok=False,
++                    issues=["execution_guard_blocked"],
++                ),
++                rejection_reasons=["execution_guard_blocked"],
++            )
++            result.post_session_report = self.reporting_service.build_post_session_review(result)
++            self.runtime_state_service.write_session_artifacts(
++                context=context,
++                audits=[],
++                orders=[],
++                fills=[],
++                positions=[],
++                incidents=incidents,
++                notes=result.post_session_report.notes,
++            )
++            self.last_session_result = result
++            return result
++
++        if not market_status.is_ready:
++            summary.status = "failed"
++            summary.completed_at = utc_now()
++            incidents.append(
++                self.runtime_state_service.build_incident(
++                    context=context,
++                    code="stale_market_snapshot" if market_status.reason == "stale" else "missing_market_data",
++                    summary="Market snapshot artifact is unavailable for trading.",
++                    detail=market_status.reason,
++                    severity="error",
++                )
++            )
++            result = SessionResult(
++                session_summary=summary,
++                prediction_status=prediction_result.status,
++                health_status=HealthStatus(
++                    summary="Market snapshot unavailable.",
++                    ok=False,
++                    issues=market_status.guidance,
++                ),
++                rejection_reasons=[market_status.reason or "market_snapshot_unavailable"],
++            )
++            result.post_session_report = self.reporting_service.build_post_session_review(result)
++            self.runtime_state_service.write_session_artifacts(
++                context=context,
++                audits=[],
++                orders=[],
++                fills=[],
++                positions=[],
++                incidents=incidents,
++                notes=result.post_session_report.notes,
++            )
++            self.last_session_result = result
++            return result
++
+         if not prediction_result.ok:
+             summary.status = "failed"
+             summary.completed_at = utc_now()
++            incidents.append(
++                self.runtime_state_service.build_incident(
++                    context=context,
++                    code="stale_predictions" if prediction_result.status.reason == "stale" else "no_candidate_from_predictions",
++                    summary="Prediction artifact unavailable for trading.",
++                    detail=prediction_result.message,
++                    severity="error",
++                )
++            )
+             result = SessionResult(
+                 session_summary=summary,
+                 prediction_status=prediction_result.status,
+@@ -132,6 +269,16 @@ class TradingPlatformService:
+                 ),
+                 rejection_reasons=[prediction_result.message],
+             )
++            result.post_session_report = self.reporting_service.build_post_session_review(result)
++            self.runtime_state_service.write_session_artifacts(
++                context=context,
++                audits=[],
++                orders=[],
++                fills=[],
++                positions=[],
++                incidents=incidents,
++                notes=result.post_session_report.notes,
++            )
+             self.last_session_result = result
+             return result
+ 
+@@ -142,6 +289,15 @@ class TradingPlatformService:
+         except (FileNotFoundError, KeyError, ValueError) as exc:
+             summary.status = "failed"
+             summary.completed_at = utc_now()
++            incidents.append(
++                self.runtime_state_service.build_incident(
++                    context=context,
++                    code="missing_market_data",
++                    summary="Market data unavailable.",
++                    detail=str(exc),
++                    severity="error",
++                )
++            )
+             result = SessionResult(
+                 session_summary=summary,
+                 prediction_status=prediction_result.status,
+@@ -152,64 +308,184 @@ class TradingPlatformService:
+                 ),
+                 rejection_reasons=[str(exc)],
+             )
++            result.post_session_report = self.reporting_service.build_post_session_review(result)
++            self.runtime_state_service.write_session_artifacts(
++                context=context,
++                audits=[],
++                orders=[],
++                fills=[],
++                positions=[],
++                incidents=incidents,
++                notes=result.post_session_report.notes,
++            )
+             self.last_session_result = result
+             return result
+ 
++        exit_results = []
++        session_orders = []
++        session_fills = []
++        for signal in signals:
++            for exit_result in self.broker.process_market_snapshot(signal.market):
++                self.runtime_state_service.record_execution_result(
++                    context=context,
++                    strategy_name=strategy_name,
++                    result=exit_result,
++                )
++                exit_results.append(exit_result)
++                if exit_result.order is not None:
++                    session_orders.append(exit_result.order)
++                session_fills.extend(exit_result.fills)
++
++        if signals and any(
++            self.runtime_state_service.minutes_to_close(signal.market.timestamp)
++            <= self.settings.scalping.max_holding_seconds // 60
++            for signal in signals
++        ):
++            for flatten_result in self.broker.flatten_open_brackets(reason="near_close_flatten"):
++                self.runtime_state_service.record_execution_result(
++                    context=context,
++                    strategy_name=strategy_name,
++                    result=flatten_result,
++                )
++                exit_results.append(flatten_result)
++                if flatten_result.order is not None:
++                    session_orders.append(flatten_result.order)
++                session_fills.extend(flatten_result.fills)
++
++        signals = self.runtime_state_service.enrich_signal_metadata(
++            strategy_name=strategy_name,
++            signals=signals,
++        )
+         strategy = self.strategy_registry.get(strategy_name)
+         attempts: list[TradeAttemptTrace] = []
++        audits = []
+         rejection_reasons: list[str] = []
+ 
+         for signal in signals:
+             trace = TradeAttemptTrace.for_symbol(signal.symbol, strategy_name)
+             trace.signal = signal
++            try:
++                strategy_decision = strategy.evaluate(signal)
++                trace.strategy_outcome = strategy_decision
++                if not strategy_decision.should_trade or strategy_decision.intent is None:
++                    rejection_reasons.append(strategy_decision.reason or "strategy_rejected")
++                    attempts.append(trace)
++                    audits.append(
++                        self.runtime_state_service.build_decision_audit(
++                            context=context,
++                            signal=signal,
++                            trace=trace,
++                            prediction_status=prediction_result.status,
++                            market_status=market_status,
++                        )
++                    )
++                    continue
++                strategy_decision.intent.metadata["client_order_id"] = (
++                    self.runtime_state_service.deterministic_client_order_id(
++                        strategy_name=strategy_name,
++                        signal=signal,
++                        side=strategy_decision.intent.side,
++                    )
++                )
++                strategy_decision.intent.metadata["position_exists"] = signal.metadata.get(
++                    "position_exists",
++                    False,
++                )
++                strategy_decision.intent.metadata["circuit_breaker_blocked"] = (
++                    self.runtime_state_service.has_circuit_breaker_block()
++                    or self.runtime_state_service.store.has_client_order_id(
++                        strategy_decision.intent.metadata["client_order_id"]
++                    )
++                )
++                if strategy_decision.intent.bracket_plan is not None:
++                    plan = strategy_decision.intent.bracket_plan
++                    trace.notes.append(
++                        "Bracket plan: "
++                        f"entry={plan.planned_entry_price:.4f}, "
++                        f"stop={plan.planned_stop_loss_price:.4f}, "
++                        f"target={plan.planned_take_profit_price:.4f}, "
++                        f"fees={plan.estimated_fees:.4f}, "
++                        f"slippage={plan.estimated_slippage:.4f}, "
++                        f"net_rr={plan.reward_risk_ratio:.4f}"
++                    )
+ 
+-            strategy_decision = strategy.evaluate(signal)
+-            trace.strategy_outcome = strategy_decision
+-            if not strategy_decision.should_trade or strategy_decision.intent is None:
+-                rejection_reasons.append(strategy_decision.reason or "strategy_rejected")
+-                attempts.append(trace)
+-                continue
+-            if strategy_decision.intent.bracket_plan is not None:
+-                plan = strategy_decision.intent.bracket_plan
+-                trace.notes.append(
+-                    "Bracket plan: "
+-                    f"entry={plan.planned_entry_price:.4f}, "
+-                    f"stop={plan.planned_stop_loss_price:.4f}, "
+-                    f"target={plan.planned_take_profit_price:.4f}, "
+-                    f"fees={plan.estimated_fees:.4f}, "
+-                    f"slippage={plan.estimated_slippage:.4f}, "
+-                    f"net_rr={plan.reward_risk_ratio:.4f}"
++                risk_decision = self.risk_engine.evaluate(
++                    intent=strategy_decision.intent,
++                    mode=normalized_mode if normalized_mode is not RuntimeMode.DRY_RUN else RuntimeMode.PAPER,
+                 )
++                trace.risk_outcome = risk_decision
++                if not risk_decision.approved:
++                    rejection_reasons.append(risk_decision.reason or "risk_rejected")
++                    attempts.append(trace)
++                    audits.append(
++                        self.runtime_state_service.build_decision_audit(
++                            context=context,
++                            signal=signal,
++                            trace=trace,
++                            prediction_status=prediction_result.status,
++                            market_status=market_status,
++                        )
++                    )
++                    continue
+ 
+-            risk_decision = self.risk_engine.evaluate(
+-                intent=strategy_decision.intent,
+-                mode=normalized_mode if normalized_mode is not RuntimeMode.DRY_RUN else RuntimeMode.PAPER,
+-            )
+-            trace.risk_outcome = risk_decision
+-            if not risk_decision.approved:
+-                rejection_reasons.append(risk_decision.reason or "risk_rejected")
++                execution_result = self.execution_engine.execute(
++                    risk_decision,
++                    mode=normalized_mode,
++                )
++                trace.execution_request = execution_result.request
++                trace.execution_outcome = execution_result
++                if execution_result.reason and execution_result.execution_skipped:
++                    rejection_reasons.append(execution_result.reason)
++                if execution_result.bracket_state is not None:
++                    trace.notes.append(
++                        "Bracket state: "
++                        f"status={execution_result.bracket_state.status}, "
++                        f"exit_reason={execution_result.bracket_state.exit_reason}, "
++                        f"realized_pnl={execution_result.bracket_state.realized_pnl}"
++                    )
++                self.runtime_state_service.record_execution_result(
++                    context=context,
++                    strategy_name=strategy_name,
++                    result=execution_result,
++                )
++                if execution_result.order is not None:
++                    session_orders.append(execution_result.order)
++                session_fills.extend(execution_result.fills)
+                 attempts.append(trace)
+-                continue
+-
+-            execution_result = self.execution_engine.execute(
+-                risk_decision,
+-                mode=normalized_mode,
+-            )
+-            trace.execution_request = execution_result.request
+-            trace.execution_outcome = execution_result
+-            if execution_result.reason and execution_result.execution_skipped:
+-                rejection_reasons.append(execution_result.reason)
+-            if execution_result.bracket_state is not None:
+-                trace.notes.append(
+-                    "Bracket state: "
+-                    f"status={execution_result.bracket_state.status}, "
+-                    f"exit_reason={execution_result.bracket_state.exit_reason}, "
+-                    f"realized_pnl={execution_result.bracket_state.realized_pnl}"
++                audits.append(
++                    self.runtime_state_service.build_decision_audit(
++                        context=context,
++                        signal=signal,
++                        trace=trace,
++                        prediction_status=prediction_result.status,
++                        market_status=market_status,
++                    )
++                )
++            except Exception as exc:  # pragma: no cover - defensive session isolation
++                trace.notes.append(str(exc))
++                attempts.append(trace)
++                rejection_reasons.append("strategy_exception")
++                incidents.append(
++                    self.runtime_state_service.build_incident(
++                        context=context,
++                        code="strategy_exception",
++                        summary=f"Per-symbol exception for {signal.symbol}.",
++                        detail=str(exc),
++                        severity="error",
++                    )
++                )
++                audits.append(
++                    self.runtime_state_service.build_decision_audit(
++                        context=context,
++                        signal=signal,
++                        trace=trace,
++                        prediction_status=prediction_result.status,
++                        market_status=market_status,
++                    )
+                 )
+-            attempts.append(trace)
+ 
+-        orders = [] if normalized_mode is RuntimeMode.DRY_RUN else self.broker.list_orders()
+-        fills = [] if normalized_mode is RuntimeMode.DRY_RUN else self.broker.list_fills()
++        orders = [] if normalized_mode is RuntimeMode.DRY_RUN else session_orders
++        fills = [] if normalized_mode is RuntimeMode.DRY_RUN else session_fills
+         positions = [] if normalized_mode is RuntimeMode.DRY_RUN else self.broker.list_positions()
+ 
+         summary.trade_count = len(orders)
+@@ -232,5 +508,24 @@ class TradingPlatformService:
+             positions=positions,
+             rejection_reasons=rejection_reasons,
+         )
++        if summary.trade_count == 0 and summary.status == "completed":
++            result.diagnostics = self.diagnostics_service.build_no_trade_report(result)
++        result.post_session_report = self.reporting_service.build_post_session_review(result)
++        self.runtime_state_service.write_session_artifacts(
++            context=context,
++            audits=audits,
++            orders=orders,
++            fills=fills,
++            positions=positions,
++            incidents=incidents,
++            notes=[
++                *result.post_session_report.notes,
++                *[
++                    f"managed_exit={execution.reason}"
++                    for execution in exit_results
++                    if execution.reason
++                ],
++            ],
++        )
+         self.last_session_result = result
+         return result
+diff --git a/src/mytradingbot/qlib_engine/dataset.py b/src/mytradingbot/qlib_engine/dataset.py
+index 3755af2..bf88cb5 100644
+--- a/src/mytradingbot/qlib_engine/dataset.py
++++ b/src/mytradingbot/qlib_engine/dataset.py
+@@ -33,14 +33,18 @@ def build_feature_dataset(
+     settings: AppSettings,
+     strategy_name: str,
+     store: ParquetBarStore | None = None,
++    symbols: list[str] | None = None,
+ ) -> pd.DataFrame:
+     """Build a qlib-ready feature dataset from normalized parquet bars."""
+ 
+     store = store or ParquetBarStore(settings=settings)
+     profile = strategy_dataset_profile(strategy_name, settings)
+     frames: list[pd.DataFrame] = []
++    allowed_symbols = {symbol.strip().upper() for symbol in (symbols or []) if symbol}
+ 
+     for file_path in store.iter_normalized_files(timeframe=profile.timeframe):
++        if allowed_symbols and file_path.stem.upper() not in allowed_symbols:
++            continue
+         canonical = pd.read_parquet(file_path)
+         qlib_ready = transform_canonical_to_qlib_ready(canonical)
+         features = _engineer_features(qlib_ready, profile.label_horizon_bars)
+diff --git a/src/mytradingbot/qlib_engine/service.py b/src/mytradingbot/qlib_engine/service.py
+index fcb7baa..4583a3c 100644
+--- a/src/mytradingbot/qlib_engine/service.py
++++ b/src/mytradingbot/qlib_engine/service.py
+@@ -29,7 +29,7 @@ class QlibWorkflowService:
+         *,
+         pyqlib_available: bool | None = None,
+         predictions_path: Path | None = None,
+-        freshness_threshold_minutes: int = 60,
++        freshness_threshold_minutes: int | None = None,
+         workflow_adapter: QlibWorkflowAdapter | None = None,
+     ) -> None:
+         self.settings = settings or AppSettings()
+@@ -37,7 +37,11 @@ class QlibWorkflowService:
+             self._detect_pyqlib() if pyqlib_available is None else pyqlib_available
+         )
+         self.predictions_path = predictions_path or self.settings.prediction_artifact_path()
+-        self.freshness_threshold_minutes = freshness_threshold_minutes
++        self.freshness_threshold_minutes = (
++            freshness_threshold_minutes
++            if freshness_threshold_minutes is not None
++            else self.settings.freshness.predictions_max_age_minutes
++        )
+         self.workflow_adapter = workflow_adapter or PyQlibWorkflowAdapter()
+         self.store = ParquetBarStore(settings=self.settings)
+         self._qlib_initialized = False
+@@ -45,12 +49,20 @@ class QlibWorkflowService:
+     def _detect_pyqlib(self) -> bool:
+         return importlib.util.find_spec("qlib") is not None
+ 
+-    def build_dataset(self, strategy_name: str | None = None) -> QlibOperationResult:
++    def build_dataset(
++        self,
++        strategy_name: str | None = None,
++        *,
++        symbols: list[str] | None = None,
++    ) -> QlibOperationResult:
+         if not self.pyqlib_available:
+             return self._missing_pyqlib_result("dataset build")
+         self._initialize_pyqlib_runtime()
+ 
+-        normalized_dataset = self._load_feature_dataset(strategy_name=strategy_name)
++        normalized_dataset = self._load_feature_dataset(
++            strategy_name=strategy_name,
++            symbols=symbols,
++        )
+         if normalized_dataset.empty:
+             return QlibOperationResult(
+                 ok=False,
+@@ -77,7 +89,10 @@ class QlibWorkflowService:
+             ok=True,
+             message="Qlib-ready dataset artifact built from repo-local normalized parquet data.",
+             artifacts=[str(dataset_path)],
+-            metadata={"rows": len(normalized_dataset)},
++            metadata={
++                "rows": len(normalized_dataset),
++                "symbols": sorted({str(symbol).upper() for symbol in (symbols or [])}),
++            },
+         )
+ 
+     def train_models(self, strategy_name: str | None = None) -> QlibOperationResult:
+@@ -240,12 +255,18 @@ class QlibWorkflowService:
+     def _now_timestamp() -> float:
+         return time.time()
+ 
+-    def _load_feature_dataset(self, *, strategy_name: str | None) -> pd.DataFrame:
++    def _load_feature_dataset(
++        self,
++        *,
++        strategy_name: str | None,
++        symbols: list[str] | None = None,
++    ) -> pd.DataFrame:
+         strategy = strategy_name or self.settings.strategies.default_strategy.value
+         return build_feature_dataset(
+             settings=self.settings,
+             strategy_name=strategy,
+             store=self.store,
++            symbols=symbols,
+         )
+ 
+     def _read_dataset_artifact(self) -> pd.DataFrame:
+diff --git a/src/mytradingbot/risk/service.py b/src/mytradingbot/risk/service.py
+index 2f584d6..6b1e524 100644
+--- a/src/mytradingbot/risk/service.py
++++ b/src/mytradingbot/risk/service.py
+@@ -23,6 +23,14 @@ class RiskEngine:
+             checks.append("live_mode_guard")
+             return RiskDecision.reject(reason="live_mode_disabled", checks=checks)
+ 
++        if intent.metadata.get("circuit_breaker_blocked", False):
++            checks.append("execution_guard")
++            return RiskDecision.reject(reason="execution_guard_blocked", checks=checks)
++
++        if intent.metadata.get("position_exists", False):
++            checks.append("position_exists")
++            return RiskDecision.reject(reason="position_exists", checks=checks)
++
+         if intent.quantity <= 0:
+             checks.append("positive_quantity_required")
+             return RiskDecision.reject(reason="invalid_quantity", checks=checks)
+diff --git a/src/mytradingbot/strategies/scalping.py b/src/mytradingbot/strategies/scalping.py
+index 784ce9e..f849165 100644
+--- a/src/mytradingbot/strategies/scalping.py
++++ b/src/mytradingbot/strategies/scalping.py
+@@ -168,6 +168,11 @@ class ScalpingStrategy(BaseStrategy):
+         passed_filters: list[str],
+         failed_filters: list[str],
+     ) -> None:
++        if signal.metadata.get("position_exists", False):
++            failed_filters.append("duplicate_position")
++        else:
++            passed_filters.append("duplicate_position")
++
+         if signal.metadata.get("cooldown_active", False):
+             failed_filters.append("cooldown_logic")
+         else:
+diff --git a/src/mytradingbot/ui_services/data_training.py b/src/mytradingbot/ui_services/data_training.py
+index 4670568..1ff0f0d 100644
+--- a/src/mytradingbot/ui_services/data_training.py
++++ b/src/mytradingbot/ui_services/data_training.py
+@@ -10,6 +10,10 @@ from mytradingbot.core.capabilities import CapabilitySnapshot
+ from mytradingbot.orchestration.service import TradingPlatformService
+ from mytradingbot.qlib_engine.models import QlibOperationResult
+ from mytradingbot.data.models import MarketDataPipelineResult
++from mytradingbot.training.models import AlphaTrainingRunResult, TrainingDataQualityReport
++from mytradingbot.training.service import AlphaRobustTrainingService
++from mytradingbot.universe.models import TopLiquidityUniverseResult
++from mytradingbot.universe.service import TopLiquidityUniverseService
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -29,6 +33,12 @@ class DataTrainingService:
+ 
+     def __init__(self, platform_service: TradingPlatformService) -> None:
+         self.platform_service = platform_service
++        self.universe_service = TopLiquidityUniverseService(
++            settings=self.platform_service.settings
++        )
++        self.training_service = AlphaRobustTrainingService(
++            settings=self.platform_service.settings
++        )
+ 
+     def get_payload(self) -> DataTrainingPayload:
+         settings = self.platform_service.settings
+@@ -49,6 +59,9 @@ class DataTrainingService:
+             ],
+         )
+ 
++    def generate_top_liquidity_universe(self) -> TopLiquidityUniverseResult:
++        return self.universe_service.generate_top_liquidity_universe()
++
+     def download_market_data(
+         self,
+         *,
+@@ -81,3 +94,25 @@ class DataTrainingService:
+ 
+     def refresh_predictions(self, *, strategy_name: str | None = None) -> QlibOperationResult:
+         return self.platform_service.refresh_predictions(strategy_name=strategy_name)
++
++    def check_training_data_quality(
++        self,
++        *,
++        strategy_name: str | None = None,
++    ) -> TrainingDataQualityReport:
++        del strategy_name
++        symbols = self.training_service.ensure_universe()
++        return self.training_service.run_quality_check(
++            symbols=symbols,
++            timeframes=self.platform_service.settings.data.default_timeframes,
++        )
++
++    def run_alpha_robust_training(
++        self,
++        *,
++        strategy_name: str | None = None,
++    ) -> AlphaTrainingRunResult:
++        return self.training_service.run_alpha_robust_training(
++            strategy_name=strategy_name
++            or self.platform_service.settings.strategies.default_strategy.value,
++        )
+diff --git a/success_criteria.md b/success_criteria.md
+index 66fd2d4..2f6c64d 100644
+--- a/success_criteria.md
++++ b/success_criteria.md
+@@ -137,4 +137,39 @@ Do not declare completion unless:
+ - dashboard launches
+ - docs exist
+ - strategy selection works
+-- paper workflow is runnable
+\ No newline at end of file
++- paper workflow is runnable
++
++
++---
++
++## SUCCESS.md
++
++```md
++# SUCCESS
++
++## Verified operating baseline
++
++The repository has a verified repo-local runtime path under the `mytradingbot` environment.
++
++Canonical working directory:
++
++`C:\Users\User\Documents\MyTradingBot_Next`
++
++Canonical environment:
++
++`mytradingbot`
++
++## Verified command order
++
++```powershell
++conda activate mytradingbot
++Set-Location 'C:\Users\User\Documents\MyTradingBot_Next'
++$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
++python -m pytest -q tests
++python scripts\run_daily_maintenance.py --action update --symbols AAPL MSFT NVDA --timeframes 1m
++python scripts\build_qlib_dataset.py --strategy scalping
++python scripts\train_models.py --strategy scalping
++python scripts\refresh_predictions.py --strategy scalping
++python scripts\run_paper_trading.py --strategy scalping --mode paper
++python scripts\validate_system.py
++python scripts\goalcheck.py
+\ No newline at end of file

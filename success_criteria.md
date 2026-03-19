@@ -138,3 +138,38 @@ Do not declare completion unless:
 - docs exist
 - strategy selection works
 - paper workflow is runnable
+
+
+---
+
+## SUCCESS.md
+
+```md
+# SUCCESS
+
+## Verified operating baseline
+
+The repository has a verified repo-local runtime path under the `mytradingbot` environment.
+
+Canonical working directory:
+
+`C:\Users\User\Documents\MyTradingBot_Next`
+
+Canonical environment:
+
+`mytradingbot`
+
+## Verified command order
+
+```powershell
+conda activate mytradingbot
+Set-Location 'C:\Users\User\Documents\MyTradingBot_Next'
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
+python -m pytest -q tests
+python scripts\run_daily_maintenance.py --action update --symbols AAPL MSFT NVDA --timeframes 1m
+python scripts\build_qlib_dataset.py --strategy scalping
+python scripts\train_models.py --strategy scalping
+python scripts\refresh_predictions.py --strategy scalping
+python scripts\run_paper_trading.py --strategy scalping --mode paper
+python scripts\validate_system.py
+python scripts\goalcheck.py

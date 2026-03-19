@@ -35,3 +35,12 @@ if st.button("Train Models"):
 
 if st.button("Refresh Predictions"):
     st.json(service.refresh_predictions(strategy_name=strategy).model_dump(mode="json"))
+
+if st.button("Generate Top Liquidity Universe"):
+    st.json(service.generate_top_liquidity_universe().model_dump(mode="json"))
+
+if st.button("Check Training Data Quality"):
+    st.json(service.check_training_data_quality(strategy_name=strategy).model_dump(mode="json"))
+
+if st.button("Run Alpha Robust Training"):
+    st.json(service.run_alpha_robust_training(strategy_name=strategy).model_dump(mode="json"))

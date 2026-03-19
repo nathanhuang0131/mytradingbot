@@ -33,14 +33,18 @@ def build_feature_dataset(
     settings: AppSettings,
     strategy_name: str,
     store: ParquetBarStore | None = None,
+    symbols: list[str] | None = None,
 ) -> pd.DataFrame:
     """Build a qlib-ready feature dataset from normalized parquet bars."""
 
     store = store or ParquetBarStore(settings=settings)
     profile = strategy_dataset_profile(strategy_name, settings)
     frames: list[pd.DataFrame] = []
+    allowed_symbols = {symbol.strip().upper() for symbol in (symbols or []) if symbol}
 
     for file_path in store.iter_normalized_files(timeframe=profile.timeframe):
+        if allowed_symbols and file_path.stem.upper() not in allowed_symbols:
+            continue
         canonical = pd.read_parquet(file_path)
         qlib_ready = transform_canonical_to_qlib_ready(canonical)
         features = _engineer_features(qlib_ready, profile.label_horizon_bars)

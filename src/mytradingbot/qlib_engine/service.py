@@ -29,7 +29,7 @@ class QlibWorkflowService:
         *,
         pyqlib_available: bool | None = None,
         predictions_path: Path | None = None,
-        freshness_threshold_minutes: int = 60,
+        freshness_threshold_minutes: int | None = None,
         workflow_adapter: QlibWorkflowAdapter | None = None,
     ) -> None:
         self.settings = settings or AppSettings()
@@ -37,7 +37,11 @@ class QlibWorkflowService:
             self._detect_pyqlib() if pyqlib_available is None else pyqlib_available
         )
         self.predictions_path = predictions_path or self.settings.prediction_artifact_path()
-        self.freshness_threshold_minutes = freshness_threshold_minutes
+        self.freshness_threshold_minutes = (
+            freshness_threshold_minutes
+            if freshness_threshold_minutes is not None
+            else self.settings.freshness.predictions_max_age_minutes
+        )
         self.workflow_adapter = workflow_adapter or PyQlibWorkflowAdapter()
         self.store = ParquetBarStore(settings=self.settings)
         self._qlib_initialized = False
@@ -45,12 +49,20 @@ class QlibWorkflowService:
     def _detect_pyqlib(self) -> bool:
         return importlib.util.find_spec("qlib") is not None
 
-    def build_dataset(self, strategy_name: str | None = None) -> QlibOperationResult:
+    def build_dataset(
+        self,
+        strategy_name: str | None = None,
+        *,
+        symbols: list[str] | None = None,
+    ) -> QlibOperationResult:
         if not self.pyqlib_available:
             return self._missing_pyqlib_result("dataset build")
         self._initialize_pyqlib_runtime()
 
-        normalized_dataset = self._load_feature_dataset(strategy_name=strategy_name)
+        normalized_dataset = self._load_feature_dataset(
+            strategy_name=strategy_name,
+            symbols=symbols,
+        )
         if normalized_dataset.empty:
             return QlibOperationResult(
                 ok=False,
@@ -77,7 +89,10 @@ class QlibWorkflowService:
             ok=True,
             message="Qlib-ready dataset artifact built from repo-local normalized parquet data.",
             artifacts=[str(dataset_path)],
-            metadata={"rows": len(normalized_dataset)},
+            metadata={
+                "rows": len(normalized_dataset),
+                "symbols": sorted({str(symbol).upper() for symbol in (symbols or [])}),
+            },
         )
 
     def train_models(self, strategy_name: str | None = None) -> QlibOperationResult:
@@ -240,12 +255,18 @@ class QlibWorkflowService:
     def _now_timestamp() -> float:
         return time.time()
 
-    def _load_feature_dataset(self, *, strategy_name: str | None) -> pd.DataFrame:
+    def _load_feature_dataset(
+        self,
+        *,
+        strategy_name: str | None,
+        symbols: list[str] | None = None,
+    ) -> pd.DataFrame:
         strategy = strategy_name or self.settings.strategies.default_strategy.value
         return build_feature_dataset(
             settings=self.settings,
             strategy_name=strategy,
             store=self.store,
+            symbols=symbols,
         )
 
     def _read_dataset_artifact(self) -> pd.DataFrame:

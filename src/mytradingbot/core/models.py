@@ -265,6 +265,7 @@ class ExecutionRequest(BaseModel):
     strategy_name: str
     mode: RuntimeMode
     limit_price: float | None = None
+    client_order_id: str | None = None
     bracket_plan: BracketPlan | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -277,6 +278,11 @@ class ExecutionRequest(BaseModel):
             strategy_name=intent.strategy_name,
             mode=mode,
             limit_price=intent.limit_price,
+            client_order_id=(
+                str(intent.metadata.get("client_order_id"))
+                if intent.metadata.get("client_order_id") is not None
+                else None
+            ),
             bracket_plan=intent.bracket_plan,
             metadata=intent.metadata,
         )
@@ -297,6 +303,7 @@ class BrokerOrder(BaseModel):
     side: Literal["buy", "sell"]
     quantity: float
     mode: RuntimeMode
+    client_order_id: str | None = None
     status: Literal["accepted", "filled", "rejected"] = "accepted"
     submitted_at: datetime = Field(default_factory=utc_now)
     avg_fill_price: float | None = None

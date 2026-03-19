@@ -72,3 +72,44 @@ python scripts/run_live_trading.py
 ```
 
 The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
+## Canonical Institutional Runtime
+
+This repository is operated from the repo-local root only:
+
+`C:\Users\User\Documents\MyTradingBot_Next`
+
+The canonical Python environment is:
+
+`mytradingbot`
+
+All runtime artifacts, datasets, models, predictions, reports, and paper-trading outputs must remain repo-local. No code path should write outside this repository root.
+
+### Canonical environment setup
+
+```powershell
+conda activate mytradingbot
+Set-Location 'C:\Users\User\Documents\MyTradingBot_Next'
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
+python -m pytest -q tests
+python scripts\run_institutional_pipeline.py --strategy scalping --use-top-liquidity-universe --timeframes 1m 5m 15m 1d --mode paper
+```
+
+## V2 Commands
+
+```powershell
+python scripts\generate_top_liquidity_universe.py --top-n 800 --lookback-days 30 --min-price 5 --min-avg-volume 500000
+python scripts\run_daily_maintenance.py --action download --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
+python scripts\check_training_data_quality.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
+python scripts\run_alpha_robust_training.py --strategy scalping --symbols-file data/universe/latest_top_liquidity_universe.json --timeframes 1m 5m 15m 1d
+python scripts\run_institutional_pipeline.py --strategy scalping --use-top-liquidity-universe --timeframes 1m 5m 15m 1d --mode paper
+```
+
+## V2 Guarantees
+
+- `src/mytradingbot/data/pipeline.py` will not normalize stale local raw parquet if the requested download/update wrote no new usable raw data.
+- `src/mytradingbot/data/providers/alpaca_provider.py` uses deterministic chunking and guarded time-window splitting for large symbol sets.
+- `reports/data/raw_download_summary.json`, `reports/data/raw_download_summary.md`, and `reports/data/raw_symbol_coverage.csv` are the downloader truth artifacts.
+- `src/mytradingbot/universe/ranking.py` ranks by average dollar volume first, then average volume, then price, then symbol.
+- `src/mytradingbot/training/data_quality.py` enforces multi-timeframe sufficiency before the institutional training runner proceeds.
+- `src/mytradingbot/runtime/store.py` keeps restart-safe runtime state under `data/state/`.
+- `src/mytradingbot/runtime/service.py` writes decision-audit, paper-session, analytics, and incident artifacts even when zero trades occur.

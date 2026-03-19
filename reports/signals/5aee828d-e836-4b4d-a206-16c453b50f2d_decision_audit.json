@@ -1,0 +1,80 @@
+[
+  {
+    "event_id": "945ed875-2a18-4663-9954-f50dcfc782e4",
+    "session_id": "5aee828d-e836-4b4d-a206-16c453b50f2d",
+    "run_id": "1485dd20-9d3e-4252-8e1a-8ac3376e652e",
+    "correlation_id": "c5b50621-940d-4966-a7c2-f5324a3cc797",
+    "timestamp": "2026-03-19T01:43:59.576139Z",
+    "strategy": "intraday",
+    "strategy_version": "v2",
+    "mode": "dry_run",
+    "symbol": "AAPL",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_plus_rules",
+    "qlib_raw_score": 0.92,
+    "predicted_return": 0.01,
+    "target_return": 0.01,
+    "candidate_rank": 1,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-19T01:43:59.576139Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "risk",
+        "name": "position_exists",
+        "passed": false,
+        "detail": "position_exists",
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "position_exists",
+    "final_rejection_reason_detail": "position_exists",
+    "notes": []
+  }
+]

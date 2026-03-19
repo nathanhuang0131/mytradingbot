@@ -14,6 +14,12 @@ def main() -> int:
         "strategies": service.get_strategy_names(),
         "pages_present": (project_root / "app/pages/01_Dashboard.py").exists(),
         "live_trading_enabled": service.settings.runtime.live_trading_enabled,
+        "institutional_pipeline_present": (project_root / "scripts/run_institutional_pipeline.py").exists(),
+        "alpha_training_present": (project_root / "scripts/run_alpha_robust_training.py").exists(),
+        "universe_generator_present": (project_root / "scripts/generate_top_liquidity_universe.py").exists(),
+        "runtime_state_store_path": str(
+            service.settings.paths.state_dir / service.settings.runtime_safety.sqlite_filename
+        ),
         "phase_1_status": capabilities.phase_1.status,
         "phase_2_status": capabilities.phase_2.status,
         "phase_3_status": capabilities.phase_3.status,

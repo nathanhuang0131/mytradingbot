@@ -16,6 +16,7 @@ from mytradingbot.core.models import (
     MarketSnapshot,
     PositionSnapshot,
 )
+from mytradingbot.runtime.store import RuntimeStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,21 @@ logger = logging.getLogger(__name__)
 class PaperBroker(BaseBroker):
     """Simple in-memory paper broker with immediate simulated fills."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, runtime_store: RuntimeStateStore | None = None) -> None:
+        self.runtime_store = runtime_store
         self._orders: list[BrokerOrder] = []
         self._fills: list[FillEvent] = []
         self._positions: dict[str, PositionSnapshot] = {}
         self._brackets: dict[str, BrokerBracketState] = {}
+        if self.runtime_store is not None:
+            self._orders = self.runtime_store.list_orders()
+            self._fills = self.runtime_store.list_fills()
+            self._positions = {
+                position.symbol: position for position in self.runtime_store.list_positions()
+            }
+            self._brackets = {
+                bracket.symbol: bracket for bracket in self.runtime_store.list_brackets()
+            }
 
     def submit_order(self, request: ExecutionRequest) -> ExecutionResult:
         fill_price = request.limit_price or 0.0
@@ -36,6 +47,7 @@ class PaperBroker(BaseBroker):
             side=request.side,
             quantity=request.quantity,
             mode=request.mode,
+            client_order_id=request.client_order_id,
             status="filled",
             avg_fill_price=fill_price,
             metadata={"strategy_name": request.strategy_name},
@@ -58,6 +70,7 @@ class PaperBroker(BaseBroker):
 
         self._orders.append(order)
         self._fills.append(fill)
+        self._persist_state(order=order, fill=fill, position=position, bracket_state=bracket_state)
 
         return ExecutionResult(
             request=request,
@@ -180,6 +193,7 @@ class PaperBroker(BaseBroker):
 
         self._orders.append(order)
         self._fills.append(fill)
+        self._persist_state(order=order, fill=fill, position=updated_position, bracket_state=bracket)
         return ExecutionResult(
             reason=reason,
             request=request,
@@ -189,3 +203,17 @@ class PaperBroker(BaseBroker):
             bracket_state=bracket,
             realized_pnl=realized_pnl,
         )
+
+    def _persist_state(
+        self,
+        *,
+        order: BrokerOrder,
+        fill: FillEvent,
+        position: PositionSnapshot,
+        bracket_state: BrokerBracketState | None,
+    ) -> None:
+        if self.runtime_store is None:
+            return
+        self.runtime_store.record_position(position)
+        if bracket_state is not None:
+            self.runtime_store.record_bracket(bracket_state)

@@ -10,6 +10,10 @@ from mytradingbot.core.capabilities import CapabilitySnapshot
 from mytradingbot.orchestration.service import TradingPlatformService
 from mytradingbot.qlib_engine.models import QlibOperationResult
 from mytradingbot.data.models import MarketDataPipelineResult
+from mytradingbot.training.models import AlphaTrainingRunResult, TrainingDataQualityReport
+from mytradingbot.training.service import AlphaRobustTrainingService
+from mytradingbot.universe.models import TopLiquidityUniverseResult
+from mytradingbot.universe.service import TopLiquidityUniverseService
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,12 @@ class DataTrainingService:
 
     def __init__(self, platform_service: TradingPlatformService) -> None:
         self.platform_service = platform_service
+        self.universe_service = TopLiquidityUniverseService(
+            settings=self.platform_service.settings
+        )
+        self.training_service = AlphaRobustTrainingService(
+            settings=self.platform_service.settings
+        )
 
     def get_payload(self) -> DataTrainingPayload:
         settings = self.platform_service.settings
@@ -48,6 +58,9 @@ class DataTrainingService:
                 "qlib_artifact_inspection",
             ],
         )
+
+    def generate_top_liquidity_universe(self) -> TopLiquidityUniverseResult:
+        return self.universe_service.generate_top_liquidity_universe()
 
     def download_market_data(
         self,
@@ -81,3 +94,25 @@ class DataTrainingService:
 
     def refresh_predictions(self, *, strategy_name: str | None = None) -> QlibOperationResult:
         return self.platform_service.refresh_predictions(strategy_name=strategy_name)
+
+    def check_training_data_quality(
+        self,
+        *,
+        strategy_name: str | None = None,
+    ) -> TrainingDataQualityReport:
+        del strategy_name
+        symbols = self.training_service.ensure_universe()
+        return self.training_service.run_quality_check(
+            symbols=symbols,
+            timeframes=self.platform_service.settings.data.default_timeframes,
+        )
+
+    def run_alpha_robust_training(
+        self,
+        *,
+        strategy_name: str | None = None,
+    ) -> AlphaTrainingRunResult:
+        return self.training_service.run_alpha_robust_training(
+            strategy_name=strategy_name
+            or self.platform_service.settings.strategies.default_strategy.value,
+        )

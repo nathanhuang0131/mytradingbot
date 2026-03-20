@@ -42,6 +42,11 @@ class PaperBroker(BaseBroker):
 
     def submit_order(self, request: ExecutionRequest) -> ExecutionResult:
         fill_price = request.limit_price or 0.0
+        order_metadata = {
+            "strategy_name": request.strategy_name,
+            "broker_mode": "local_paper",
+            **request.metadata,
+        }
         order = BrokerOrder(
             symbol=request.symbol,
             side=request.side,
@@ -50,13 +55,14 @@ class PaperBroker(BaseBroker):
             client_order_id=request.client_order_id,
             status="filled",
             avg_fill_price=fill_price,
-            metadata={"strategy_name": request.strategy_name},
+            metadata=order_metadata,
         )
         fill = FillEvent(
             order_id=order.order_id,
             symbol=request.symbol,
             quantity=request.quantity,
             price=fill_price,
+            metadata=order_metadata,
         )
         position = self._update_position(request, fill_price)
         bracket_state = None
@@ -158,14 +164,29 @@ class PaperBroker(BaseBroker):
         position = self._positions.get(symbol)
         quantity = abs(position.quantity) if position else bracket.bracket_plan.planned_quantity
         mode = self._orders[-1].mode if self._orders else RuntimeMode.PAPER
+        entry_order = next(
+            (order for order in reversed(self._orders) if order.order_id == bracket.entry_order_id),
+            None,
+        )
+        strategy_name = (
+            str(entry_order.metadata.get("strategy_name"))
+            if entry_order is not None and entry_order.metadata.get("strategy_name") is not None
+            else "scalping"
+        )
+        exit_metadata = {
+            "exit_reason": reason,
+            "entry_order_id": bracket.entry_order_id,
+            "strategy_name": strategy_name,
+            "broker_mode": "local_paper",
+        }
         request = ExecutionRequest(
             symbol=symbol,
             side="sell",
             quantity=quantity,
-            strategy_name="scalping",
+            strategy_name=strategy_name,
             mode=mode,
             limit_price=price,
-            metadata={"exit_reason": reason},
+            metadata=exit_metadata,
         )
         order = BrokerOrder(
             symbol=symbol,
@@ -174,14 +195,14 @@ class PaperBroker(BaseBroker):
             mode=mode,
             status="filled",
             avg_fill_price=price,
-            metadata={"exit_reason": reason},
+            metadata=exit_metadata,
         )
         fill = FillEvent(
             order_id=order.order_id,
             symbol=symbol,
             quantity=quantity,
             price=price,
-            metadata={"exit_reason": reason},
+            metadata=exit_metadata,
         )
         updated_position = self._update_position(request, price)
         realized_pnl = (price - bracket.bracket_plan.planned_entry_price) * quantity

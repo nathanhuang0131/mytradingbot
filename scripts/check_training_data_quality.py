@@ -13,6 +13,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--symbols", nargs="*", default=None)
     parser.add_argument("--symbols-file", type=Path, default=None)
     parser.add_argument("--timeframes", nargs="*", default=["1m", "5m", "15m", "1d"])
+    parser.add_argument("--min-eligible-symbols", type=int, default=None)
     parser.add_argument("--verbose", action="store_true")
     return parser
 
@@ -25,7 +26,11 @@ def main() -> int:
         symbols=args.symbols,
         symbols_file=args.symbols_file,
     )
-    result = service.run_quality_check(symbols=symbols, timeframes=args.timeframes)
+    result = service.run_quality_check(
+        symbols=symbols,
+        timeframes=args.timeframes,
+        minimum_eligible_symbols=args.min_eligible_symbols,
+    )
     print(result.model_dump_json(indent=2))
     return 0
 

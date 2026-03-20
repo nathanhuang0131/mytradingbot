@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pandas as pd
 
 from mytradingbot.core.paths import RepoPaths
@@ -56,3 +58,40 @@ def test_training_quality_flags_insufficient_coverage(tmp_path) -> None:
     assert not report.ok
     assert report.timeframe_summaries[0].symbols_passing_quality == 0
     assert report.eligible_symbols == []
+
+
+def test_training_quality_override_allows_smaller_eligible_floor(tmp_path) -> None:
+    settings = AppSettings(
+        paths=RepoPaths.for_root(tmp_path),
+        training=TrainingSettings(
+            minimum_eligible_symbols=150,
+            timeframe_minimum_trading_days={"1d": 3, "1m": 1, "5m": 1, "15m": 1},
+            timeframe_preferred_trading_days={"1d": 3, "1m": 1, "5m": 1, "15m": 1},
+            timeframe_minimum_coverage_ratio={"1d": 0.8, "1m": 0.8, "5m": 0.8, "15m": 0.8},
+        ),
+    )
+    store = ParquetBarStore(settings=settings)
+    now = datetime.now(timezone.utc)
+    recent_timestamps = [
+        (now - timedelta(days=offset)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
+        for offset in (2, 1, 0)
+    ]
+    for symbol in ("AAPL", "MSFT"):
+        _write_normalized_symbol(
+            store,
+            symbol=symbol,
+            timeframe="1d",
+            timestamps=recent_timestamps,
+        )
+    checker = TrainingDataQualityChecker(settings=settings, store=store)
+
+    report = checker.evaluate(
+        symbols=["AAPL", "MSFT"],
+        timeframes=["1d"],
+        minimum_eligible_symbols=2,
+    )
+
+    assert report.ok
+    assert report.timeframe_summaries[0].symbols_requested == 2
+    assert report.timeframe_summaries[0].symbols_passing_quality == 2
+    assert report.eligible_symbols == ["AAPL", "MSFT"]

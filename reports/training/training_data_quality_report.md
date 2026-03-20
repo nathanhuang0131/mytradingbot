@@ -1,12 +1,12 @@
 # Training Data Quality Report
 
-- ok: `False`
-- requested symbols: `3`
-- eligible symbols: `0`
+- ok: `True`
+- requested symbols: `100`
+- eligible symbols: `87`
 
 | Timeframe | Passing Symbols | Median Coverage | Lookback Days | Sufficiency |
 | --- | ---: | ---: | ---: | --- |
-| 1m | 0 | 0.81 | 0 | False |
-| 5m | 0 | 1.00 | 0 | False |
-| 15m | 0 | 1.00 | 0 | False |
-| 1d | 0 | 1.00 | 0 | False |
+| 1m | 89 | 0.91 | 262 | True |
+| 5m | 99 | 1.00 | 262 | True |
+| 15m | 98 | 0.99 | 448 | True |
+| 1d | 98 | 1.00 | 825 | True |

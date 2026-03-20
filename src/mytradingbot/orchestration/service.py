@@ -6,6 +6,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+from mytradingbot.brokers.base import BaseBroker
 from mytradingbot.brokers.paper import PaperBroker
 from mytradingbot.core.capabilities import CapabilityService, CapabilitySnapshot
 from mytradingbot.core.enums import RuntimeMode
@@ -25,6 +27,7 @@ from mytradingbot.execution.service import ExecutionEngine
 from mytradingbot.qlib_engine.service import QlibWorkflowService
 from mytradingbot.risk.service import RiskEngine
 from mytradingbot.reporting.service import ReportingService
+from mytradingbot.runtime.models import BrokerMode, BrokerReconciliationSnapshot
 from mytradingbot.runtime.service import RuntimeStateService
 from mytradingbot.strategies.registry import StrategyRegistry
 from mytradingbot.universe.storage import UniverseStorage
@@ -48,9 +51,12 @@ class TradingPlatformService:
         runtime_state_service: RuntimeStateService | None = None,
         reporting_service: ReportingService | None = None,
         diagnostics_service: DiagnosticsService | None = None,
-        broker: PaperBroker | None = None,
+        broker: BaseBroker | None = None,
+        broker_mode: BrokerMode | None = None,
     ) -> None:
         self.settings = settings or AppSettings()
+        if broker_mode is not None:
+            self.settings.broker.broker_mode = broker_mode
         self.qlib_service = qlib_service or QlibWorkflowService(settings=self.settings)
         self.data_pipeline = data_pipeline or MarketDataPipeline(settings=self.settings)
         self.market_data_service = market_data_service or MarketDataService(
@@ -62,9 +68,7 @@ class TradingPlatformService:
         self.runtime_state_service = runtime_state_service or RuntimeStateService(
             settings=self.settings
         )
-        self.broker = broker or PaperBroker(
-            runtime_store=self.runtime_state_service.store
-        )
+        self.broker = broker or self._build_broker()
         self.execution_engine = execution_engine or ExecutionEngine(broker=self.broker)
         self.universe_storage = UniverseStorage(settings=self.settings)
         self.reporting_service = reporting_service or ReportingService()
@@ -74,6 +78,14 @@ class TradingPlatformService:
     @classmethod
     def bootstrap_default(cls) -> "TradingPlatformService":
         return cls()
+
+    def _build_broker(self) -> BaseBroker:
+        if self.settings.broker.broker_mode == "alpaca_paper_api":
+            return AlpacaPaperBroker(
+                settings=self.settings,
+                runtime_store=self.runtime_state_service.store,
+            )
+        return PaperBroker(runtime_store=self.runtime_state_service.store)
 
     def get_strategy_names(self) -> list[str]:
         return self.strategy_registry.names()
@@ -156,6 +168,43 @@ class TradingPlatformService:
             return None
         return self.universe_storage.load_symbols(symbols_file)
 
+    def _apply_reconciliation_notes(
+        self,
+        *,
+        context,
+        reconciliation: BrokerReconciliationSnapshot,
+        incidents: list,
+        session_notes: list[str],
+    ) -> None:
+        session_notes.extend(
+            [
+                f"bot_owned_open_orders={reconciliation.bot_owned_order_count}",
+                f"bot_owned_open_positions={reconciliation.bot_owned_position_count}",
+                f"foreign_open_orders={reconciliation.foreign_order_count}",
+                f"foreign_open_positions={reconciliation.foreign_position_count}",
+            ]
+        )
+        session_notes.extend(reconciliation.notes)
+        if reconciliation.foreign_order_count or reconciliation.foreign_position_count:
+            incidents.append(
+                self.runtime_state_service.build_incident(
+                    context=context,
+                    code="foreign_broker_exposure_observed",
+                    summary="Observed foreign or unknown Alpaca paper account exposure.",
+                    detail=(
+                        f"foreign_orders={reconciliation.foreign_order_count}, "
+                        f"foreign_positions={reconciliation.foreign_position_count}"
+                    ),
+                    severity="info",
+                    ownership_class="foreign",
+                    metadata={
+                        "foreign_order_count": reconciliation.foreign_order_count,
+                        "foreign_position_count": reconciliation.foreign_position_count,
+                        "ownership_policy": reconciliation.ownership_policy,
+                    },
+                )
+            )
+
     def run_session(
         self,
         *,
@@ -173,6 +222,94 @@ class TradingPlatformService:
             mode=normalized_mode,
         )
         incidents = []
+        session_notes = [
+            f"broker_mode={context.broker_mode}",
+            f"api_base_url={self.settings.broker.alpaca_base_url}",
+            "external_broker_submission_enabled="
+            f"{str(self.settings.broker.resolved_external_submission_enabled()).lower()}",
+            f"ownership_mode={self.settings.broker.ownership_policy}",
+        ]
+
+        preflight = self.broker.preflight()
+        if not preflight.ok:
+            summary.status = "failed"
+            summary.completed_at = utc_now()
+            incidents.append(
+                self.runtime_state_service.build_incident(
+                    context=context,
+                    code="broker_rejected",
+                    summary="Broker preflight failed before session execution.",
+                    detail=preflight.message,
+                    severity="error",
+                    metadata=preflight.metadata,
+                )
+            )
+            result = SessionResult(
+                session_summary=summary,
+                prediction_status=ArtifactStatus.unavailable("predictions"),
+                health_status=HealthStatus(
+                    summary="Broker preflight failed.",
+                    ok=False,
+                    issues=[preflight.message],
+                ),
+                rejection_reasons=[preflight.message],
+            )
+            result.post_session_report = self.reporting_service.build_post_session_review(result)
+            self.runtime_state_service.write_session_artifacts(
+                context=context,
+                audits=[],
+                orders=[],
+                fills=[],
+                positions=[],
+                incidents=incidents,
+                notes=[*session_notes, *result.post_session_report.notes],
+            )
+            self.last_session_result = result
+            return result
+
+        try:
+            reconciliation = self.broker.reconcile_runtime_state(strategy_name=strategy_name)
+        except Exception as exc:
+            summary.status = "failed"
+            summary.completed_at = utc_now()
+            incidents.append(
+                self.runtime_state_service.build_incident(
+                    context=context,
+                    code="broker_state_unreconciled",
+                    summary="Broker state reconciliation failed before session execution.",
+                    detail=str(exc),
+                    severity="error",
+                )
+            )
+            result = SessionResult(
+                session_summary=summary,
+                prediction_status=ArtifactStatus.unavailable("predictions"),
+                health_status=HealthStatus(
+                    summary="Broker reconciliation failed.",
+                    ok=False,
+                    issues=[str(exc)],
+                ),
+                rejection_reasons=["broker_state_unreconciled"],
+            )
+            result.post_session_report = self.reporting_service.build_post_session_review(result)
+            self.runtime_state_service.write_session_artifacts(
+                context=context,
+                audits=[],
+                orders=[],
+                fills=[],
+                positions=self.broker.list_positions(),
+                incidents=incidents,
+                notes=[*session_notes, *result.post_session_report.notes],
+            )
+            self.last_session_result = result
+            return result
+
+        self._apply_reconciliation_notes(
+            context=context,
+            reconciliation=reconciliation,
+            incidents=incidents,
+            session_notes=session_notes,
+        )
 
         prediction_result = self.qlib_service.load_predictions()
         market_status = self.runtime_state_service.market_snapshot_status(
@@ -207,7 +344,7 @@ class TradingPlatformService:
                 fills=[],
                 positions=[],
                 incidents=incidents,
-                notes=result.post_session_report.notes,
+                notes=[*session_notes, *result.post_session_report.notes],
             )
             self.last_session_result = result
             return result
@@ -242,7 +379,7 @@ class TradingPlatformService:
                 fills=[],
                 positions=[],
                 incidents=incidents,
-                notes=result.post_session_report.notes,
+                notes=[*session_notes, *result.post_session_report.notes],
             )
             self.last_session_result = result
             return result
@@ -277,7 +414,7 @@ class TradingPlatformService:
                 fills=[],
                 positions=[],
                 incidents=incidents,
-                notes=result.post_session_report.notes,
+                notes=[*session_notes, *result.post_session_report.notes],
             )
             self.last_session_result = result
             return result
@@ -316,7 +453,7 @@ class TradingPlatformService:
                 fills=[],
                 positions=[],
                 incidents=incidents,
-                notes=result.post_session_report.notes,
+                notes=[*session_notes, *result.post_session_report.notes],
             )
             self.last_session_result = result
             return result
@@ -387,8 +524,17 @@ class TradingPlatformService:
                         side=strategy_decision.intent.side,
                     )
                 )
+                strategy_decision.intent.metadata["signal_source"] = "qlib_plus_rules"
+                strategy_decision.intent.metadata["broker_mode"] = context.broker_mode
+                strategy_decision.intent.metadata["session_id"] = context.session_id
+                strategy_decision.intent.metadata["run_id"] = context.run_id
+                strategy_decision.intent.metadata["ownership_policy"] = self.settings.broker.ownership_policy
                 strategy_decision.intent.metadata["position_exists"] = signal.metadata.get(
                     "position_exists",
+                    False,
+                )
+                strategy_decision.intent.metadata["foreign_position_exists"] = signal.metadata.get(
+                    "foreign_position_exists",
                     False,
                 )
                 strategy_decision.intent.metadata["circuit_breaker_blocked"] = (
@@ -519,6 +665,7 @@ class TradingPlatformService:
             positions=positions,
             incidents=incidents,
             notes=[
+                *session_notes,
                 *result.post_session_report.notes,
                 *[
                     f"managed_exit={execution.reason}"

@@ -87,6 +87,78 @@ def test_prediction_artifact_loads_typed_predictions(tmp_path) -> None:
     assert result.predictions[0].symbol == "AAPL"
 
 
+def test_prediction_artifact_loads_predictions_from_wrapped_dict_payload(tmp_path) -> None:
+    artifact_path = tmp_path / "latest.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-03-20T00:00:00Z",
+                "predictions": [
+                    {
+                        "symbol": "MSFT",
+                        "score": 0.76,
+                        "predicted_return": 0.011,
+                        "confidence": 0.8,
+                        "rank": 2,
+                        "direction": "long",
+                        "horizon": "intraday",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    service = QlibWorkflowService(
+        pyqlib_available=True,
+        predictions_path=artifact_path,
+    )
+
+    result = service.load_predictions()
+
+    assert result.ok
+    assert result.predictions[0].symbol == "MSFT"
+
+
+def test_prediction_artifact_rejects_malformed_dict_payload(tmp_path) -> None:
+    artifact_path = tmp_path / "latest.json"
+    artifact_path.write_text(
+        json.dumps({"rank": 1, "score": 0.5}),
+        encoding="utf-8",
+    )
+
+    service = QlibWorkflowService(
+        pyqlib_available=True,
+        predictions_path=artifact_path,
+    )
+
+    result = service.load_predictions()
+
+    assert not result.ok
+    assert str(artifact_path) in result.message
+    assert "dict" in result.message.lower()
+    assert "predictions" in result.message.lower()
+
+
+def test_prediction_artifact_rejects_scalar_payload(tmp_path) -> None:
+    artifact_path = tmp_path / "latest.json"
+    artifact_path.write_text(
+        json.dumps("not-a-prediction-list"),
+        encoding="utf-8",
+    )
+
+    service = QlibWorkflowService(
+        pyqlib_available=True,
+        predictions_path=artifact_path,
+    )
+
+    result = service.load_predictions()
+
+    assert not result.ok
+    assert str(artifact_path) in result.message
+    assert "str" in result.message.lower()
+
+
 class _FakeQlibAdapter:
     def build_dataset(self, frame: pd.DataFrame, artifact_path: Path) -> Path:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)

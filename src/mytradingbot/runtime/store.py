@@ -16,6 +16,8 @@ from mytradingbot.core.settings import AppSettings
 from mytradingbot.runtime.models import (
     DecisionAuditRecord,
     FillLifecycleRecord,
+    ObservedOrderRecord,
+    ObservedPositionRecord,
     OrderLifecycleRecord,
     PaperTradingSessionReport,
     RuntimeIncidentRecord,
@@ -122,6 +124,19 @@ class RuntimeStateStore:
                     session_id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL,
                     completed_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS observed_orders (
+                    order_id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    ownership_class TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS observed_positions (
+                    symbol TEXT PRIMARY KEY,
+                    ownership_class TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
                     payload_json TEXT NOT NULL
                 );
                 """
@@ -308,15 +323,84 @@ class RuntimeStateStore:
                 ),
             )
 
+    def replace_observed_orders(self, records: list[ObservedOrderRecord | dict]) -> None:
+        normalized = [
+            record if isinstance(record, ObservedOrderRecord) else ObservedOrderRecord.model_validate(record)
+            for record in records
+        ]
+        with self._connect() as connection:
+            connection.execute("DELETE FROM observed_orders")
+            for record in normalized:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO observed_orders
+                    (order_id, symbol, ownership_class, observed_at, payload_json)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.order_id,
+                        record.symbol,
+                        record.ownership_class,
+                        record.observed_at.isoformat(),
+                        record.model_dump_json(),
+                    ),
+                )
+
+    def replace_observed_positions(self, records: list[ObservedPositionRecord | dict]) -> None:
+        normalized = [
+            record if isinstance(record, ObservedPositionRecord) else ObservedPositionRecord.model_validate(record)
+            for record in records
+        ]
+        with self._connect() as connection:
+            connection.execute("DELETE FROM observed_positions")
+            for record in normalized:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO observed_positions
+                    (symbol, ownership_class, observed_at, payload_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        record.symbol,
+                        record.ownership_class,
+                        record.observed_at.isoformat(),
+                        record.model_dump_json(),
+                    ),
+                )
+
     def list_orders(self) -> list[BrokerOrder]:
+        orders: list[BrokerOrder] = []
+        for record in self.list_order_records():
+            orders.append(
+                BrokerOrder(
+                    order_id=record.order_id,
+                    symbol=record.symbol,
+                    side=record.side,  # type: ignore[arg-type]
+                    quantity=record.quantity,
+                    mode=record.mode,
+                    client_order_id=record.client_order_id,
+                    status=_normalize_broker_order_status(record.status),
+                    submitted_at=record.submitted_at,
+                    avg_fill_price=record.avg_fill_price,
+                    metadata=record.metadata,
+                )
+            )
+        return orders
+
+    def list_order_records(self) -> list[OrderLifecycleRecord]:
         with self._connect() as connection:
             rows = connection.execute("SELECT payload_json FROM orders ORDER BY submitted_at").fetchall()
-        return [BrokerOrder.model_validate_json(row["payload_json"]) for row in rows]
+        return [OrderLifecycleRecord.model_validate_json(row["payload_json"]) for row in rows]
 
     def list_fills(self) -> list[FillEvent]:
         with self._connect() as connection:
             rows = connection.execute("SELECT payload_json FROM fills ORDER BY filled_at").fetchall()
         return [FillEvent.model_validate_json(row["payload_json"]) for row in rows]
+
+    def list_fill_records(self) -> list[FillLifecycleRecord]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT payload_json FROM fills ORDER BY filled_at").fetchall()
+        return [FillLifecycleRecord.model_validate_json(row["payload_json"]) for row in rows]
 
     def list_positions(self) -> list[PositionSnapshot]:
         with self._connect() as connection:
@@ -327,6 +411,30 @@ class RuntimeStateStore:
         with self._connect() as connection:
             rows = connection.execute("SELECT payload_json FROM brackets ORDER BY symbol").fetchall()
         return [BrokerBracketState.model_validate_json(row["payload_json"]) for row in rows]
+
+    def list_decisions(self) -> list[DecisionAuditRecord]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT payload_json FROM decision_audits ORDER BY timestamp").fetchall()
+        return [DecisionAuditRecord.model_validate_json(row["payload_json"]) for row in rows]
+
+    def list_session_reports(self) -> list[PaperTradingSessionReport]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT payload_json FROM session_reports ORDER BY completed_at").fetchall()
+        return [PaperTradingSessionReport.model_validate_json(row["payload_json"]) for row in rows]
+
+    def list_observed_orders(self) -> list[ObservedOrderRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload_json FROM observed_orders ORDER BY observed_at"
+            ).fetchall()
+        return [ObservedOrderRecord.model_validate_json(row["payload_json"]) for row in rows]
+
+    def list_observed_positions(self) -> list[ObservedPositionRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload_json FROM observed_positions ORDER BY symbol"
+            ).fetchall()
+        return [ObservedPositionRecord.model_validate_json(row["payload_json"]) for row in rows]
 
     def has_client_order_id(self, client_order_id: str) -> bool:
         with self._connect() as connection:
@@ -343,6 +451,13 @@ class RuntimeStateStore:
             if abs(position.quantity) > 0
         }
 
+    def foreign_position_symbols(self) -> set[str]:
+        return {
+            position.symbol
+            for position in self.list_observed_positions()
+            if position.ownership_class in {"foreign", "unknown"} and abs(position.quantity) > 0
+        }
+
     def consecutive_incident_count(self, *, codes: set[str]) -> int:
         with self._connect() as connection:
             rows = connection.execute(
@@ -356,3 +471,12 @@ class RuntimeStateStore:
                 continue
             break
         return count
+
+
+def _normalize_broker_order_status(status: str) -> str:
+    normalized = status.lower()
+    if normalized == "filled":
+        return "filled"
+    if normalized in {"rejected", "canceled", "cancelled", "expired", "failed"}:
+        return "rejected"
+    return "accepted"

@@ -18,7 +18,9 @@ from mytradingbot.core.models import (
     utc_now,
 )
 from mytradingbot.core.settings import AppSettings
+from mytradingbot.reporting.analytics import RealizedAnalyticsExporter
 from mytradingbot.runtime.models import (
+    BrokerMode,
     DecisionAuditRecord,
     FillLifecycleRecord,
     OrderLifecycleRecord,
@@ -29,6 +31,7 @@ from mytradingbot.runtime.models import (
     RuntimeSessionContext,
     SignalOutcomeLedgerRow,
     SignalSource,
+    broker_mode_description,
 )
 from mytradingbot.runtime.store import RuntimeStateStore
 
@@ -49,6 +52,7 @@ FILTER_REASON_MAP: dict[str, RejectionReasonCode] = {
     "bracket_plan_invalid_after_rounding": "bracket_invalid",
     "live_mode_disabled": "execution_guard_blocked",
     "position_exists": "position_exists",
+    "foreign_position_exists": "position_exists",
     "execution_guard_blocked": "execution_guard_blocked",
     "stale_predictions": "stale_predictions",
     "stale_market_snapshot": "stale_market_snapshot",
@@ -66,12 +70,18 @@ class RuntimeStateService:
     ) -> None:
         self.settings = settings or AppSettings()
         self.store = store or RuntimeStateStore(settings=self.settings)
+        self.analytics_exporter = RealizedAnalyticsExporter(
+            settings=self.settings,
+            store=self.store,
+        )
 
     def create_session_context(self, *, strategy: str, mode: RuntimeMode) -> RuntimeSessionContext:
+        broker_mode = self.resolve_broker_mode(mode=mode)
         context = RuntimeSessionContext(
             started_at=utc_now(),
             strategy=strategy,
             mode=mode,
+            broker_mode=broker_mode,
             prediction_artifact_path=str(self.settings.prediction_artifact_path()),
             model_artifact_path=str(self.settings.qlib_model_artifact_path()),
             dataset_artifact_path=str(self.settings.qlib_dataset_artifact_path()),
@@ -79,6 +89,14 @@ class RuntimeStateService:
         )
         self.store.record_session_start(context)
         return context
+
+    def resolve_broker_mode(self, *, mode: RuntimeMode) -> BrokerMode:
+        if mode is RuntimeMode.LIVE:
+            return "live_guarded"
+        configured = self.settings.broker.broker_mode
+        if configured in {"local_paper", "alpaca_paper_api"}:
+            return configured
+        return "local_paper"
 
     def market_snapshot_status(self, *, market_snapshot_path: Path | None = None) -> ArtifactStatus:
         path = market_snapshot_path or self.settings.market_snapshot_artifact_path()
@@ -99,9 +117,11 @@ class RuntimeStateService:
     def enrich_signal_metadata(self, *, strategy_name: str, signals: list) -> list:
         cooldowns = self.store.active_cooldowns(strategy=strategy_name, now=utc_now())
         open_positions = self.store.active_position_symbols()
+        foreign_positions = self.store.foreign_position_symbols()
         for signal in signals:
             signal.metadata["cooldown_active"] = signal.symbol in cooldowns
             signal.metadata["position_exists"] = signal.symbol in open_positions
+            signal.metadata["foreign_position_exists"] = signal.symbol in foreign_positions
             signal.metadata["minutes_to_close"] = self.minutes_to_close(signal.market.timestamp)
         return signals
 
@@ -175,6 +195,7 @@ class RuntimeStateService:
             strategy=context.strategy,
             strategy_version=context.strategy_version,
             mode=context.mode,
+            broker_mode=context.broker_mode,
             symbol=signal.symbol,
             side_considered="buy" if signal.prediction.direction == "long" else "sell",
             bracket_considered=bool(strategy_outcome and strategy_outcome.intent and strategy_outcome.intent.bracket_plan),
@@ -218,6 +239,7 @@ class RuntimeStateService:
                     run_id=context.run_id,
                     strategy=strategy_name,
                     mode=context.mode,
+                    broker_mode=context.broker_mode,
                     symbol=result.order.symbol,
                     side=result.order.side,
                     quantity=result.order.quantity,
@@ -237,6 +259,7 @@ class RuntimeStateService:
                     run_id=context.run_id,
                     strategy=strategy_name,
                     mode=context.mode,
+                    broker_mode=context.broker_mode,
                     symbol=fill.symbol,
                     quantity=fill.quantity,
                     price=fill.price,
@@ -264,11 +287,19 @@ class RuntimeStateService:
         detail: str | None = None,
         severity: str = "warning",
         metadata: dict | None = None,
+        broker_mode: BrokerMode | None = None,
+        ownership_class: str = "bot_owned",
     ) -> RuntimeIncidentRecord:
+        resolved_broker_mode = (
+            broker_mode
+            or (context.broker_mode if context else self.settings.broker.broker_mode)
+        )
         incident = RuntimeIncidentRecord(
             session_id=context.session_id if context else None,
             run_id=context.run_id if context else None,
             timestamp=utc_now(),
+            broker_mode=resolved_broker_mode,
+            ownership_class=ownership_class,  # type: ignore[arg-type]
             code=code,
             severity=severity,  # type: ignore[arg-type]
             summary=summary,
@@ -301,6 +332,7 @@ class RuntimeStateService:
                 {
                     "event_id": audit.event_id,
                     "symbol": audit.symbol,
+                    "broker_mode": audit.broker_mode,
                     "signal_source": audit.signal_source,
                     "final_decision_status": audit.final_decision_status,
                     "rejection_reason_code": audit.final_rejection_reason_code,
@@ -312,15 +344,27 @@ class RuntimeStateService:
             ],
         )
         paths["audit_md"].write_text(self._render_audit_markdown(audits), encoding="utf-8")
+        analytics_paths = self.materialize_closed_trade_analytics()
 
         accepted_count = len([audit for audit in audits if audit.final_decision_status.startswith("accepted")])
         rejected_count = len([audit for audit in audits if audit.final_decision_status == "rejected"])
         skipped_count = len([audit for audit in audits if audit.final_decision_status == "skipped"])
+        foreign_orders = [
+            order
+            for order in self.store.list_observed_orders()
+            if order.ownership_class in {"foreign", "unknown"}
+        ]
+        foreign_positions = [
+            position
+            for position in self.store.list_observed_positions()
+            if position.ownership_class in {"foreign", "unknown"}
+        ]
         report = PaperTradingSessionReport(
             session_id=context.session_id,
             run_id=context.run_id,
             strategy=context.strategy,
             mode=context.mode,
+            broker_mode=context.broker_mode,
             started_at=context.started_at,
             completed_at=utc_now(),
             order_count=len(orders),
@@ -337,8 +381,11 @@ class RuntimeStateService:
             ],
             report_paths=[str(paths[key]) for key in ("audit_json", "audit_csv", "audit_md", "session_json", "session_md", "analytics_md")],
             incident_count=len(incidents),
+            foreign_order_count=len(foreign_orders),
+            foreign_position_count=len(foreign_positions),
             notes=notes,
         )
+        report.report_paths.extend(analytics_paths)
         paths["session_json"].write_text(report.model_dump_json(indent=2), encoding="utf-8")
         paths["session_md"].write_text(self._render_session_markdown(report, orders, fills, positions, incidents), encoding="utf-8")
         paths["analytics_md"].write_text(self._render_analytics_markdown(audits), encoding="utf-8")
@@ -349,6 +396,9 @@ class RuntimeStateService:
         if reason is None:
             return None
         return FILTER_REASON_MAP.get(reason, "invalid_signal_payload")
+
+    def materialize_closed_trade_analytics(self) -> list[str]:
+        return self.analytics_exporter.write()
 
     def _build_rule_checks(
         self,
@@ -362,6 +412,7 @@ class RuntimeStateService:
             RuleCheckRecord(stage="freshness", name="predictions_fresh", passed=prediction_status.is_ready, detail=prediction_status.reason),
             RuleCheckRecord(stage="freshness", name="market_snapshot_fresh", passed=market_status.is_ready, detail=market_status.reason),
             RuleCheckRecord(stage="strategy", name="duplicate_position_check", passed=not bool(signal.metadata.get("position_exists", False))),
+            RuleCheckRecord(stage="strategy", name="foreign_position_check", passed=not bool(signal.metadata.get("foreign_position_exists", False))),
             RuleCheckRecord(stage="strategy", name="cooldown_check", passed=not bool(signal.metadata.get("cooldown_active", False))),
         ]
         if trace.strategy_outcome is not None:
@@ -391,6 +442,7 @@ class RuntimeStateService:
         return checks
 
     def _append_signal_ledger(self, audit: DecisionAuditRecord) -> None:
+        ownership_class = "foreign" if audit.symbol in self.store.foreign_position_symbols() else "bot_owned"
         self._append_csv_row(
             self.settings.paths.ledger_dir / "signal_outcomes.csv",
             SignalOutcomeLedgerRow(
@@ -399,6 +451,8 @@ class RuntimeStateService:
                 run_id=audit.run_id,
                 timestamp=audit.timestamp,
                 strategy=audit.strategy,
+                broker_mode=audit.broker_mode,
+                ownership_class=ownership_class,
                 symbol=audit.symbol,
                 signal_source=audit.signal_source,
                 final_decision_status=audit.final_decision_status,
@@ -447,39 +501,50 @@ class RuntimeStateService:
 
     @staticmethod
     def _render_audit_markdown(audits: list[DecisionAuditRecord]) -> str:
+        broker_mode = audits[0].broker_mode if audits else "local_paper"
         lines = [
             "# Decision Audit",
             "",
             f"- candidates audited: `{len(audits)}`",
+            f"- broker_mode: `{broker_mode}`",
+            f"- broker_description: `{broker_mode_description(broker_mode)}`",
             "",
-            "| Symbol | Source | Status | Rejection | Score | Predicted Return |",
-            "| --- | --- | --- | --- | ---: | ---: |",
+            "| Symbol | Broker Mode | Source | Status | Rejection | Score | Predicted Return |",
+            "| --- | --- | --- | --- | --- | ---: | ---: |",
         ]
         for audit in audits:
             lines.append(
-                f"| {audit.symbol} | {audit.signal_source} | {audit.final_decision_status} | "
+                f"| {audit.symbol} | {audit.broker_mode} | {audit.signal_source} | {audit.final_decision_status} | "
                 f"{audit.final_rejection_reason_code or ''} | {audit.qlib_raw_score or 0:.4f} | "
                 f"{audit.predicted_return or 0:.4f} |"
             )
         return "\n".join(lines) + "\n"
 
-    @staticmethod
     def _render_session_markdown(
+        self,
         report: PaperTradingSessionReport,
         orders: list[BrokerOrder],
         fills: list[FillEvent],
         positions: list[PositionSnapshot],
         incidents: list[RuntimeIncidentRecord],
     ) -> str:
+        external_submission_enabled = self.settings.broker.resolved_external_submission_enabled()
         lines = [
-            "# Paper Trading Session",
+            f"# Paper Trading Session ({broker_mode_description(report.broker_mode).title()})",
             "",
             f"- session_id: `{report.session_id}`",
             f"- strategy: `{report.strategy}`",
             f"- mode: `{report.mode.value}`",
+            f"- broker_mode: `{report.broker_mode}`",
+            f"- broker_description: `{broker_mode_description(report.broker_mode)}`",
+            f"- api_base_url: `{self.settings.broker.alpaca_base_url}`",
+            f"- external_broker_submission_enabled: `{str(external_submission_enabled).lower()}`",
+            f"- ownership_mode: `{self.settings.broker.ownership_policy}`",
             f"- orders: `{len(orders)}`",
             f"- fills: `{len(fills)}`",
             f"- open positions: `{len([position for position in positions if abs(position.quantity) > 0])}`",
+            f"- foreign_open_orders: `{report.foreign_order_count}`",
+            f"- foreign_open_positions: `{report.foreign_position_count}`",
             f"- incidents: `{len(incidents)}`",
             f"- no_trade_success: `{report.no_trade_success}`",
             "",
@@ -492,9 +557,16 @@ class RuntimeStateService:
     @staticmethod
     def _render_analytics_markdown(audits: list[DecisionAuditRecord]) -> str:
         by_source: dict[str, int] = {}
+        by_broker_mode: dict[str, int] = {}
         for audit in audits:
             by_source[audit.signal_source] = by_source.get(audit.signal_source, 0) + 1
-        lines = ["# Analytics Summary", ""]
+            by_broker_mode[audit.broker_mode] = by_broker_mode.get(audit.broker_mode, 0) + 1
+        headline_mode = next(iter(sorted(by_broker_mode))) if by_broker_mode else "local_paper"
+        lines = [f"# Analytics Summary ({broker_mode_description(headline_mode).title()})", ""]
+        for broker_mode, count in sorted(by_broker_mode.items()):
+            lines.append(
+                f"- broker_mode={broker_mode}: `{count}` candidates via {broker_mode_description(broker_mode)}"
+            )
         for source, count in sorted(by_source.items()):
             lines.append(f"- {source}: `{count}`")
         return "\n".join(lines) + "\n"

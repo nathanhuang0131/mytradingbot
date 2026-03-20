@@ -104,6 +104,70 @@ python scripts\run_alpha_robust_training.py --strategy scalping --symbols-file d
 python scripts\run_institutional_pipeline.py --strategy scalping --use-top-liquidity-universe --timeframes 1m 5m 15m 1d --mode paper
 ```
 
+## Overnight Paper Runner
+
+The canonical overnight paper runner is the loop mode in `scripts/run_paper_trading.py`. It is restart-safe because each cycle rehydrates broker state from `data/state/institutional_runtime.sqlite3`, reuses persisted brackets and positions, writes a rolling log to `logs/paper_trading_loop.log`, and refreshes closed-trade analytics after every cycle.
+
+```powershell
+python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --verbose
+```
+
+Optional bounded run:
+
+```powershell
+python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --max-cycles 12 --verbose
+```
+
+## Morning Analytics Workflow
+
+After an overnight run, inspect:
+
+- `reports/analytics/closed_trades.csv`
+- `reports/analytics/pnl_attribution.csv`
+- `reports/analytics/pnl_summary.md`
+- `reports/paper_trading/`
+- `reports/signals/`
+
+`reports/analytics/closed_trades.csv` contains only realized, closed trades derived from stored entry and exit fills. `reports/analytics/pnl_attribution.csv` aggregates realized P&L and win rate by symbol, strategy, and `signal_source`.
+
+## Local Paper Broker Vs Alpaca Paper Account
+
+The canonical overnight paper runner uses the repo-local `local_paper` broker mode. Orders, fills, positions, brackets, incidents, and realized analytics come from the SQLite runtime store at `data/state/institutional_runtime.sqlite3` plus the repo-local report and ledger artifacts.
+
+In `local_paper` mode:
+
+- `reports/paper_trading/`, `reports/signals/`, `reports/analytics/`, and `data/ledger/` reflect repo-local simulated paper activity
+- the Alpaca paper account UI remains unchanged because no Alpaca paper API order routing happens
+- `logs/paper_trading_loop.log` now prints a startup banner showing `broker_mode=local_paper` and `external_broker_submission_enabled=false`
+
+In `alpaca_paper_api` mode:
+
+- `scripts/run_paper_trading.py` submits real Alpaca paper orders to `https://paper-api.alpaca.markets`
+- bot-owned orders and positions are actively managed only when this repo can match deterministic `client_order_id` lineage or persisted runtime lineage
+- foreign or unknown Alpaca paper orders and positions remain read-only, appear in repo-local reports and incidents, and count toward risk context
+- a foreign or unknown same-symbol position blocks a new bot entry by default
+- strategy profitability and signal-source profitability exclude foreign or unknown account activity by default
+
+Smoke test the Alpaca paper broker path with:
+
+```powershell
+python scripts\check_alpaca_paper_broker.py --list-orders
+```
+
+Run one bounded Alpaca paper loop with:
+
+```powershell
+python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --loop --interval-seconds 300 --max-cycles 1 --verbose
+```
+
+To clear only repo-local local paper runtime state and analytics before a fresh overnight run:
+
+```powershell
+python scripts\reset_local_paper_state.py --yes
+```
+
+That reset archives only repo-local SQLite/local-paper ledgers, session reports, analytics, and loop logs. It does not touch market data, qlib artifacts, universe files, or Alpaca account state.
+
 ## V2 Guarantees
 
 - `src/mytradingbot/data/pipeline.py` will not normalize stale local raw parquet if the requested download/update wrote no new usable raw data.
@@ -113,3 +177,4 @@ python scripts\run_institutional_pipeline.py --strategy scalping --use-top-liqui
 - `src/mytradingbot/training/data_quality.py` enforces multi-timeframe sufficiency before the institutional training runner proceeds.
 - `src/mytradingbot/runtime/store.py` keeps restart-safe runtime state under `data/state/`.
 - `src/mytradingbot/runtime/service.py` writes decision-audit, paper-session, analytics, and incident artifacts even when zero trades occur.
+- `scripts/run_paper_trading.py --loop` keeps the current paper workflow repo-local and restart-safe without weakening any training or risk gate.

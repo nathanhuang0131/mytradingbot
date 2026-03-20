@@ -1,6 +1,6 @@
 # Top Liquidity Universe Report
 
-- selected symbols: `20`
+- selected symbols: `100`
 
 | Rank | Symbol | Avg Close | Avg Volume | Avg Dollar Volume |
 | --- | --- | ---: | ---: | ---: |

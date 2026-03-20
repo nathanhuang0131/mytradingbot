@@ -35,3 +35,12 @@ def test_risk_engine_rejects_scalping_buy_without_bracket_plan(approved_trade_in
 
     assert not decision.approved
     assert decision.reason == "missing_bracket_plan"
+
+
+def test_risk_engine_blocks_same_symbol_foreign_exposure(approved_trade_intent) -> None:
+    approved_trade_intent.metadata["foreign_position_exists"] = True
+
+    decision = RiskEngine().evaluate(intent=approved_trade_intent, mode=RuntimeMode.PAPER)
+
+    assert not decision.approved
+    assert decision.reason == "foreign_position_exists"

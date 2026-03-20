@@ -14,6 +14,7 @@ from mytradingbot.core.models import (
     MarketSnapshot,
     PositionSnapshot,
 )
+from mytradingbot.runtime.models import BrokerPreflightResult, BrokerReconciliationSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -56,3 +57,20 @@ class BaseBroker(ABC):
         """Return active or historical bracket state."""
 
         return []
+
+    def preflight(self) -> BrokerPreflightResult:
+        """Validate broker connectivity and account readiness before execution."""
+
+        return BrokerPreflightResult(
+            ok=True,
+            message="Broker preflight passed.",
+            broker_mode="local_paper",
+        )
+
+    def reconcile_runtime_state(self, *, strategy_name: str) -> BrokerReconciliationSnapshot:
+        """Reconcile broker truth into the repo-local runtime state."""
+
+        return BrokerReconciliationSnapshot(
+            broker_mode="local_paper",
+            ownership_policy="bot_owned_only",
+        )

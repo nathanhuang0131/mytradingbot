@@ -1,0 +1,231 @@
+[
+  {
+    "event_id": "b5239daa-f237-4a7b-afff-49e415f0a16c",
+    "session_id": "670e423b-a236-46c8-bc69-7d931dc1218b",
+    "run_id": "a14a5de3-0654-4fae-858f-a85db6371606",
+    "correlation_id": "5efd1492-27c8-4f0b-af2e-be367dd39c03",
+    "timestamp": "2026-03-19T22:06:58.287073Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "local_paper",
+    "symbol": "NVDA",
+    "side_considered": "buy",
+    "bracket_considered": true,
+    "signal_source": "qlib_plus_rules",
+    "qlib_raw_score": 0.94,
+    "predicted_return": 0.01,
+    "target_return": 0.01,
+    "candidate_rank": 1,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-19T22:06:58.287073Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "adaptive_target_sizing",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "bracket_plan_valid",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "fee_adjusted_expectancy",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "stop_loss",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "take_profit",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "timeout_exit",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "risk",
+        "name": "mode_allowed",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "risk",
+        "name": "position_limit_ok",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "risk",
+        "name": "bracket_plan_present",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "execution",
+        "name": "execution_result",
+        "passed": true,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "accepted_bracket_buy",
+    "final_rejection_reason_code": null,
+    "final_rejection_reason_detail": null,
+    "notes": [
+      "Bracket plan: entry=120.0000, stop=119.5000, target=120.9000, fees=0.0000, slippage=0.2539, net_rr=1.7400",
+      "Bracket state: status=armed, exit_reason=None, realized_pnl=None"
+    ]
+  }
+]

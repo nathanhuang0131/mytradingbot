@@ -11,6 +11,7 @@ from dotenv import dotenv_values
 
 from mytradingbot.core.enums import RuntimeMode, StrategyName
 from mytradingbot.core.paths import RepoPaths
+from mytradingbot.runtime.models import BrokerMode
 
 
 class RuntimeSettings(BaseModel):
@@ -41,6 +42,10 @@ class StrategySettings(BaseModel):
 class BrokerSettings(BaseModel):
     """Broker-related runtime settings."""
 
+    broker_mode: BrokerMode = Field(
+        default="local_paper",
+        validation_alias=AliasChoices("BROKER__BROKER_MODE", "BROKER_MODE"),
+    )
     alpaca_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("BROKER__ALPACA_API_KEY", "ALPACA_API_KEY"),
@@ -61,6 +66,37 @@ class BrokerSettings(BaseModel):
         default="raw",
         validation_alias=AliasChoices("BROKER__ALPACA_ADJUSTMENT", "ALPACA_ADJUSTMENT"),
     )
+    external_broker_submission_enabled: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "BROKER__EXTERNAL_BROKER_SUBMISSION_ENABLED",
+            "EXTERNAL_BROKER_SUBMISSION_ENABLED",
+        ),
+    )
+    ownership_policy: str = Field(
+        default="bot_owned_only",
+        validation_alias=AliasChoices("BROKER__OWNERSHIP_POLICY", "OWNERSHIP_POLICY"),
+    )
+
+    def resolved_external_submission_enabled(self) -> bool:
+        if self.external_broker_submission_enabled is not None:
+            return self.external_broker_submission_enabled
+        return self.broker_mode == "alpaca_paper_api"
+
+
+class BrokerFeeSettings(BaseModel):
+    """Broker fee schedule defaults used for analytics and attribution."""
+
+    fee_schedule_version: str = "alpaca_public_schedule_2026-03-20"
+    fee_schedule_effective_date: str = "2026-03-20"
+    commission_per_order: float = 0.0
+    sec_sell_rate_per_dollar: float = 0.0
+    taf_sell_per_share: float = 0.000166
+    taf_cap_per_trade: float = 8.30
+    cat_per_share: float = 0.0000265
+    monthly_data_plan_usd: float = 99.0
+    margin_rate_annual: float = 0.0625
+    fee_allocation_mode: str = "trading_fees_only"
 
 
 class DataPipelineSettings(BaseModel):
@@ -227,6 +263,7 @@ class AppSettings(BaseSettings):
     runtime: RuntimeSettings = RuntimeSettings()
     strategies: StrategySettings = StrategySettings()
     broker: BrokerSettings = BrokerSettings()
+    broker_fees: BrokerFeeSettings = BrokerFeeSettings()
     data: DataPipelineSettings = DataPipelineSettings()
     universe: UniverseSettings = UniverseSettings()
     freshness: FreshnessSettings = FreshnessSettings()
@@ -262,6 +299,10 @@ class AppSettings(BaseSettings):
             ),
         )
         broker.setdefault(
+            "broker_mode",
+            _first_available("BROKER_MODE", file_values=file_values, fallback=broker.get("broker_mode")),
+        )
+        broker.setdefault(
             "alpaca_api_key",
             _first_available("ALPACA_API_KEY", file_values=file_values, fallback=broker.get("alpaca_api_key")),
         )
@@ -295,6 +336,22 @@ class AppSettings(BaseSettings):
                 "ALPACA_ADJUSTMENT",
                 file_values=file_values,
                 fallback=broker.get("alpaca_adjustment"),
+            ),
+        )
+        broker.setdefault(
+            "external_broker_submission_enabled",
+            _first_available(
+                "EXTERNAL_BROKER_SUBMISSION_ENABLED",
+                file_values=file_values,
+                fallback=broker.get("external_broker_submission_enabled"),
+            ),
+        )
+        broker.setdefault(
+            "ownership_policy",
+            _first_available(
+                "OWNERSHIP_POLICY",
+                file_values=file_values,
+                fallback=broker.get("ownership_policy"),
             ),
         )
         llm.setdefault(
@@ -353,6 +410,9 @@ class AppSettings(BaseSettings):
         self.broker.alpaca_api_key = self.broker.alpaca_api_key or (
             _first_available("ALPACA_API_KEY", file_values=file_values, fallback="") or ""
         )
+        broker_mode = _first_available("BROKER_MODE", file_values=file_values, fallback=self.broker.broker_mode)
+        if broker_mode:
+            self.broker.broker_mode = broker_mode  # type: ignore[assignment]
         self.broker.alpaca_secret_key = self.broker.alpaca_secret_key or (
             _first_available("ALPACA_SECRET_KEY", file_values=file_values, fallback="") or ""
         )
@@ -380,6 +440,23 @@ class AppSettings(BaseSettings):
             )
             or self.broker.alpaca_adjustment
         )
+        external_submission_enabled = _first_available(
+            "EXTERNAL_BROKER_SUBMISSION_ENABLED",
+            file_values=file_values,
+            fallback=self.broker.external_broker_submission_enabled,
+        )
+        if external_submission_enabled is not None:
+            self.broker.external_broker_submission_enabled = _coalesce_bool(
+                self.broker.external_broker_submission_enabled or False,
+                external_submission_enabled,
+            )
+        ownership_policy = _first_available(
+            "OWNERSHIP_POLICY",
+            file_values=file_values,
+            fallback=self.broker.ownership_policy,
+        )
+        if ownership_policy:
+            self.broker.ownership_policy = str(ownership_policy)
         self.llm.openai_api_key = self.llm.openai_api_key or (
             _first_available("OPENAI_API_KEY", file_values=file_values, fallback="") or ""
         )

@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import pandas as pd
+from pydantic import ValidationError
 
 from mytradingbot.core.models import ArtifactStatus, QlibPrediction
 from mytradingbot.core.settings import AppSettings
@@ -233,13 +234,65 @@ class QlibWorkflowService:
                 predictions=[],
             )
 
-        predictions = [QlibPrediction.model_validate(item) for item in raw_payload]
+        try:
+            prediction_records = self._normalize_prediction_payload(raw_payload)
+        except ValueError as exc:
+            invalid_status = ArtifactStatus.unavailable(
+                "predictions",
+                guidance=[
+                    "Fix or regenerate the predictions artifact so it contains a list of prediction records.",
+                ],
+            )
+            return PredictionLoadResult(
+                ok=False,
+                message=str(exc),
+                status=invalid_status,
+                predictions=[],
+            )
+
+        predictions: list[QlibPrediction] = []
+        for index, item in enumerate(prediction_records):
+            try:
+                predictions.append(QlibPrediction.model_validate(item))
+            except ValidationError as exc:
+                invalid_status = ArtifactStatus.unavailable(
+                    "predictions",
+                    guidance=[
+                        "Refresh predictions so each record matches the canonical qlib prediction schema.",
+                    ],
+                )
+                return PredictionLoadResult(
+                    ok=False,
+                    message=(
+                        f"Prediction artifact at {self.predictions_path} contains an invalid prediction "
+                        f"record at index {index} in top-level payload type "
+                        f"'{type(raw_payload).__name__}': {exc}"
+                    ),
+                    status=invalid_status,
+                    predictions=[],
+                )
         return PredictionLoadResult(
             ok=True,
             message=f"Loaded {len(predictions)} predictions.",
             status=status,
             predictions=predictions,
         )
+
+    def _normalize_prediction_payload(self, raw_payload: object) -> list[object]:
+        payload_type = type(raw_payload).__name__
+        expected_message = (
+            f"Prediction artifact at {self.predictions_path} has invalid top-level payload type "
+            f"'{payload_type}'. Expected a list of prediction records or a dict with a "
+            "'predictions' list."
+        )
+        if isinstance(raw_payload, list):
+            return raw_payload
+        if isinstance(raw_payload, dict):
+            predictions = raw_payload.get("predictions")
+            if isinstance(predictions, list):
+                return predictions
+            raise ValueError(expected_message)
+        raise ValueError(expected_message)
 
     def _missing_pyqlib_result(self, action_name: str) -> QlibOperationResult:
         return QlibOperationResult(

@@ -14,15 +14,28 @@ from mytradingbot.qlib_engine.service import QlibWorkflowService
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run a dry-run or paper trading session.")
+    parser = argparse.ArgumentParser(
+        description="Run a dry-run or paper trading session, or a supervised overnight paper loop."
+    )
     parser.add_argument("--strategy", default="scalping")
     parser.add_argument("--mode", choices=["dry_run", "paper"], default="paper")
-    parser.add_argument("--broker-mode", choices=["local_paper", "alpaca_paper_api"], default="local_paper")
+    parser.add_argument(
+        "--broker-mode",
+        choices=["local_paper", "alpaca_paper_api"],
+        default="local_paper",
+    )
+    parser.add_argument("--symbols", nargs="*", default=None)
+    parser.add_argument("--symbols-file", type=Path, default=None)
     parser.add_argument("--predictions-file", type=Path, default=None)
     parser.add_argument("--market-data-file", type=Path, default=None)
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--interval-seconds", type=int, default=300)
     parser.add_argument("--max-cycles", type=int, default=None)
+    parser.add_argument(
+        "--disable-auto-refresh",
+        action="store_true",
+        help="Disable loop/session input refresh and fail instead when the market snapshot or predictions go stale.",
+    )
     parser.add_argument("--verbose", action="store_true")
     return parser
 
@@ -71,6 +84,9 @@ def main() -> int:
             settings=settings,
             predictions_path=args.predictions_file,
             market_snapshot_path=args.market_data_file,
+            symbols=args.symbols,
+            symbols_file=args.symbols_file,
+            auto_refresh_inputs=not args.disable_auto_refresh,
         ).run(
             strategy_name=args.strategy,
             mode=RuntimeMode(args.mode),
@@ -97,6 +113,10 @@ def main() -> int:
     result = service.run_session(
         strategy_name=args.strategy,
         mode=RuntimeMode(args.mode),
+        auto_refresh_inputs=not args.disable_auto_refresh,
+        symbols=args.symbols,
+        symbols_file=args.symbols_file,
+        refresh_timeframes=[settings.data.snapshot_timeframe],
     )
     print(result.model_dump_json(indent=2))
     return 0

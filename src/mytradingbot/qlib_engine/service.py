@@ -204,6 +204,11 @@ class QlibWorkflowService:
 
         return ArtifactStatus.ready("predictions", freshness_minutes=freshness_minutes)
 
+    def prediction_age_seconds(self) -> int | None:
+        if not self.predictions_path.exists():
+            return None
+        return max(0, int(self._now_timestamp() - self.predictions_path.stat().st_mtime))
+
     def load_predictions(self) -> PredictionLoadResult:
         status = self.get_runtime_prediction_status()
         if not status.is_ready:
@@ -277,6 +282,22 @@ class QlibWorkflowService:
             status=status,
             predictions=predictions,
         )
+
+    def extract_prediction_symbols(self) -> list[str]:
+        if not self.predictions_path.exists():
+            return []
+        raw_payload = json.loads(
+            self.predictions_path.read_text(encoding="utf-8-sig")
+        )
+        prediction_records = self._normalize_prediction_payload(raw_payload)
+        symbols: list[str] = []
+        for item in prediction_records:
+            if not isinstance(item, dict):
+                continue
+            symbol = item.get("symbol")
+            if isinstance(symbol, str) and symbol.strip():
+                symbols.append(symbol.strip().upper())
+        return sorted(set(symbols))
 
     def _normalize_prediction_payload(self, raw_payload: object) -> list[object]:
         payload_type = type(raw_payload).__name__

@@ -21,6 +21,7 @@ from mytradingbot.core.settings import AppSettings
 from mytradingbot.reporting.analytics import RealizedAnalyticsExporter
 from mytradingbot.runtime.models import (
     BrokerMode,
+    DecisionPipelineReadiness,
     DecisionAuditRecord,
     FillLifecycleRecord,
     OrderLifecycleRecord,
@@ -54,6 +55,7 @@ FILTER_REASON_MAP: dict[str, RejectionReasonCode] = {
     "position_exists": "position_exists",
     "foreign_position_exists": "position_exists",
     "execution_guard_blocked": "execution_guard_blocked",
+    "broker_rejected": "broker_rejected",
     "stale_predictions": "stale_predictions",
     "stale_market_snapshot": "stale_market_snapshot",
 }
@@ -113,6 +115,12 @@ class RuntimeStateService:
                 guidance=["Refresh market snapshot artifacts before running a new paper session."],
             )
         return ArtifactStatus.ready("market_snapshot", freshness_minutes=freshness_minutes)
+
+    def market_snapshot_age_seconds(self, *, market_snapshot_path: Path | None = None) -> int | None:
+        path = market_snapshot_path or self.settings.market_snapshot_artifact_path()
+        if not path.exists():
+            return None
+        return max(0, int(utc_now().timestamp() - path.stat().st_mtime))
 
     def enrich_signal_metadata(self, *, strategy_name: str, signals: list) -> list:
         cooldowns = self.store.active_cooldowns(strategy=strategy_name, now=utc_now())
@@ -314,6 +322,7 @@ class RuntimeStateService:
         self,
         *,
         context: RuntimeSessionContext,
+        readiness: DecisionPipelineReadiness | None = None,
         audits: list[DecisionAuditRecord],
         orders: list[BrokerOrder],
         fills: list[FillEvent],
@@ -383,6 +392,12 @@ class RuntimeStateService:
             incident_count=len(incidents),
             foreign_order_count=len(foreign_orders),
             foreign_position_count=len(foreign_positions),
+            market_snapshot_ready=(readiness.market_snapshot_ready if readiness is not None else None),
+            market_snapshot_age_seconds=(readiness.market_snapshot_age_seconds if readiness is not None else None),
+            predictions_ready=(readiness.predictions_ready if readiness is not None else None),
+            predictions_age_seconds=(readiness.predictions_age_seconds if readiness is not None else None),
+            decision_pipeline_ready=(readiness.decision_pipeline_ready if readiness is not None else None),
+            decision_block_reason=(readiness.decision_block_reason if readiness is not None else None),
             notes=notes,
         )
         report.report_paths.extend(analytics_paths)
@@ -395,6 +410,8 @@ class RuntimeStateService:
     def map_rejection_reason(self, reason: str | None) -> RejectionReasonCode | None:
         if reason is None:
             return None
+        if reason.startswith("broker_rejected:"):
+            return "broker_rejected"
         return FILTER_REASON_MAP.get(reason, "invalid_signal_payload")
 
     def materialize_closed_trade_analytics(self) -> list[str]:
@@ -545,6 +562,12 @@ class RuntimeStateService:
             f"- open positions: `{len([position for position in positions if abs(position.quantity) > 0])}`",
             f"- foreign_open_orders: `{report.foreign_order_count}`",
             f"- foreign_open_positions: `{report.foreign_position_count}`",
+            f"- market_snapshot_ready: `{report.market_snapshot_ready}`",
+            f"- market_snapshot_age_seconds: `{report.market_snapshot_age_seconds}`",
+            f"- predictions_ready: `{report.predictions_ready}`",
+            f"- predictions_age_seconds: `{report.predictions_age_seconds}`",
+            f"- decision_pipeline_ready: `{report.decision_pipeline_ready}`",
+            f"- decision_block_reason: `{report.decision_block_reason}`",
             f"- incidents: `{len(incidents)}`",
             f"- no_trade_success: `{report.no_trade_success}`",
             "",

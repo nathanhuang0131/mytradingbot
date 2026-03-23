@@ -14,6 +14,7 @@ class _FakeTradingClient:
         self.submitted = []
         self.orders = []
         self.positions = []
+        self.assets = {}
         self.account = SimpleNamespace(status="ACTIVE", buying_power="25000")
 
     def get_account(self):
@@ -49,6 +50,14 @@ class _FakeTradingClient:
             return []
         return []
 
+    def get_asset(self, symbol: str):
+        return self.assets.get(symbol, SimpleNamespace(tradable=True, shortable=True))
+
+
+class _RejectingTradingClient(_FakeTradingClient):
+    def submit_order(self, order_data):
+        raise RuntimeError("alpaca_api_422")
+
 
 def _bracket_request() -> ExecutionRequest:
     return ExecutionRequest(
@@ -63,6 +72,37 @@ def _bracket_request() -> ExecutionRequest:
             planned_entry_price=100.0,
             planned_stop_loss_price=99.0,
             planned_take_profit_price=102.0,
+            planned_quantity=5.0,
+            risk_per_share=1.0,
+            gross_reward_per_share=2.0,
+            estimated_fees=0.0,
+            estimated_slippage=0.0,
+            estimated_fee_per_share=0.0,
+            estimated_slippage_per_share=0.0,
+            estimated_fixed_fees=0.0,
+            net_reward_per_share=2.0,
+            reward_risk_ratio=2.0,
+            expected_net_profit=10.0,
+            time_in_force="day",
+            exit_reason_metadata={"take_profit": "tp", "stop_loss": "sl"},
+        ),
+        metadata={"signal_source": "qlib_plus_rules"},
+    )
+
+
+def _short_bracket_request() -> ExecutionRequest:
+    return ExecutionRequest(
+        symbol="TSLA",
+        side="sell",
+        quantity=5,
+        strategy_name="scalping",
+        mode=RuntimeMode.PAPER,
+        limit_price=100.0,
+        client_order_id="SCALPING-TSLA-SELL-202603201030",
+        bracket_plan=BracketPlan(
+            planned_entry_price=100.0,
+            planned_stop_loss_price=101.0,
+            planned_take_profit_price=98.0,
             planned_quantity=5.0,
             risk_per_share=1.0,
             gross_reward_per_share=2.0,
@@ -140,6 +180,78 @@ def test_alpaca_paper_broker_rounds_bracket_prices_to_valid_penny_increments(tmp
     assert submitted.stop_loss.stop_price == 207.89
 
 
+def test_alpaca_paper_broker_maps_short_bracket_orders_to_alpaca_payload(tmp_path) -> None:
+    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    settings.broker.alpaca_api_key = "key"
+    settings.broker.alpaca_secret_key = "secret"
+    fake_client = _FakeTradingClient()
+
+    broker = AlpacaPaperBroker(settings=settings, trading_client_factory=lambda _settings: fake_client)
+
+    broker.submit_order(_short_bracket_request())
+
+    submitted = fake_client.submitted[0]
+    assert submitted.client_order_id == "SCALPING-TSLA-SELL-202603201030"
+    assert submitted.side.value == "sell"
+    assert submitted.order_class.value == "bracket"
+    assert submitted.take_profit.limit_price == 98.0
+    assert submitted.stop_loss.stop_price == 101.0
+
+
+def test_alpaca_paper_broker_supports_limit_bracket_entry_mapping(tmp_path) -> None:
+    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    settings.broker.alpaca_api_key = "key"
+    settings.broker.alpaca_secret_key = "secret"
+    fake_client = _FakeTradingClient()
+    broker = AlpacaPaperBroker(settings=settings, trading_client_factory=lambda _settings: fake_client)
+    request = _bracket_request().model_copy(deep=True)
+    request.metadata["entry_order_type"] = "limit"
+
+    broker.submit_order(request)
+
+    submitted = fake_client.submitted[0]
+    assert submitted.limit_price == 100.0
+    assert submitted.order_class.value == "bracket"
+
+
+def test_alpaca_paper_broker_rejects_unshortable_assets(tmp_path) -> None:
+    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    settings.broker.alpaca_api_key = "key"
+    settings.broker.alpaca_secret_key = "secret"
+    fake_client = _FakeTradingClient()
+    fake_client.assets["TSLA"] = SimpleNamespace(tradable=True, shortable=False)
+    broker = AlpacaPaperBroker(settings=settings, trading_client_factory=lambda _settings: fake_client)
+
+    result = broker.submit_order(_short_bracket_request())
+
+    assert result.execution_skipped
+    assert result.reason is not None
+    assert "not shortable" in result.reason.lower()
+
+
+def test_alpaca_paper_broker_surfaces_api_rejections_as_broker_rejected(tmp_path) -> None:
+    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    settings.broker.alpaca_api_key = "key"
+    settings.broker.alpaca_secret_key = "secret"
+    broker = AlpacaPaperBroker(
+        settings=settings,
+        trading_client_factory=lambda _settings: _RejectingTradingClient(),
+    )
+
+    result = broker.submit_order(_bracket_request())
+
+    assert result.execution_skipped
+    assert result.reason == "broker_rejected:alpaca_api_422"
+
+
 def test_alpaca_paper_broker_reconciliation_keeps_bot_owned_and_foreign_state_separate(tmp_path) -> None:
     from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
     from mytradingbot.runtime.store import RuntimeStateStore
@@ -189,3 +301,53 @@ def test_alpaca_paper_broker_reconciliation_keeps_bot_owned_and_foreign_state_se
     assert snapshot.foreign_position_count == 1
     assert store.list_order_records()[0].client_order_id == "SCALPING-AAPL-BUY-202603201030"
     assert store.list_observed_positions()[0].ownership_class == "foreign"
+
+
+def test_alpaca_paper_broker_reconciliation_restores_bot_owned_short_position(tmp_path) -> None:
+    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+    from mytradingbot.runtime.store import RuntimeStateStore
+
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    settings.broker.alpaca_api_key = "key"
+    settings.broker.alpaca_secret_key = "secret"
+    fake_client = _FakeTradingClient()
+    fake_client.orders = [
+        SimpleNamespace(
+            id="bot-short-parent",
+            client_order_id="SCALPING-TSLA-SELL-202603201030",
+            symbol="TSLA",
+            side=SimpleNamespace(value="sell"),
+            qty="5",
+            filled_qty="5",
+            filled_avg_price="100.0",
+            status=SimpleNamespace(value="filled"),
+            submitted_at=datetime(2026, 3, 20, 10, 30, tzinfo=timezone.utc),
+            filled_at=datetime(2026, 3, 20, 10, 30, tzinfo=timezone.utc),
+            order_class=SimpleNamespace(value="bracket"),
+            limit_price=None,
+            stop_price=None,
+            legs=[],
+        )
+    ]
+    fake_client.positions = [
+        SimpleNamespace(
+            symbol="TSLA",
+            qty="-5",
+            avg_entry_price="100.0",
+            current_price="99.0",
+            unrealized_pl="5.0",
+        )
+    ]
+
+    store = RuntimeStateStore(settings=settings)
+    broker = AlpacaPaperBroker(
+        settings=settings,
+        runtime_store=store,
+        trading_client_factory=lambda _settings: fake_client,
+    )
+
+    snapshot = broker.reconcile_runtime_state(strategy_name="scalping")
+
+    assert snapshot.bot_owned_position_count == 1
+    assert store.list_positions()[0].symbol == "TSLA"
+    assert store.list_positions()[0].quantity == -5.0

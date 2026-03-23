@@ -91,6 +91,18 @@ class RuntimeSessionContext(BaseModel):
     market_snapshot_artifact_path: str
 
 
+class DecisionPipelineReadiness(BaseModel):
+    """Freshness/readiness state for trading inputs at session or loop cycle time."""
+
+    market_snapshot_ready: bool = False
+    market_snapshot_age_seconds: int | None = None
+    predictions_ready: bool = False
+    predictions_age_seconds: int | None = None
+    decision_pipeline_ready: bool = False
+    decision_block_reason: str | None = None
+    refresh_actions: list[str] = Field(default_factory=list)
+
+
 class RuleCheckRecord(BaseModel):
     """Single rule/check outcome recorded in the audit trail."""
 
@@ -251,6 +263,12 @@ class PaperTradingSessionReport(BaseModel):
     incident_count: int = 0
     foreign_order_count: int = 0
     foreign_position_count: int = 0
+    market_snapshot_ready: bool | None = None
+    market_snapshot_age_seconds: int | None = None
+    predictions_ready: bool | None = None
+    predictions_age_seconds: int | None = None
+    decision_pipeline_ready: bool | None = None
+    decision_block_reason: str | None = None
     notes: list[str] = Field(default_factory=list)
 
 

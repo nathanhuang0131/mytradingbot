@@ -66,10 +66,11 @@ class PaperBroker(BaseBroker):
         )
         position = self._update_position(request, fill_price)
         bracket_state = None
-        if request.bracket_plan is not None and request.side == "buy":
+        if request.bracket_plan is not None:
             bracket_state = BrokerBracketState(
                 symbol=request.symbol,
                 entry_order_id=order.order_id,
+                entry_side=request.side,
                 bracket_plan=request.bracket_plan.with_quantity(request.quantity),
             )
             self._brackets[request.symbol] = bracket_state
@@ -104,10 +105,16 @@ class PaperBroker(BaseBroker):
             return []
 
         plan = bracket.bracket_plan
-        if snapshot.last_price >= plan.planned_take_profit_price:
-            return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="take_profit")]
-        if snapshot.last_price <= plan.planned_stop_loss_price:
-            return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="stop_loss")]
+        if bracket.entry_side == "buy":
+            if snapshot.last_price >= plan.planned_take_profit_price:
+                return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="take_profit")]
+            if snapshot.last_price <= plan.planned_stop_loss_price:
+                return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="stop_loss")]
+        else:
+            if snapshot.last_price <= plan.planned_take_profit_price:
+                return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="take_profit")]
+            if snapshot.last_price >= plan.planned_stop_loss_price:
+                return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="stop_loss")]
         return []
 
     def flatten_open_brackets(self, *, reason: str) -> list[ExecutionResult]:
@@ -179,9 +186,10 @@ class PaperBroker(BaseBroker):
             "strategy_name": strategy_name,
             "broker_mode": "local_paper",
         }
+        exit_side = "sell" if bracket.entry_side == "buy" else "buy"
         request = ExecutionRequest(
             symbol=symbol,
-            side="sell",
+            side=exit_side,
             quantity=quantity,
             strategy_name=strategy_name,
             mode=mode,
@@ -190,7 +198,7 @@ class PaperBroker(BaseBroker):
         )
         order = BrokerOrder(
             symbol=symbol,
-            side="sell",
+            side=exit_side,
             quantity=quantity,
             mode=mode,
             status="filled",
@@ -205,7 +213,11 @@ class PaperBroker(BaseBroker):
             metadata=exit_metadata,
         )
         updated_position = self._update_position(request, price)
-        realized_pnl = (price - bracket.bracket_plan.planned_entry_price) * quantity
+        realized_pnl = (
+            (price - bracket.bracket_plan.planned_entry_price) * quantity
+            if bracket.entry_side == "buy"
+            else (bracket.bracket_plan.planned_entry_price - price) * quantity
+        )
         bracket.status = "closed"
         bracket.closed_at = fill.filled_at
         bracket.exit_reason = reason

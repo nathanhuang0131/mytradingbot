@@ -67,3 +67,63 @@ def test_paper_session_runs_end_to_end_with_traceability(tmp_path) -> None:
     assert result.traceability[0].signal is not None
     assert result.traceability[0].signal.symbol == "AAPL"
     assert result.orders
+
+
+def test_paper_session_runs_end_to_end_for_short_scalping(tmp_path) -> None:
+    predictions_path = tmp_path / "predictions.json"
+    market_path = tmp_path / "market.json"
+    predictions_path.write_text(
+        json.dumps(
+            [
+                {
+                    "symbol": "TSLA",
+                    "score": 0.95,
+                    "predicted_return": -0.012,
+                    "confidence": 0.84,
+                    "rank": 1,
+                    "direction": "short",
+                    "horizon": "intraday",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    market_path.write_text(
+        json.dumps(
+            [
+                {
+                    "symbol": "TSLA",
+                    "last_price": 100.0,
+                    "vwap": 100.8,
+                    "spread_bps": 1.0,
+                    "volume": 1500000,
+                    "liquidity_score": 0.88,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": -0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+
+    service = TradingPlatformService(
+        settings=settings,
+        qlib_service=QlibWorkflowService(
+            settings=settings,
+            pyqlib_available=False,
+            predictions_path=predictions_path,
+        ),
+        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
+    )
+
+    result = service.run_session(strategy_name="scalping", mode=RuntimeMode.PAPER)
+
+    assert result.session_summary.mode == RuntimeMode.PAPER
+    assert result.session_summary.trade_count == 1
+    assert result.orders
+    assert result.orders[0].side == "sell"
+    assert result.positions
+    assert result.positions[0].quantity < 0

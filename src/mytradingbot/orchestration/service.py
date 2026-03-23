@@ -28,6 +28,7 @@ from mytradingbot.qlib_engine.service import QlibWorkflowService
 from mytradingbot.risk.service import RiskEngine
 from mytradingbot.reporting.service import ReportingService
 from mytradingbot.runtime.models import BrokerMode, BrokerReconciliationSnapshot
+from mytradingbot.runtime.models import DecisionPipelineReadiness
 from mytradingbot.runtime.service import RuntimeStateService
 from mytradingbot.strategies.registry import StrategyRegistry
 from mytradingbot.universe.storage import UniverseStorage
@@ -168,6 +169,173 @@ class TradingPlatformService:
             return None
         return self.universe_storage.load_symbols(symbols_file)
 
+    @staticmethod
+    def _path_age_seconds(path: Path) -> int | None:
+        if not path.exists():
+            return None
+        return max(0, int(utc_now().timestamp() - path.stat().st_mtime))
+
+    def _decision_pipeline_readiness(
+        self,
+        *,
+        decision_block_reason: str | None = None,
+        refresh_actions: list[str] | None = None,
+    ) -> DecisionPipelineReadiness:
+        market_status = self.runtime_state_service.market_snapshot_status(
+            market_snapshot_path=self.market_data_service.market_snapshot_path
+        )
+        prediction_status = self.qlib_service.get_runtime_prediction_status()
+        reason = decision_block_reason
+        if reason is None:
+            if not market_status.is_ready:
+                if market_status.reason == "stale":
+                    reason = "stale_market_snapshot"
+                elif market_status.reason == "missing":
+                    reason = "missing_market_snapshot"
+                else:
+                    reason = market_status.reason or "market_snapshot_unavailable"
+            elif not prediction_status.is_ready:
+                if prediction_status.reason == "stale":
+                    reason = "stale_predictions"
+                elif prediction_status.reason == "missing":
+                    reason = "missing_predictions"
+                else:
+                    reason = prediction_status.reason or "predictions_unavailable"
+        return DecisionPipelineReadiness(
+            market_snapshot_ready=market_status.is_ready,
+            market_snapshot_age_seconds=self.runtime_state_service.market_snapshot_age_seconds(
+                market_snapshot_path=self.market_data_service.market_snapshot_path
+            ),
+            predictions_ready=prediction_status.is_ready,
+            predictions_age_seconds=self.qlib_service.prediction_age_seconds(),
+            decision_pipeline_ready=market_status.is_ready and prediction_status.is_ready and reason is None,
+            decision_block_reason=reason,
+            refresh_actions=refresh_actions or [],
+        )
+
+    def _resolve_runtime_refresh_symbols(
+        self,
+        *,
+        symbols: list[str] | None = None,
+        symbols_file: Path | None = None,
+    ) -> list[str] | None:
+        resolved_symbols = self.resolve_symbols(symbols=symbols, symbols_file=symbols_file)
+        if resolved_symbols:
+            return resolved_symbols
+        inferred_symbols = self.qlib_service.extract_prediction_symbols()
+        if inferred_symbols:
+            return inferred_symbols
+        return None
+
+    def _sync_runtime_market_snapshot(self) -> None:
+        source_path = self.settings.market_snapshot_artifact_path()
+        target_path = self.market_data_service.market_snapshot_path
+        if target_path == source_path or not source_path.exists():
+            return
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    def ensure_decision_pipeline_ready(
+        self,
+        *,
+        strategy_name: str,
+        auto_refresh_inputs: bool,
+        symbols: list[str] | None = None,
+        symbols_file: Path | None = None,
+        refresh_timeframes: list[str] | None = None,
+    ) -> DecisionPipelineReadiness:
+        refresh_actions: list[str] = []
+        readiness = self._decision_pipeline_readiness()
+        if not auto_refresh_inputs:
+            return readiness
+
+        market_refresh_due = (
+            not readiness.market_snapshot_ready
+            or (
+                readiness.market_snapshot_age_seconds is not None
+                and readiness.market_snapshot_age_seconds
+                >= self.settings.runtime_safety.market_refresh_interval_seconds
+            )
+        )
+        prediction_refresh_due = (
+            not readiness.predictions_ready
+            or (
+                readiness.predictions_age_seconds is not None
+                and readiness.predictions_age_seconds
+                >= self.settings.runtime_safety.prediction_refresh_interval_seconds
+            )
+        )
+        dataset_path = self.settings.qlib_dataset_artifact_path()
+        dataset_age_seconds = self._path_age_seconds(dataset_path)
+        dataset_refresh_due = False
+
+        if market_refresh_due or prediction_refresh_due:
+            resolved_symbols = self._resolve_runtime_refresh_symbols(
+                symbols=symbols,
+                symbols_file=symbols_file,
+            )
+            if not resolved_symbols:
+                return self._decision_pipeline_readiness(
+                    decision_block_reason="symbol_scope_unresolved_for_auto_refresh",
+                    refresh_actions=refresh_actions,
+                )
+        else:
+            resolved_symbols = None
+
+        if market_refresh_due and resolved_symbols is not None:
+            market_result = self.download_market_data(
+                symbols=resolved_symbols,
+                timeframes=refresh_timeframes or [self.settings.data.snapshot_timeframe],
+                full_refresh=False,
+            )
+            refresh_actions.append(f"market_refresh:{market_result.message}")
+            if not market_result.ok:
+                return self._decision_pipeline_readiness(
+                    decision_block_reason=f"market_refresh_failed:{market_result.message}",
+                    refresh_actions=refresh_actions,
+                )
+            self._sync_runtime_market_snapshot()
+            readiness = self._decision_pipeline_readiness(refresh_actions=refresh_actions)
+
+        if prediction_refresh_due:
+            market_snapshot_path = self.market_data_service.market_snapshot_path
+            dataset_refresh_due = (
+                not dataset_path.exists()
+                or (
+                    dataset_age_seconds is not None
+                    and dataset_age_seconds
+                    >= self.settings.runtime_safety.dataset_refresh_interval_seconds
+                )
+                or (
+                    dataset_path.exists()
+                    and market_snapshot_path.exists()
+                    and dataset_path.stat().st_mtime < market_snapshot_path.stat().st_mtime
+                )
+            )
+
+        if dataset_refresh_due and resolved_symbols is not None:
+            dataset_result = self.build_dataset(
+                strategy_name=strategy_name,
+                symbols=resolved_symbols,
+            )
+            refresh_actions.append(f"dataset_refresh:{dataset_result.message}")
+            if not dataset_result.ok:
+                return self._decision_pipeline_readiness(
+                    decision_block_reason=f"dataset_refresh_failed:{dataset_result.message}",
+                    refresh_actions=refresh_actions,
+                )
+
+        if prediction_refresh_due:
+            prediction_result = self.refresh_predictions(strategy_name=strategy_name)
+            refresh_actions.append(f"prediction_refresh:{prediction_result.message}")
+            if not prediction_result.ok:
+                return self._decision_pipeline_readiness(
+                    decision_block_reason=f"prediction_refresh_failed:{prediction_result.message}",
+                    refresh_actions=refresh_actions,
+                )
+
+        return self._decision_pipeline_readiness(refresh_actions=refresh_actions)
+
     def _apply_reconciliation_notes(
         self,
         *,
@@ -210,6 +378,11 @@ class TradingPlatformService:
         *,
         strategy_name: str,
         mode: RuntimeMode | str,
+        auto_refresh_inputs: bool = False,
+        symbols: list[str] | None = None,
+        symbols_file: Path | None = None,
+        refresh_timeframes: list[str] | None = None,
+        intent_metadata_overrides: dict[str, str | float | bool | int] | None = None,
     ) -> SessionResult:
         normalized_mode = mode if isinstance(mode, RuntimeMode) else RuntimeMode(mode)
         context = self.runtime_state_service.create_session_context(
@@ -229,6 +402,7 @@ class TradingPlatformService:
             f"{str(self.settings.broker.resolved_external_submission_enabled()).lower()}",
             f"ownership_mode={self.settings.broker.ownership_policy}",
         ]
+        readiness = self._decision_pipeline_readiness()
 
         preflight = self.broker.preflight()
         if not preflight.ok:
@@ -253,10 +427,12 @@ class TradingPlatformService:
                     issues=[preflight.message],
                 ),
                 rejection_reasons=[preflight.message],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
@@ -290,10 +466,12 @@ class TradingPlatformService:
                     issues=[str(exc)],
                 ),
                 rejection_reasons=["broker_state_unreconciled"],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
@@ -311,6 +489,24 @@ class TradingPlatformService:
             session_notes=session_notes,
         )
 
+        readiness = self.ensure_decision_pipeline_ready(
+            strategy_name=strategy_name,
+            auto_refresh_inputs=auto_refresh_inputs,
+            symbols=symbols,
+            symbols_file=symbols_file,
+            refresh_timeframes=refresh_timeframes,
+        )
+        session_notes.extend(
+            [
+                f"market_snapshot_ready={readiness.market_snapshot_ready}",
+                f"market_snapshot_age_seconds={readiness.market_snapshot_age_seconds}",
+                f"predictions_ready={readiness.predictions_ready}",
+                f"predictions_age_seconds={readiness.predictions_age_seconds}",
+                f"decision_pipeline_ready={readiness.decision_pipeline_ready}",
+                f"decision_block_reason={readiness.decision_block_reason}",
+                *readiness.refresh_actions,
+            ]
+        )
         prediction_result = self.qlib_service.load_predictions()
         market_status = self.runtime_state_service.market_snapshot_status(
             market_snapshot_path=self.market_data_service.market_snapshot_path
@@ -335,10 +531,12 @@ class TradingPlatformService:
                     issues=["execution_guard_blocked"],
                 ),
                 rejection_reasons=["execution_guard_blocked"],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
@@ -359,6 +557,14 @@ class TradingPlatformService:
                     summary="Market snapshot artifact is unavailable for trading.",
                     detail=market_status.reason,
                     severity="error",
+                    metadata={
+                        "market_snapshot_ready": readiness.market_snapshot_ready,
+                        "market_snapshot_age_seconds": readiness.market_snapshot_age_seconds,
+                        "predictions_ready": readiness.predictions_ready,
+                        "predictions_age_seconds": readiness.predictions_age_seconds,
+                        "decision_pipeline_ready": readiness.decision_pipeline_ready,
+                        "decision_block_reason": readiness.decision_block_reason,
+                    },
                 )
             )
             result = SessionResult(
@@ -370,10 +576,12 @@ class TradingPlatformService:
                     issues=market_status.guidance,
                 ),
                 rejection_reasons=[market_status.reason or "market_snapshot_unavailable"],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
@@ -394,6 +602,14 @@ class TradingPlatformService:
                     summary="Prediction artifact unavailable for trading.",
                     detail=prediction_result.message,
                     severity="error",
+                    metadata={
+                        "market_snapshot_ready": readiness.market_snapshot_ready,
+                        "market_snapshot_age_seconds": readiness.market_snapshot_age_seconds,
+                        "predictions_ready": readiness.predictions_ready,
+                        "predictions_age_seconds": readiness.predictions_age_seconds,
+                        "decision_pipeline_ready": readiness.decision_pipeline_ready,
+                        "decision_block_reason": readiness.decision_block_reason,
+                    },
                 )
             )
             result = SessionResult(
@@ -405,10 +621,12 @@ class TradingPlatformService:
                     issues=[prediction_result.message],
                 ),
                 rejection_reasons=[prediction_result.message],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
@@ -433,6 +651,14 @@ class TradingPlatformService:
                     summary="Market data unavailable.",
                     detail=str(exc),
                     severity="error",
+                    metadata={
+                        "market_snapshot_ready": readiness.market_snapshot_ready,
+                        "market_snapshot_age_seconds": readiness.market_snapshot_age_seconds,
+                        "predictions_ready": readiness.predictions_ready,
+                        "predictions_age_seconds": readiness.predictions_age_seconds,
+                        "decision_pipeline_ready": readiness.decision_pipeline_ready,
+                        "decision_block_reason": readiness.decision_block_reason,
+                    },
                 )
             )
             result = SessionResult(
@@ -444,10 +670,12 @@ class TradingPlatformService:
                     issues=[str(exc)],
                 ),
                 rejection_reasons=[str(exc)],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
@@ -543,6 +771,8 @@ class TradingPlatformService:
                         strategy_decision.intent.metadata["client_order_id"]
                     )
                 )
+                if intent_metadata_overrides:
+                    strategy_decision.intent.metadata.update(intent_metadata_overrides)
                 if strategy_decision.intent.bracket_plan is not None:
                     plan = strategy_decision.intent.bracket_plan
                     trace.notes.append(
@@ -653,12 +883,14 @@ class TradingPlatformService:
             fills=fills,
             positions=positions,
             rejection_reasons=rejection_reasons,
+            decision_pipeline_readiness=readiness,
         )
         if summary.trade_count == 0 and summary.status == "completed":
             result.diagnostics = self.diagnostics_service.build_no_trade_report(result)
         result.post_session_report = self.reporting_service.build_post_session_review(result)
         self.runtime_state_service.write_session_artifacts(
             context=context,
+            readiness=readiness,
             audits=audits,
             orders=orders,
             fills=fills,

@@ -39,7 +39,7 @@ class RiskEngine:
             checks.append("positive_quantity_required")
             return RiskDecision.reject(reason="invalid_quantity", checks=checks)
 
-        if intent.strategy_name == "scalping" and intent.side == "buy" and intent.bracket_plan is None:
+        if intent.strategy_name == "scalping" and intent.bracket_plan is None:
             checks.append("bracket_plan_required")
             return RiskDecision.reject(reason="missing_bracket_plan", checks=checks)
 

@@ -10,6 +10,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from mytradingbot.core.enums import RuntimeMode
+from mytradingbot.runtime.models import DecisionPipelineReadiness
 
 logger = logging.getLogger(__name__)
 
@@ -337,6 +338,7 @@ class BrokerBracketState(BaseModel):
 
     symbol: str
     entry_order_id: str
+    entry_side: Literal["buy", "sell"] = "buy"
     status: Literal["armed", "closed", "cancelled"] = "armed"
     bracket_plan: BracketPlan
     opened_at: datetime = Field(default_factory=utc_now)
@@ -442,6 +444,7 @@ class SessionResult(BaseModel):
     rejection_reasons: list[str] = Field(default_factory=list)
     diagnostics: NoTradeDiagnostics | None = None
     post_session_report: PostSessionReport | None = None
+    decision_pipeline_readiness: "DecisionPipelineReadiness | None" = None
 
     @property
     def traceability(self) -> list[TradeAttemptTrace]:

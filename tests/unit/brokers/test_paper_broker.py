@@ -1,3 +1,5 @@
+import pytest
+
 from mytradingbot.core.enums import RuntimeMode
 from mytradingbot.core.models import BracketPlan, ExecutionRequest, MarketSnapshot
 
@@ -125,3 +127,57 @@ def test_paper_broker_flattens_open_brackets_near_close() -> None:
 
     assert len(exits) == 1
     assert exits[0].reason == "near_close_flatten"
+
+
+def test_paper_broker_triggers_synthetic_short_take_profit_exit() -> None:
+    from mytradingbot.brokers.paper import PaperBroker
+
+    broker = PaperBroker()
+    request = ExecutionRequest(
+        symbol="TSLA",
+        side="sell",
+        quantity=2,
+        strategy_name="scalping",
+        mode=RuntimeMode.PAPER,
+        limit_price=100.0,
+        bracket_plan=BracketPlan(
+            planned_entry_price=100.0,
+            planned_stop_loss_price=101.0,
+            planned_take_profit_price=98.0,
+            planned_quantity=2.0,
+            risk_per_share=1.0,
+            gross_reward_per_share=2.0,
+            estimated_fees=0.0,
+            estimated_slippage=0.0,
+            estimated_fee_per_share=0.0,
+            estimated_slippage_per_share=0.0,
+            estimated_fixed_fees=0.0,
+            net_reward_per_share=2.0,
+            reward_risk_ratio=2.0,
+            expected_net_profit=4.0,
+            time_in_force="day",
+            exit_reason_metadata={"take_profit": "target_exit"},
+        ),
+    )
+
+    broker.submit_order(request)
+    exits = broker.process_market_snapshot(
+        MarketSnapshot(
+            symbol="TSLA",
+            last_price=97.9,
+            vwap=98.2,
+            spread_bps=1.0,
+            volume=1_000_000,
+            liquidity_score=0.8,
+            liquidity_stress=0.2,
+            order_book_imbalance=-0.3,
+            liquidity_sweep_detected=False,
+            volatility_regime="normal",
+        )
+    )
+
+    assert len(exits) == 1
+    assert exits[0].reason == "take_profit"
+    assert exits[0].order is not None
+    assert exits[0].order.side == "buy"
+    assert exits[0].realized_pnl == pytest.approx(4.2)

@@ -89,6 +89,7 @@ class _OpenLot:
     entry_order_id: str
     entry_ts: datetime
     entry_price: float
+    entry_side: str
     remaining_qty: float
 
 
@@ -139,38 +140,22 @@ class RealizedAnalyticsExporter:
                 continue
 
             key = (order.symbol, order.strategy)
-            if order.side == "buy":
-                open_lots[key].append(
-                    _OpenLot(
-                        symbol=order.symbol,
-                        strategy=order.strategy,
-                        broker_mode=order.broker_mode,
-                        ownership_class=order.ownership_class,
-                        signal_source=self._resolve_signal_source(order, decisions_by_session_symbol),
-                        session_id=order.session_id,
-                        run_id=order.run_id,
-                        entry_order_id=order.order_id,
-                        entry_ts=aggregate.filled_at,
-                        entry_price=aggregate.price,
-                        remaining_qty=aggregate.quantity,
-                    )
-                )
-                continue
-
-            if order.side != "sell":
-                continue
-
             remaining_quantity = aggregate.quantity
-            while remaining_quantity > 0 and open_lots[key]:
+            while (
+                remaining_quantity > 0
+                and open_lots[key]
+                and open_lots[key][0].entry_side != order.side
+            ):
                 lot = open_lots[key][0]
                 matched_quantity = min(remaining_quantity, lot.remaining_qty)
+                is_short = lot.entry_side == "sell"
                 fee_breakdown = calculate_trade_fees(
                     FeeCalculationInput(
                         quantity=matched_quantity,
                         entry_price=lot.entry_price,
                         exit_price=aggregate.price,
                         holding_days=max(0, (aggregate.filled_at.date() - lot.entry_ts.date()).days),
-                        is_short=False,
+                        is_short=is_short,
                     ),
                     schedule=self._fee_schedule(),
                     allocation_mode=self.settings.broker_fees.fee_allocation_mode,
@@ -178,7 +163,9 @@ class RealizedAnalyticsExporter:
                 )
                 realized_pnl = fee_breakdown.gross_pnl
                 realized_return_pct = (
-                    ((aggregate.price - lot.entry_price) / lot.entry_price) * 100
+                    ((lot.entry_price - aggregate.price) / lot.entry_price) * 100
+                    if is_short and lot.entry_price
+                    else ((aggregate.price - lot.entry_price) / lot.entry_price) * 100
                     if lot.entry_price
                     else 0.0
                 )
@@ -227,6 +214,24 @@ class RealizedAnalyticsExporter:
                 remaining_quantity -= matched_quantity
                 if lot.remaining_qty <= 0:
                     open_lots[key].popleft()
+
+            if remaining_quantity > 0:
+                open_lots[key].append(
+                    _OpenLot(
+                        symbol=order.symbol,
+                        strategy=order.strategy,
+                        broker_mode=order.broker_mode,
+                        ownership_class=order.ownership_class,
+                        signal_source=self._resolve_signal_source(order, decisions_by_session_symbol),
+                        session_id=order.session_id,
+                        run_id=order.run_id,
+                        entry_order_id=order.order_id,
+                        entry_ts=aggregate.filled_at,
+                        entry_price=aggregate.price,
+                        entry_side=order.side,
+                        remaining_qty=remaining_quantity,
+                    )
+                )
 
         return closed_trades
 

@@ -256,3 +256,94 @@ def test_realized_analytics_excludes_foreign_closed_trades_from_attribution(tmp_
     )
 
     assert attribution_rows == []
+
+
+def test_realized_analytics_materializes_short_closed_trades(tmp_path) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    runtime_service = RuntimeStateService(settings=settings)
+    entry_ts = datetime.now(timezone.utc) - timedelta(minutes=10)
+    exit_ts = entry_ts + timedelta(minutes=5)
+
+    runtime_service.store.record_order(
+        OrderLifecycleRecord(
+            order_id="short-entry-order",
+            session_id="short-entry-session",
+            run_id="short-entry-run",
+            strategy="scalping",
+            mode=RuntimeMode.PAPER,
+            broker_mode="alpaca_paper_api",
+            ownership_class="bot_owned",
+            symbol="TSLA",
+            side="sell",
+            quantity=2,
+            client_order_id="SCALPING-TSLA-SELL-1",
+            status="filled",
+            submitted_at=entry_ts,
+            avg_fill_price=100.0,
+            metadata={"signal_source": "qlib_plus_rules"},
+        )
+    )
+    runtime_service.store.record_fill(
+        FillLifecycleRecord(
+            fill_id="short-entry-fill",
+            order_id="short-entry-order",
+            session_id="short-entry-session",
+            run_id="short-entry-run",
+            strategy="scalping",
+            mode=RuntimeMode.PAPER,
+            broker_mode="alpaca_paper_api",
+            ownership_class="bot_owned",
+            symbol="TSLA",
+            quantity=2,
+            price=100.0,
+            filled_at=entry_ts,
+            metadata={"signal_source": "qlib_plus_rules"},
+        )
+    )
+    runtime_service.store.record_order(
+        OrderLifecycleRecord(
+            order_id="short-exit-order",
+            session_id="short-exit-session",
+            run_id="short-exit-run",
+            strategy="scalping",
+            mode=RuntimeMode.PAPER,
+            broker_mode="alpaca_paper_api",
+            ownership_class="bot_owned",
+            symbol="TSLA",
+            side="buy",
+            quantity=2,
+            status="filled",
+            submitted_at=exit_ts,
+            avg_fill_price=95.0,
+            metadata={"exit_reason": "take_profit"},
+        )
+    )
+    runtime_service.store.record_fill(
+        FillLifecycleRecord(
+            fill_id="short-exit-fill",
+            order_id="short-exit-order",
+            session_id="short-exit-session",
+            run_id="short-exit-run",
+            strategy="scalping",
+            mode=RuntimeMode.PAPER,
+            broker_mode="alpaca_paper_api",
+            ownership_class="bot_owned",
+            symbol="TSLA",
+            quantity=2,
+            price=95.0,
+            filled_at=exit_ts,
+            metadata={"exit_reason": "take_profit"},
+        )
+    )
+
+    closed_trades = RealizedAnalyticsExporter(
+        settings=settings,
+        store=runtime_service.store,
+    ).build_closed_trades()
+
+    assert len(closed_trades) == 1
+    assert closed_trades[0].symbol == "TSLA"
+    assert closed_trades[0].gross_pnl == 10.0
+    assert closed_trades[0].realized_pnl == 10.0
+    assert closed_trades[0].realized_return_pct == 5.0
+    assert closed_trades[0].win_loss_flag == "win"

@@ -33,6 +33,12 @@ class PaperTradingLoopCycleResult(BaseModel):
     ending_open_brackets: int = 0
     analytics_paths: list[str] = Field(default_factory=list)
     broker_mode: BrokerMode = "local_paper"
+    market_snapshot_ready: bool = False
+    market_snapshot_age_seconds: int | None = None
+    predictions_ready: bool = False
+    predictions_age_seconds: int | None = None
+    decision_pipeline_ready: bool = False
+    decision_block_reason: str | None = None
 
 
 class PaperTradingLoopResult(BaseModel):
@@ -54,12 +60,22 @@ class PaperTradingLoopService:
         *,
         predictions_path: Path | None = None,
         market_snapshot_path: Path | None = None,
+        symbols: list[str] | None = None,
+        symbols_file: Path | None = None,
+        auto_refresh_inputs: bool | None = None,
         platform_factory: Callable[[], TradingPlatformService] | None = None,
         runtime_state_service: RuntimeStateService | None = None,
     ) -> None:
         self.settings = settings or AppSettings()
         self.predictions_path = predictions_path
         self.market_snapshot_path = market_snapshot_path
+        self.symbols = symbols
+        self.symbols_file = symbols_file
+        self.auto_refresh_inputs = (
+            self.settings.runtime_safety.auto_refresh_inputs_in_loop
+            if auto_refresh_inputs is None
+            else auto_refresh_inputs
+        )
         self.platform_factory = platform_factory
         self.runtime_state_service = runtime_state_service or RuntimeStateService(settings=self.settings)
         self.log_path = self.settings.paths.logs_dir / "paper_trading_loop.log"
@@ -78,12 +94,16 @@ class PaperTradingLoopService:
         broker_mode = self.runtime_state_service.resolve_broker_mode(mode=mode)
 
         logger.info(
-            "paper_loop_startup broker_mode=%s api_base_url=%s runtime_state_db=%s external_broker_submission_enabled=%s ownership_mode=%s",
+            "paper_loop_startup broker_mode=%s api_base_url=%s runtime_state_db=%s external_broker_submission_enabled=%s ownership_mode=%s auto_refresh_inputs=%s market_refresh_interval_seconds=%s prediction_refresh_interval_seconds=%s dataset_refresh_interval_seconds=%s",
             broker_mode,
             self.settings.broker.alpaca_base_url,
             self.runtime_state_service.store.database_path,
             self.settings.broker.resolved_external_submission_enabled(),
             self.settings.broker.ownership_policy,
+            self.auto_refresh_inputs,
+            self.settings.runtime_safety.market_refresh_interval_seconds,
+            self.settings.runtime_safety.prediction_refresh_interval_seconds,
+            self.settings.runtime_safety.dataset_refresh_interval_seconds,
         )
 
         while max_cycles is None or cycle_number < max_cycles:
@@ -102,6 +122,10 @@ class PaperTradingLoopService:
                 session_result = service.run_session(
                     strategy_name=strategy_name,
                     mode=mode,
+                    auto_refresh_inputs=self.auto_refresh_inputs,
+                    symbols=self.symbols,
+                    symbols_file=self.symbols_file,
+                    refresh_timeframes=[self.settings.data.snapshot_timeframe],
                 )
                 lifecycle_state = self._lifecycle_reconcile(service, strategy_name=strategy_name)
                 cycle_ok = session_result.session_summary.status == "completed"
@@ -120,12 +144,41 @@ class PaperTradingLoopService:
                     ending_open_brackets=lifecycle_state["open_brackets"],
                     analytics_paths=lifecycle_state["analytics_paths"],
                     broker_mode=broker_mode,
+                    market_snapshot_ready=bool(
+                        session_result.decision_pipeline_readiness
+                        and session_result.decision_pipeline_readiness.market_snapshot_ready
+                    ),
+                    market_snapshot_age_seconds=(
+                        session_result.decision_pipeline_readiness.market_snapshot_age_seconds
+                        if session_result.decision_pipeline_readiness is not None
+                        else None
+                    ),
+                    predictions_ready=bool(
+                        session_result.decision_pipeline_readiness
+                        and session_result.decision_pipeline_readiness.predictions_ready
+                    ),
+                    predictions_age_seconds=(
+                        session_result.decision_pipeline_readiness.predictions_age_seconds
+                        if session_result.decision_pipeline_readiness is not None
+                        else None
+                    ),
+                    decision_pipeline_ready=bool(
+                        session_result.decision_pipeline_readiness
+                        and session_result.decision_pipeline_readiness.decision_pipeline_ready
+                    ),
+                    decision_block_reason=(
+                        session_result.decision_pipeline_readiness.decision_block_reason
+                        if session_result.decision_pipeline_readiness is not None
+                        else None
+                    ),
                 )
                 logger.info(
-                    "Paper loop cycle %s completed: ok=%s trade_count=%s ending_open_positions=%s ending_open_brackets=%s",
+                    "Paper loop cycle %s completed: ok=%s trade_count=%s decision_pipeline_ready=%s decision_block_reason=%s ending_open_positions=%s ending_open_brackets=%s",
                     cycle_number,
                     cycle_ok,
                     cycle_result.trade_count,
+                    cycle_result.decision_pipeline_ready,
+                    cycle_result.decision_block_reason,
                     cycle_result.ending_open_positions,
                     cycle_result.ending_open_brackets,
                 )

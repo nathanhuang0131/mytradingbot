@@ -18,21 +18,41 @@
 
 ## Overnight Paper Trading
 
-Use the canonical overnight runner:
+Use the canonical overnight runner with an explicit symbol scope so the loop can keep market snapshot and prediction inputs fresh by itself:
 
-`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --verbose`
+`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --symbols-file data/universe/latest_top_liquidity_universe.json --loop --interval-seconds 300 --verbose`
+
+Canonical Alpaca paper overnight run:
+
+`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --symbols-file data/universe/latest_top_liquidity_universe.json --loop --interval-seconds 300 --verbose`
 
 Optional bounded overnight run:
 
-`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --max-cycles 12 --verbose`
+`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --symbols-file data/universe/latest_top_liquidity_universe.json --loop --interval-seconds 300 --max-cycles 12 --verbose`
 
 Operational notes:
 
 - the loop writes a rolling log to `logs/paper_trading_loop.log`
 - each cycle rehydrates state from `data/state/institutional_runtime.sqlite3`
 - open positions and active brackets are reconciled at cycle startup
+- each cycle refreshes the market snapshot when due, refreshes predictions when due, and only rebuilds the dataset incrementally when needed for inference freshness
 - per-cycle failures are logged and persisted, then the loop continues to the next cycle
 - closed-trade analytics are refreshed after every cycle
+- pass `--disable-auto-refresh` only for debugging, because the loop will then block explicitly instead of trading on stale inputs
+
+Deterministic bounded smoke commands:
+
+`python -m pytest -q tests/integration/test_paper_session.py -k traceability`
+
+`python -m pytest -q tests/integration/test_paper_session.py -k short`
+
+Real Alpaca paper submission smoke commands:
+
+`python scripts/run_alpaca_paper_submission_smoke.py --symbol AMZN --side long --verbose`
+
+`python scripts/run_alpaca_paper_submission_smoke.py --symbol TSLA --side short --verbose`
+
+Each smoke is one-shot and bounded: one synthetic candidate, at most one Alpaca paper bracket order, one session report, one decision audit, and immediate cancel-after-submit unless `--leave-open` is passed.
 
 ## Morning Analysis Workflow
 
@@ -49,7 +69,9 @@ The analytics exports are realized-only. They are built from persisted entry and
 
 ## Local Paper Broker Vs Alpaca Paper Account
 
-The overnight paper loop currently runs in `local_paper` mode. That means:
+The overnight paper loop supports both `local_paper` and `alpaca_paper_api`. `local_paper` remains the default.
+
+In `local_paper` mode:
 
 - fills, positions, brackets, cooldowns, incidents, and closed-trade analytics come from `data/state/institutional_runtime.sqlite3`
 - `reports/paper_trading/`, `reports/signals/`, `reports/analytics/`, and `data/ledger/` reflect repo-local simulated paper broker activity
@@ -65,9 +87,11 @@ To probe the real Alpaca paper Trading API path without running a full session:
 
 `python scripts/check_alpaca_paper_broker.py --list-orders`
 
-To route a real bounded paper session to Alpaca's paper account:
+To route a real bounded paper submission smoke to Alpaca's paper account:
 
-`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --loop --interval-seconds 300 --max-cycles 1 --verbose`
+`python scripts/run_alpaca_paper_submission_smoke.py --symbol AMZN --side long --verbose`
+
+`python scripts/run_alpaca_paper_submission_smoke.py --symbol TSLA --side short --verbose`
 
 In `alpaca_paper_api` mode:
 
@@ -76,6 +100,7 @@ In `alpaca_paper_api` mode:
 - foreign or unknown same-symbol exposure blocks new bot entries
 - repo-local analytics continue to live under `reports/analytics/`, but strategy profitability excludes foreign activity by default
 - the Alpaca paper dashboard will show the submitted orders because `external_broker_submission_enabled=true`
+- the same supervised loop keeps runtime inputs fresh on cadence, so healthy broker connectivity no longer masks stale decision artifacts
 
 If you need a clean repo-local paper slate before the next overnight run:
 

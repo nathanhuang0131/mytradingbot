@@ -106,17 +106,41 @@ python scripts\run_institutional_pipeline.py --strategy scalping --use-top-liqui
 
 ## Overnight Paper Runner
 
-The canonical overnight paper runner is the loop mode in `scripts/run_paper_trading.py`. It is restart-safe because each cycle rehydrates broker state from `data/state/institutional_runtime.sqlite3`, reuses persisted brackets and positions, writes a rolling log to `logs/paper_trading_loop.log`, and refreshes closed-trade analytics after every cycle.
+The canonical overnight runner is the loop mode in `scripts/run_paper_trading.py` with an explicit symbol scope. It is restart-safe because each cycle rehydrates broker state from `data/state/institutional_runtime.sqlite3`, reuses persisted brackets and positions, refreshes closed-trade analytics, refreshes the market snapshot on the fast cadence, refreshes predictions on the configured inference cadence, and only incrementally rebuilds the dataset when required. It does not retrain the model on every cycle.
+
+Canonical local-paper overnight command:
 
 ```powershell
-python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --verbose
+python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --symbols-file data\universe\latest_top_liquidity_universe.json --loop --interval-seconds 300 --verbose
+```
+
+Canonical Alpaca paper overnight command:
+
+```powershell
+python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --symbols-file data\universe\latest_top_liquidity_universe.json --loop --interval-seconds 300 --verbose
 ```
 
 Optional bounded run:
 
 ```powershell
-python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --max-cycles 12 --verbose
+python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --symbols-file data\universe\latest_top_liquidity_universe.json --loop --interval-seconds 300 --max-cycles 12 --verbose
 ```
+
+Deterministic bounded smoke commands:
+
+```powershell
+python -m pytest -q tests/integration/test_paper_session.py -k traceability
+python -m pytest -q tests/integration/test_paper_session.py -k short
+```
+
+Real Alpaca paper submission smoke commands:
+
+```powershell
+python scripts\run_alpaca_paper_submission_smoke.py --symbol AMZN --side long --verbose
+python scripts\run_alpaca_paper_submission_smoke.py --symbol TSLA --side short --verbose
+```
+
+These are one-shot bounded submission paths. Each run writes one synthetic prediction, one synthetic market snapshot, evaluates exactly one candidate, submits at most one Alpaca paper bracket order, reconciles it back into repo-local runtime state, and cancels it immediately unless you pass `--leave-open`.
 
 ## Morning Analytics Workflow
 
@@ -132,13 +156,14 @@ After an overnight run, inspect:
 
 ## Local Paper Broker Vs Alpaca Paper Account
 
-The canonical overnight paper runner uses the repo-local `local_paper` broker mode. Orders, fills, positions, brackets, incidents, and realized analytics come from the SQLite runtime store at `data/state/institutional_runtime.sqlite3` plus the repo-local report and ledger artifacts.
+The overnight runner supports both `local_paper` and `alpaca_paper_api`. `local_paper` remains the default. In either mode, the loop writes structured readiness state so it will not silently spin for hours on stale snapshot or prediction artifacts.
 
 In `local_paper` mode:
 
 - `reports/paper_trading/`, `reports/signals/`, `reports/analytics/`, and `data/ledger/` reflect repo-local simulated paper activity
 - the Alpaca paper account UI remains unchanged because no Alpaca paper API order routing happens
 - `logs/paper_trading_loop.log` now prints a startup banner showing `broker_mode=local_paper` and `external_broker_submission_enabled=false`
+- the canonical overnight loop is self-sufficient only when you provide a symbol scope such as `--symbols-file data\universe\latest_top_liquidity_universe.json`
 
 In `alpaca_paper_api` mode:
 
@@ -147,6 +172,7 @@ In `alpaca_paper_api` mode:
 - foreign or unknown Alpaca paper orders and positions remain read-only, appear in repo-local reports and incidents, and count toward risk context
 - a foreign or unknown same-symbol position blocks a new bot entry by default
 - strategy profitability and signal-source profitability exclude foreign or unknown account activity by default
+- the same overnight loop command keeps the market snapshot and predictions fresh on cadence; it is no longer execution-only unless you pass `--disable-auto-refresh`
 
 Smoke test the Alpaca paper broker path with:
 
@@ -154,10 +180,11 @@ Smoke test the Alpaca paper broker path with:
 python scripts\check_alpaca_paper_broker.py --list-orders
 ```
 
-Run one bounded Alpaca paper loop with:
+Run one bounded Alpaca paper submission smoke with:
 
 ```powershell
-python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --loop --interval-seconds 300 --max-cycles 1 --verbose
+python scripts\run_alpaca_paper_submission_smoke.py --symbol AMZN --side long --verbose
+python scripts\run_alpaca_paper_submission_smoke.py --symbol TSLA --side short --verbose
 ```
 
 To clear only repo-local local paper runtime state and analytics before a fresh overnight run:

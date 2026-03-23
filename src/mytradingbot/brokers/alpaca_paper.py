@@ -92,8 +92,14 @@ class AlpacaPaperBroker(BaseBroker):
         return ExecutionConstraints(whole_shares_only_for_brackets=True, minimum_quantity=1.0)
 
     def submit_order(self, request: ExecutionRequest) -> ExecutionResult:
-        order_request = self._build_order_request(request)
-        broker_order = self.client.submit_order(order_request)
+        try:
+            order_request = self._build_order_request(request)
+        except ValueError as exc:
+            return ExecutionResult.skipped(request=request, reason=str(exc))
+        try:
+            broker_order = self.client.submit_order(order_request)
+        except Exception as exc:
+            return ExecutionResult.skipped(request=request, reason=f"broker_rejected:{exc}")
         order_record = self._record_from_alpaca_order(broker_order, request=request)
         self.runtime_store.record_order(order_record)
         order = BrokerOrder(
@@ -173,7 +179,7 @@ class AlpacaPaperBroker(BaseBroker):
             if (
                 order.broker_mode != "alpaca_paper_api"
                 or order.ownership_class != "bot_owned"
-                or order.side != "buy"
+                or order.side not in {"buy", "sell"}
                 or order.metadata.get("broker_order_class") != "bracket"
                 or order.symbol not in active_positions
             ):
@@ -186,9 +192,10 @@ class AlpacaPaperBroker(BaseBroker):
                     BrokerBracketState(
                         symbol=order.symbol,
                         entry_order_id=order.order_id,
+                        entry_side=order.side,  # type: ignore[arg-type]
                         bracket_plan=ExecutionRequest(
                             symbol=order.symbol,
-                            side="buy",
+                            side=order.side,
                             quantity=order.quantity,
                             strategy_name=order.strategy,
                             mode=order.mode,
@@ -355,19 +362,33 @@ class AlpacaPaperBroker(BaseBroker):
 
     def _build_order_request(self, request: ExecutionRequest):
         from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
-        from alpaca.trading.requests import MarketOrderRequest, StopLossRequest, TakeProfitRequest
+        from alpaca.trading.requests import (
+            LimitOrderRequest,
+            MarketOrderRequest,
+            StopLossRequest,
+            TakeProfitRequest,
+        )
+
+        if request.side == "sell":
+            self._validate_shortability(request.symbol)
 
         if request.bracket_plan is not None:
-            if request.bracket_plan.planned_stop_loss_price >= request.bracket_plan.planned_entry_price:
-                raise ValueError("Invalid long bracket: stop loss must be below entry for Alpaca paper bracket orders.")
-            if request.bracket_plan.planned_take_profit_price <= request.bracket_plan.planned_entry_price:
-                raise ValueError("Invalid long bracket: take profit must be above entry for Alpaca paper bracket orders.")
+            if request.side == "buy":
+                if request.bracket_plan.planned_stop_loss_price >= request.bracket_plan.planned_entry_price:
+                    raise ValueError("Invalid long bracket: stop loss must be below entry for Alpaca paper bracket orders.")
+                if request.bracket_plan.planned_take_profit_price <= request.bracket_plan.planned_entry_price:
+                    raise ValueError("Invalid long bracket: take profit must be above entry for Alpaca paper bracket orders.")
+            else:
+                if request.bracket_plan.planned_stop_loss_price <= request.bracket_plan.planned_entry_price:
+                    raise ValueError("Invalid short bracket: stop loss must be above entry for Alpaca paper bracket orders.")
+                if request.bracket_plan.planned_take_profit_price >= request.bracket_plan.planned_entry_price:
+                    raise ValueError("Invalid short bracket: take profit must be below entry for Alpaca paper bracket orders.")
             take_profit_price = _normalize_price_for_alpaca(request.bracket_plan.planned_take_profit_price)
             stop_loss_price = _normalize_price_for_alpaca(request.bracket_plan.planned_stop_loss_price)
         else:
             take_profit_price = None
             stop_loss_price = None
-        return MarketOrderRequest(
+        common_kwargs = dict(
             symbol=request.symbol,
             qty=request.quantity,
             side=OrderSide.BUY if request.side == "buy" else OrderSide.SELL,
@@ -385,6 +406,25 @@ class AlpacaPaperBroker(BaseBroker):
                 else None
             ),
         )
+        if (
+            str(request.metadata.get("entry_order_type", "")).lower() == "limit"
+            and request.limit_price is not None
+        ):
+            return LimitOrderRequest(
+                **common_kwargs,
+                limit_price=_normalize_price_for_alpaca(request.limit_price),
+            )
+        return MarketOrderRequest(**common_kwargs)
+
+    def _validate_shortability(self, symbol: str) -> None:
+        get_asset = getattr(self.client, "get_asset", None)
+        if not callable(get_asset):
+            return
+        asset = get_asset(symbol)
+        tradable = bool(getattr(asset, "tradable", True))
+        shortable = bool(getattr(asset, "shortable", False))
+        if not tradable or not shortable:
+            raise ValueError(f"Short entry rejected for {symbol}: asset is not shortable in the Alpaca paper account.")
 
     def _record_from_alpaca_order(
         self,

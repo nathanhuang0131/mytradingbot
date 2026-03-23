@@ -180,6 +180,10 @@ class RuntimeSafetySettings(BaseModel):
     max_consecutive_execution_failures: int = 3
     max_consecutive_replace_stop_failures: int = 3
     supervised_loop_interval_seconds: int = 60
+    auto_refresh_inputs_in_loop: bool = True
+    market_refresh_interval_seconds: int = 300
+    dataset_refresh_interval_seconds: int = 1800
+    prediction_refresh_interval_seconds: int = 1800
 
 
 class TrainingSettings(BaseModel):

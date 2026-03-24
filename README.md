@@ -87,6 +87,10 @@ Then open `Setup Wizard` from the sidebar or use the `Start New Trading Session 
 
 The wizard does not replace the current dashboard, CLI, or script-based workflows. It coexists with them and auto-saves operator choices so you do not need to remember command sequences for normal session setup.
 
+For a field-by-field explanation of the wizard, scalping presets, training vs. latest-model usage, and where to find logs and reports, see:
+
+- `docs/USER_MANUAL.md`
+
 ### Wizard profile and config files
 
 Auto-saved wizard files live under repo-local paths:

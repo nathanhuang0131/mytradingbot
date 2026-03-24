@@ -1,17 +1,24 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
 
-from app.components.runtime import get_platform_service
+APP_DIR = Path(__file__).resolve().parent
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
+from components.runtime import get_platform_service
 from mytradingbot.ui_services.dashboard import DashboardService
 
-st.set_page_config(page_title="MyTradingBot Next", layout="wide")
+st.set_page_config(page_title="Dashboard", layout="wide")
 
 platform_service = get_platform_service()
 payload = DashboardService(platform_service).get_dashboard_payload()
 
-st.title("MyTradingBot Next")
-st.caption("Qlib-first, dashboard-first quant trading platform")
+st.title("Dashboard")
+st.caption("Qlib-first control surface for system health, trading readiness, and operator actions.")
 
 left, right = st.columns(2)
 left.metric("Prediction Ready", "Yes" if payload.prediction_status.is_ready else "No")

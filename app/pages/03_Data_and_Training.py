@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
 
-from app.components.runtime import get_platform_service, get_selected_strategy
+APP_DIR = Path(__file__).resolve().parents[1]
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
+from components.runtime import get_platform_service, get_selected_strategy
 from mytradingbot.ui_services.data_training import DataTrainingService
 
 service = DataTrainingService(get_platform_service())

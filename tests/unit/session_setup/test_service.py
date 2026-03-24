@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from mytradingbot.core.paths import RepoPaths
 from mytradingbot.core.settings import AppSettings
 from mytradingbot.session_setup.service import SetupWizardService
+from mytradingbot.universe.models import TopLiquidityUniverseResult, UniverseLiquidityRow
 
 
 def test_setup_wizard_service_creates_new_profile_and_autosaves_it(tmp_path) -> None:
@@ -126,3 +128,62 @@ def test_setup_wizard_service_generates_and_autosaves_resolved_session_config(tm
     assert resolved.active_symbols_path == str(
         settings.paths.active_universes_dir / "alice_trader_active_symbols.json"
     )
+
+
+def test_setup_wizard_service_resolves_generated_symbols_with_universe_filters(tmp_path) -> None:
+    class RecordingUniverseService:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def generate_top_liquidity_universe(self, **kwargs):
+            self.calls.append(kwargs)
+            return TopLiquidityUniverseResult(
+                ok=True,
+                message="ok",
+                rows=[
+                    UniverseLiquidityRow(
+                        symbol="AAPL",
+                        exchange="NASDAQ",
+                        asset_class="us_equity",
+                        status="active",
+                        tradable=True,
+                        marginable=True,
+                        shortable=True,
+                        easy_to_borrow=True,
+                        avg_close=200.0,
+                        avg_volume=2_000_000,
+                        avg_dollar_volume=400_000_000.0,
+                        median_dollar_volume=395_000_000.0,
+                        completeness_ratio=1.0,
+                        rank=1,
+                        lookback_start=datetime(2026, 2, 1, tzinfo=timezone.utc),
+                        lookback_end=datetime(2026, 3, 1, tzinfo=timezone.utc),
+                        bars_used=20,
+                        generated_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+                    )
+                ],
+                artifacts=["data/universe/latest_top_liquidity_universe.json"],
+            )
+
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    recording_service = RecordingUniverseService()
+    service = SetupWizardService(settings=settings, universe_service=recording_service)  # type: ignore[arg-type]
+    state = service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
+    state.universe.selection_mode = "combine_old_and_new"
+    state.universe.target_symbol_count = 125
+    state.universe.min_price = 17.5
+    state.universe.min_average_volume = 750_000
+    state.universe.include_etfs = True
+
+    symbols = service.resolve_generated_symbols(state)
+
+    assert symbols == ["AAPL"]
+    assert state.universe.generated_symbol_count == 1
+    assert recording_service.calls == [
+        {
+            "top_n": 125,
+            "minimum_price": 17.5,
+            "minimum_average_volume": 750_000,
+            "include_etfs": True,
+        }
+    ]

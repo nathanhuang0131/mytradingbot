@@ -1,0 +1,246 @@
+diff --git a/app/app.py b/app/app.py
+index a61cc4a..b5558fa 100644
+--- a/app/app.py
++++ b/app/app.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
++from pathlib import Path
++
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service
++APP_DIR = Path(__file__).resolve().parent
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import get_platform_service
+ from mytradingbot.ui_services.dashboard import DashboardService
+ 
+ st.set_page_config(page_title="MyTradingBot Next", layout="wide")
+diff --git a/app/pages/00_Setup_Wizard.py b/app/pages/00_Setup_Wizard.py
+index b90936f..36173d9 100644
+--- a/app/pages/00_Setup_Wizard.py
++++ b/app/pages/00_Setup_Wizard.py
+@@ -1,10 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
+ from pathlib import Path
+ 
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service
++APP_DIR = Path(__file__).resolve().parents[1]
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import get_platform_service
+ from mytradingbot.core.enums import RuntimeMode
+ from mytradingbot.session_setup.models import SetupWizardState
+ from mytradingbot.ui_services.setup_wizard import SetupWizardUIService
+diff --git a/app/pages/01_Dashboard.py b/app/pages/01_Dashboard.py
+index 80fa699..b867009 100644
+--- a/app/pages/01_Dashboard.py
++++ b/app/pages/01_Dashboard.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
++from pathlib import Path
++
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service
++APP_DIR = Path(__file__).resolve().parents[1]
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import get_platform_service
+ from mytradingbot.ui_services.dashboard import DashboardService
+ 
+ platform_service = get_platform_service()
+diff --git a/app/pages/02_Strategy_Control.py b/app/pages/02_Strategy_Control.py
+index b04d5f6..0103256 100644
+--- a/app/pages/02_Strategy_Control.py
++++ b/app/pages/02_Strategy_Control.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
++from pathlib import Path
++
+ import streamlit as st
+ 
+-from app.components.runtime import (
++APP_DIR = Path(__file__).resolve().parents[1]
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import (
+     get_platform_service,
+     get_selected_mode,
+     get_selected_strategy,
+diff --git a/app/pages/03_Data_and_Training.py b/app/pages/03_Data_and_Training.py
+index db259ac..1a4c218 100644
+--- a/app/pages/03_Data_and_Training.py
++++ b/app/pages/03_Data_and_Training.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
++from pathlib import Path
++
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service, get_selected_strategy
++APP_DIR = Path(__file__).resolve().parents[1]
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import get_platform_service, get_selected_strategy
+ from mytradingbot.ui_services.data_training import DataTrainingService
+ 
+ service = DataTrainingService(get_platform_service())
+diff --git a/app/pages/04_Paper_Trading.py b/app/pages/04_Paper_Trading.py
+index cfa96d8..5935a59 100644
+--- a/app/pages/04_Paper_Trading.py
++++ b/app/pages/04_Paper_Trading.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
++from pathlib import Path
++
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service, get_selected_mode, get_selected_strategy
++APP_DIR = Path(__file__).resolve().parents[1]
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import get_platform_service, get_selected_mode, get_selected_strategy
+ from mytradingbot.ui_services.paper_trading import PaperTradingService
+ 
+ platform_service = get_platform_service()
+diff --git a/app/pages/05_Live_Trading.py b/app/pages/05_Live_Trading.py
+index 8a02636..35fc54e 100644
+--- a/app/pages/05_Live_Trading.py
++++ b/app/pages/05_Live_Trading.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
++from pathlib import Path
++
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service
++APP_DIR = Path(__file__).resolve().parents[1]
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import get_platform_service
+ from mytradingbot.ui_services.live_trading import LiveTradingService
+ 
+ payload = LiveTradingService(get_platform_service()).get_payload()
+diff --git a/app/pages/06_LLM_Copilot.py b/app/pages/06_LLM_Copilot.py
+index fe6cc25..9f564b2 100644
+--- a/app/pages/06_LLM_Copilot.py
++++ b/app/pages/06_LLM_Copilot.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
++from pathlib import Path
++
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service
++APP_DIR = Path(__file__).resolve().parents[1]
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import get_platform_service
+ from mytradingbot.ui_services.llm_copilot import LLMCopilotService
+ 
+ service = LLMCopilotService(get_platform_service())
+diff --git a/app/pages/07_Diagnostics.py b/app/pages/07_Diagnostics.py
+index a9b00ec..3cedc4e 100644
+--- a/app/pages/07_Diagnostics.py
++++ b/app/pages/07_Diagnostics.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
++from pathlib import Path
++
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service
++APP_DIR = Path(__file__).resolve().parents[1]
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import get_platform_service
+ from mytradingbot.ui_services.diagnostics import DiagnosticsPageService
+ 
+ payload = DiagnosticsPageService(get_platform_service()).get_payload()
+diff --git a/app/pages/08_Settings.py b/app/pages/08_Settings.py
+index 8d3d4fd..d315cff 100644
+--- a/app/pages/08_Settings.py
++++ b/app/pages/08_Settings.py
+@@ -1,8 +1,15 @@
+ from __future__ import annotations
+ 
++import sys
++from pathlib import Path
++
+ import streamlit as st
+ 
+-from app.components.runtime import get_platform_service
++APP_DIR = Path(__file__).resolve().parents[1]
++if str(APP_DIR) not in sys.path:
++    sys.path.insert(0, str(APP_DIR))
++
++from components.runtime import get_platform_service
+ from mytradingbot.ui_services.settings import SettingsService
+ 
+ payload = SettingsService(get_platform_service().settings).get_settings_payload()
+diff --git a/tests/smoke/test_streamlit_structure.py b/tests/smoke/test_streamlit_structure.py
+index dfdce41..bc3a10b 100644
+--- a/tests/smoke/test_streamlit_structure.py
++++ b/tests/smoke/test_streamlit_structure.py
+@@ -5,6 +5,7 @@ def test_streamlit_page_files_exist() -> None:
+     project_root = Path(__file__).resolve().parents[2]
+     required = [
+         "app/app.py",
++        "app/pages/00_Setup_Wizard.py",
+         "app/pages/01_Dashboard.py",
+         "app/pages/02_Strategy_Control.py",
+         "app/pages/03_Data_and_Training.py",
+@@ -17,3 +18,23 @@ def test_streamlit_page_files_exist() -> None:
+ 
+     for relative_path in required:
+         assert (project_root / relative_path).exists(), relative_path
++
++
++def test_streamlit_entrypoints_do_not_use_package_shadowed_runtime_imports() -> None:
++    project_root = Path(__file__).resolve().parents[2]
++    entrypoints = [
++        "app/app.py",
++        "app/pages/00_Setup_Wizard.py",
++        "app/pages/01_Dashboard.py",
++        "app/pages/02_Strategy_Control.py",
++        "app/pages/03_Data_and_Training.py",
++        "app/pages/04_Paper_Trading.py",
++        "app/pages/05_Live_Trading.py",
++        "app/pages/06_LLM_Copilot.py",
++        "app/pages/07_Diagnostics.py",
++        "app/pages/08_Settings.py",
++    ]
++
++    for relative_path in entrypoints:
++        source = (project_root / relative_path).read_text(encoding="utf-8")
++        assert "from app.components.runtime import" not in source, relative_path

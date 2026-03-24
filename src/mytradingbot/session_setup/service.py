@@ -143,8 +143,8 @@ class SetupWizardService:
             return []
         result = self.universe_service.generate_top_liquidity_universe(
             top_n=state.universe.target_symbol_count,
-            min_price=state.universe.min_price,
-            min_avg_volume=state.universe.min_average_volume,
+            minimum_price=state.universe.min_price,
+            minimum_average_volume=state.universe.min_average_volume,
             include_etfs=state.universe.include_etfs,
         )
         if not result.ok:

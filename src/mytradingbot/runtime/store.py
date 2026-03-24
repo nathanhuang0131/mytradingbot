@@ -262,6 +262,27 @@ class RuntimeStateStore:
                 ),
             )
 
+    def replace_positions(self, positions: list[PositionSnapshot | dict]) -> None:
+        normalized = [
+            position if isinstance(position, PositionSnapshot) else PositionSnapshot.model_validate(position)
+            for position in positions
+        ]
+        with self._connect() as connection:
+            connection.execute("DELETE FROM positions")
+            for position in normalized:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO positions (symbol, quantity, updated_at, payload_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        position.symbol,
+                        position.quantity,
+                        datetime.now(timezone.utc).isoformat(),
+                        position.model_dump_json(),
+                    ),
+                )
+
     def record_bracket(self, bracket: BrokerBracketState) -> None:
         with self._connect() as connection:
             connection.execute(

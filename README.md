@@ -71,6 +71,56 @@ python scripts/run_paper_trading.py --strategy scalping --mode paper --predictio
 python scripts/run_live_trading.py
 ```
 
+## Guided Setup Wizard
+
+The recommended new setup flow is the dedicated Streamlit wizard page:
+
+- `app/pages/00_Setup_Wizard.py`
+
+Launch the app as usual:
+
+```powershell
+streamlit run app/app.py
+```
+
+Then open `Setup Wizard` from the sidebar or use the `Start New Trading Session (Wizard)` link on the landing page or dashboard.
+
+The wizard does not replace the current dashboard, CLI, or script-based workflows. It coexists with them and auto-saves operator choices so you do not need to remember command sequences for normal session setup.
+
+### Wizard profile and config files
+
+Auto-saved wizard files live under repo-local paths:
+
+- `configs/user_profiles/<profile>.json`
+- `data/runtime/session_profiles/<profile>_latest.json`
+- `data/runtime/active_universes/<profile>_active_symbols.json`
+
+The user profile stores the operator identity and last-used setup metadata. The latest session config stores the resolved runnable configuration generated from the wizard. The active universe manifest stores the profile-scoped active symbols used by the wizard-backed session path.
+
+### Wizard presets
+
+The wizard ships with these presets:
+
+- `Scalping - Local Paper Safe`
+- `Scalping - Alpaca Paper Long Only`
+- `Scalping - Alpaca Paper Long + Short`
+- `Scalping - Smoke Test`
+- `Scalping - Overnight Loop`
+
+### Symbol handling modes
+
+The wizard supports three active-universe modes:
+
+- `keep using old symbols`
+- `run liquidity flow and combine new symbols with old symbols`
+- `use completely new symbols`
+
+These modes only change the active universe manifest. They do **not** delete historical downloaded raw or normalized parquet data. Historical data remains on disk for future training and analysis even when the active symbol set changes.
+
+### Recommended defaults
+
+Fields marked with `Recommended default` are safe to leave unchanged for most operators. Basic mode is designed to be sufficient for a normal paper-trading session. Advanced and expert sections remain available when you want deeper control.
+
 The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
 ## Canonical Institutional Runtime
 

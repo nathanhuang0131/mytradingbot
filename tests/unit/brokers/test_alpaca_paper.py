@@ -351,3 +351,35 @@ def test_alpaca_paper_broker_reconciliation_restores_bot_owned_short_position(tm
     assert snapshot.bot_owned_position_count == 1
     assert store.list_positions()[0].symbol == "TSLA"
     assert store.list_positions()[0].quantity == -5.0
+
+
+def test_alpaca_paper_broker_reconciliation_clears_stale_managed_positions_absent_from_alpaca(tmp_path) -> None:
+    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+    from mytradingbot.core.models import PositionSnapshot
+    from mytradingbot.runtime.store import RuntimeStateStore
+
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    settings.broker.alpaca_api_key = "key"
+    settings.broker.alpaca_secret_key = "secret"
+    fake_client = _FakeTradingClient()
+
+    store = RuntimeStateStore(settings=settings)
+    store.record_position(
+        PositionSnapshot(
+            symbol="NVDA",
+            quantity=5.0,
+            average_price=100.0,
+            market_price=101.0,
+            unrealized_pnl=5.0,
+        )
+    )
+    broker = AlpacaPaperBroker(
+        settings=settings,
+        runtime_store=store,
+        trading_client_factory=lambda _settings: fake_client,
+    )
+
+    snapshot = broker.reconcile_runtime_state(strategy_name="scalping")
+
+    assert snapshot.bot_owned_position_count == 0
+    assert store.list_positions() == []

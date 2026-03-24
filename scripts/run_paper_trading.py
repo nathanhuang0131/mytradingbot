@@ -11,6 +11,8 @@ from mytradingbot.data.service import MarketDataService
 from mytradingbot.orchestration.paper_loop import PaperTradingLoopService
 from mytradingbot.orchestration.service import TradingPlatformService
 from mytradingbot.qlib_engine.service import QlibWorkflowService
+from mytradingbot.session_setup.runtime import apply_resolved_config_to_settings
+from mytradingbot.session_setup.service import SetupWizardService
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--strategy", default="scalping")
     parser.add_argument("--mode", choices=["dry_run", "paper"], default="paper")
+    parser.add_argument("--session-config", type=Path, default=None)
     parser.add_argument(
         "--broker-mode",
         choices=["local_paper", "alpaca_paper_api"],
@@ -75,6 +78,27 @@ def _log_startup_banner(*, settings: AppSettings) -> None:
 def main() -> int:
     args = build_parser().parse_args()
     settings = AppSettings()
+    resolved_session_config = None
+    if args.session_config is not None:
+        resolved_session_config = SetupWizardService(settings=settings).load_resolved_session_config(
+            args.session_config
+        )
+        settings = apply_resolved_config_to_settings(settings, resolved_session_config)
+        args.strategy = resolved_session_config.strategy.strategy_name
+        args.mode = resolved_session_config.strategy.run_type.value
+        args.broker_mode = resolved_session_config.strategy.broker_mode
+        args.symbols_file = Path(resolved_session_config.active_symbols_path)
+        if resolved_session_config.strategy.session_mode == "loop":
+            args.loop = True
+            args.interval_seconds = resolved_session_config.refresh.loop_interval_seconds
+        elif resolved_session_config.strategy.session_mode == "bounded_smoke":
+            args.max_cycles = args.max_cycles or resolved_session_config.strategy.smoke_max_cycles
+        if not (
+            resolved_session_config.refresh.auto_refresh_market_snapshot
+            or resolved_session_config.refresh.auto_refresh_predictions
+            or resolved_session_config.refresh.auto_refresh_dataset
+        ):
+            args.disable_auto_refresh = True
     settings.broker.broker_mode = args.broker_mode
     _configure_logging(settings=settings, loop=args.loop, verbose=args.verbose)
     _log_startup_banner(settings=settings)
@@ -87,6 +111,7 @@ def main() -> int:
             symbols=args.symbols,
             symbols_file=args.symbols_file,
             auto_refresh_inputs=not args.disable_auto_refresh,
+            session_config=resolved_session_config,
         ).run(
             strategy_name=args.strategy,
             mode=RuntimeMode(args.mode),
@@ -117,6 +142,7 @@ def main() -> int:
         symbols=args.symbols,
         symbols_file=args.symbols_file,
         refresh_timeframes=[settings.data.snapshot_timeframe],
+        session_config=resolved_session_config,
     )
     print(result.model_dump_json(indent=2))
     return 0

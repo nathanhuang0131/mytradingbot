@@ -30,6 +30,8 @@ from mytradingbot.reporting.service import ReportingService
 from mytradingbot.runtime.models import BrokerMode, BrokerReconciliationSnapshot
 from mytradingbot.runtime.models import DecisionPipelineReadiness
 from mytradingbot.runtime.service import RuntimeStateService
+from mytradingbot.session_setup.models import ResolvedSessionConfig
+from mytradingbot.session_setup.runtime import filter_predictions_for_config
 from mytradingbot.strategies.registry import StrategyRegistry
 from mytradingbot.universe.storage import UniverseStorage
 
@@ -383,6 +385,7 @@ class TradingPlatformService:
         symbols_file: Path | None = None,
         refresh_timeframes: list[str] | None = None,
         intent_metadata_overrides: dict[str, str | float | bool | int] | None = None,
+        session_config: ResolvedSessionConfig | None = None,
     ) -> SessionResult:
         normalized_mode = mode if isinstance(mode, RuntimeMode) else RuntimeMode(mode)
         context = self.runtime_state_service.create_session_context(
@@ -638,8 +641,14 @@ class TradingPlatformService:
             return result
 
         try:
+            runtime_predictions = prediction_result.predictions
+            if session_config is not None:
+                runtime_predictions = filter_predictions_for_config(
+                    runtime_predictions,
+                    session_config,
+                )
             signals = self.market_data_service.build_signal_bundles(
-                prediction_result.predictions
+                runtime_predictions
             )
         except (FileNotFoundError, KeyError, ValueError) as exc:
             summary.status = "failed"

@@ -144,3 +144,15 @@ def test_runtime_service_resolves_configured_alpaca_broker_mode(tmp_path) -> Non
     runtime_service = RuntimeStateService(settings=settings)
 
     assert runtime_service.resolve_broker_mode(mode=RuntimeMode.PAPER) == "alpaca_paper_api"
+
+
+def test_runtime_service_minutes_to_close_ignores_prior_session_close_timestamp() -> None:
+    prior_session_close = datetime(2026, 3, 20, 20, 0, tzinfo=timezone.utc)
+    pre_open_reference = datetime(2026, 3, 23, 12, 0, tzinfo=timezone.utc)
+
+    minutes = RuntimeStateService.minutes_to_close(
+        prior_session_close,
+        reference_time=pre_open_reference,
+    )
+
+    assert minutes == 999

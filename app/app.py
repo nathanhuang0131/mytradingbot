@@ -23,6 +23,10 @@ st.subheader("Operator Notes")
 st.write(
     "Use the pages in the sidebar to control strategies, run paper sessions, inspect diagnostics, and review advisory summaries."
 )
+if hasattr(st, "page_link"):
+    st.page_link("pages/00_Setup_Wizard.py", label="Start New Trading Session (Wizard)")
+else:
+    st.info("Open `00_Setup_Wizard` from the sidebar to use the guided setup flow.")
 st.subheader("Phase Capability Snapshot")
 st.json(payload.capabilities.model_dump(mode="json"))
 if not payload.prediction_status.is_ready:

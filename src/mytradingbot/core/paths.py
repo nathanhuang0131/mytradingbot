@@ -15,12 +15,15 @@ class RepoPaths(BaseModel):
     repo_root: Path
     src_dir: Path
     configs_dir: Path
+    user_profiles_dir: Path
     data_dir: Path
     raw_data_dir: Path
     normalized_data_dir: Path
     snapshots_dir: Path
     qlib_dir: Path
     runtime_dir: Path
+    session_profiles_dir: Path
+    active_universes_dir: Path
     universe_dir: Path
     ledger_dir: Path
     state_dir: Path
@@ -49,12 +52,15 @@ class RepoPaths(BaseModel):
             repo_root=repo_root,
             src_dir=repo_root / "src",
             configs_dir=repo_root / "configs",
+            user_profiles_dir=repo_root / "configs" / "user_profiles",
             data_dir=repo_root / "data",
             raw_data_dir=repo_root / "data" / "raw",
             normalized_data_dir=repo_root / "data" / "normalized",
             snapshots_dir=repo_root / "data" / "snapshots",
             qlib_dir=repo_root / "data" / "qlib",
             runtime_dir=repo_root / "data" / "runtime",
+            session_profiles_dir=repo_root / "data" / "runtime" / "session_profiles",
+            active_universes_dir=repo_root / "data" / "runtime" / "active_universes",
             universe_dir=repo_root / "data" / "universe",
             ledger_dir=repo_root / "data" / "ledger",
             state_dir=repo_root / "data" / "state",
@@ -78,11 +84,14 @@ class RepoPaths(BaseModel):
 
         for path in (
             self.data_dir,
+            self.user_profiles_dir,
             self.raw_data_dir,
             self.normalized_data_dir,
             self.snapshots_dir,
             self.qlib_dir,
             self.runtime_dir,
+            self.session_profiles_dir,
+            self.active_universes_dir,
             self.universe_dir,
             self.ledger_dir,
             self.state_dir,

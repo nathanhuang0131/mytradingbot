@@ -16,6 +16,7 @@ from mytradingbot.orchestration.service import TradingPlatformService
 from mytradingbot.qlib_engine.service import QlibWorkflowService
 from mytradingbot.runtime.models import BrokerMode
 from mytradingbot.runtime.service import RuntimeStateService
+from mytradingbot.session_setup.models import ResolvedSessionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ class PaperTradingLoopService:
         symbols: list[str] | None = None,
         symbols_file: Path | None = None,
         auto_refresh_inputs: bool | None = None,
+        session_config: ResolvedSessionConfig | None = None,
         platform_factory: Callable[[], TradingPlatformService] | None = None,
         runtime_state_service: RuntimeStateService | None = None,
     ) -> None:
@@ -71,6 +73,7 @@ class PaperTradingLoopService:
         self.market_snapshot_path = market_snapshot_path
         self.symbols = symbols
         self.symbols_file = symbols_file
+        self.session_config = session_config
         self.auto_refresh_inputs = (
             self.settings.runtime_safety.auto_refresh_inputs_in_loop
             if auto_refresh_inputs is None
@@ -126,6 +129,7 @@ class PaperTradingLoopService:
                     symbols=self.symbols,
                     symbols_file=self.symbols_file,
                     refresh_timeframes=[self.settings.data.snapshot_timeframe],
+                    session_config=self.session_config,
                 )
                 lifecycle_state = self._lifecycle_reconcile(service, strategy_name=strategy_name)
                 cycle_ok = session_result.session_summary.status == "completed"

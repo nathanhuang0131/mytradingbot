@@ -134,9 +134,12 @@ class RuntimeStateService:
         return signals
 
     @staticmethod
-    def minutes_to_close(timestamp: datetime) -> int:
+    def minutes_to_close(timestamp: datetime, *, reference_time: datetime | None = None) -> int:
         eastern = ZoneInfo("America/New_York")
         localized = timestamp.astimezone(eastern)
+        reference = (reference_time or utc_now()).astimezone(eastern)
+        if localized.date() != reference.date():
+            return 999
         open_time = localized.replace(hour=9, minute=30, second=0, microsecond=0)
         close_time = localized.replace(hour=16, minute=0, second=0, microsecond=0)
         if localized < open_time or localized > close_time:

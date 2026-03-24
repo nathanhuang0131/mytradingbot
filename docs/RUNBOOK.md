@@ -12,6 +12,44 @@
 8. `python scripts/run_paper_trading.py --strategy scalping --mode paper`
 9. `streamlit run app/app.py`
 
+## Guided Setup Wizard
+
+The recommended operator setup flow is the dedicated Streamlit wizard page:
+
+- `app/pages/00_Setup_Wizard.py`
+
+Launch the app:
+
+`streamlit run app/app.py`
+
+Then open `Setup Wizard` from the sidebar or use `Start New Trading Session (Wizard)` from the landing page or dashboard.
+
+The wizard coexists with the current dashboard and CLI workflows. It does not replace them.
+
+### Auto-saved profile and session files
+
+The wizard automatically writes:
+
+- `configs/user_profiles/<profile>.json`
+- `data/runtime/session_profiles/<profile>_latest.json`
+- `data/runtime/active_universes/<profile>_active_symbols.json`
+
+You do not need a separate manual save action to persist these files.
+
+### Symbol behavior modes
+
+The wizard supports:
+
+- `keep using old symbols`
+- `run liquidity flow and combine new symbols with old symbols`
+- `use completely new symbols`
+
+These modes update the profile-scoped active universe manifest only. They do **not** delete any historical market data already downloaded under `data/raw/` or `data/normalized/`.
+
+### Recommended defaults
+
+Fields marked `Recommended default` are the safe operator defaults. Basic mode is sufficient for a standard paper setup. Advanced and expert sections expose additional tuning without forcing every operator to understand the full backend dependency chain.
+
 ## Canonical Institutional Order
 
 `python scripts/run_institutional_pipeline.py --strategy scalping --use-top-liquidity-universe --timeframes 1m 5m 15m 1d --mode paper`

@@ -318,6 +318,7 @@ class AlpacaPaperBroker(BaseBroker):
 
         positions = self.client.get_all_positions()
         observed_positions: list[ObservedPositionRecord] = []
+        managed_positions: list[PositionSnapshot] = []
         bot_owned_position_count = 0
         foreign_position_count = 0
         for position in positions:
@@ -332,7 +333,7 @@ class AlpacaPaperBroker(BaseBroker):
             )
             if ownership_class == "bot_owned":
                 bot_owned_position_count += 1
-                self.runtime_store.record_position(snapshot)
+                managed_positions.append(snapshot)
                 continue
             foreign_position_count += 1
             observed_positions.append(
@@ -349,6 +350,7 @@ class AlpacaPaperBroker(BaseBroker):
                 )
             )
 
+        self.runtime_store.replace_positions(managed_positions)
         self.runtime_store.replace_observed_orders(observed_orders)
         self.runtime_store.replace_observed_positions(observed_positions)
         return BrokerReconciliationSnapshot(

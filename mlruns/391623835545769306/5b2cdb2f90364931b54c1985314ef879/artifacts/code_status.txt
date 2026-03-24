@@ -1,0 +1,121 @@
+On branch feature_scalping_upgrade
+Your branch is up to date with 'origin/feature_scalping_upgrade'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   reports/analytics/pnl_summary.md
+	modified:   reports/training/timeframe_coverage_summary.csv
+	modified:   reports/training/training_data_quality_report.md
+	modified:   reports/training/training_data_quality_summary.json
+	modified:   reports/training/training_eligible_universe.csv
+	modified:   reports/universe/top_liquidity_universe_report.md
+	modified:   src/mytradingbot/brokers/alpaca_paper.py
+	modified:   src/mytradingbot/runtime/service.py
+	modified:   src/mytradingbot/runtime/store.py
+	modified:   tests/unit/brokers/test_alpaca_paper.py
+	modified:   tests/unit/runtime/test_runtime_state_service.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	mlruns/391623835545769306/37afbd22bcaa43eab0ec5e67272c7392/
+	mlruns/391623835545769306/5b2cdb2f90364931b54c1985314ef879/
+	mlruns/391623835545769306/ee2ce997909e45e1918b752b14c014ee/
+	reports/analytics/0a36da75-c996-421d-9e47-2e1f8980b72f_analytics.md
+	reports/analytics/2578b158-a9de-4195-b194-d679103c784c_analytics.md
+	reports/analytics/2d3b54ea-8cd9-482c-945f-8adbf76989ab_analytics.md
+	reports/analytics/3817087d-a514-41c9-b718-fb1598c45aa0_analytics.md
+	reports/analytics/4ec0496a-2e8a-4f2d-82b6-14f90fc3d8a7_analytics.md
+	reports/analytics/65fdc63a-e002-477d-856d-3b64dc736c50_analytics.md
+	reports/analytics/6d906268-9262-4e30-a6ee-651f83c0f53a_analytics.md
+	reports/analytics/831d9ae4-8da2-4fc5-8924-8abd8b5efba0_analytics.md
+	reports/analytics/97d028eb-4e15-4ebe-afe2-2ce360acdef1_analytics.md
+	reports/analytics/a767fea4-12a8-481b-9e45-9f4e710a6686_analytics.md
+	reports/analytics/b0a16f79-b49f-40df-ac8a-d6cee9ee237f_analytics.md
+	reports/analytics/c2d5b24f-f6aa-4693-964e-1c4058f38b09_analytics.md
+	reports/analytics/e42799a6-9a72-4bbc-a54f-cd338e04ea07_analytics.md
+	reports/analytics/e6b84f81-020b-47e6-bcba-d44291ad6c3c_analytics.md
+	reports/analytics/e920b055-2099-486d-ba36-4a5f78aac082_analytics.md
+	reports/analytics/fdb9ded2-291f-49ca-acf9-f48602b940c3_analytics.md
+	reports/paper_trading/0a36da75-c996-421d-9e47-2e1f8980b72f_paper_session.json
+	reports/paper_trading/0a36da75-c996-421d-9e47-2e1f8980b72f_paper_session.md
+	reports/paper_trading/2578b158-a9de-4195-b194-d679103c784c_paper_session.json
+	reports/paper_trading/2578b158-a9de-4195-b194-d679103c784c_paper_session.md
+	reports/paper_trading/2d3b54ea-8cd9-482c-945f-8adbf76989ab_paper_session.json
+	reports/paper_trading/2d3b54ea-8cd9-482c-945f-8adbf76989ab_paper_session.md
+	reports/paper_trading/3817087d-a514-41c9-b718-fb1598c45aa0_paper_session.json
+	reports/paper_trading/3817087d-a514-41c9-b718-fb1598c45aa0_paper_session.md
+	reports/paper_trading/4ec0496a-2e8a-4f2d-82b6-14f90fc3d8a7_paper_session.json
+	reports/paper_trading/4ec0496a-2e8a-4f2d-82b6-14f90fc3d8a7_paper_session.md
+	reports/paper_trading/65fdc63a-e002-477d-856d-3b64dc736c50_paper_session.json
+	reports/paper_trading/65fdc63a-e002-477d-856d-3b64dc736c50_paper_session.md
+	reports/paper_trading/6d906268-9262-4e30-a6ee-651f83c0f53a_paper_session.json
+	reports/paper_trading/6d906268-9262-4e30-a6ee-651f83c0f53a_paper_session.md
+	reports/paper_trading/831d9ae4-8da2-4fc5-8924-8abd8b5efba0_paper_session.json
+	reports/paper_trading/831d9ae4-8da2-4fc5-8924-8abd8b5efba0_paper_session.md
+	reports/paper_trading/97d028eb-4e15-4ebe-afe2-2ce360acdef1_paper_session.json
+	reports/paper_trading/97d028eb-4e15-4ebe-afe2-2ce360acdef1_paper_session.md
+	reports/paper_trading/a767fea4-12a8-481b-9e45-9f4e710a6686_paper_session.json
+	reports/paper_trading/a767fea4-12a8-481b-9e45-9f4e710a6686_paper_session.md
+	reports/paper_trading/b0a16f79-b49f-40df-ac8a-d6cee9ee237f_paper_session.json
+	reports/paper_trading/b0a16f79-b49f-40df-ac8a-d6cee9ee237f_paper_session.md
+	reports/paper_trading/c2d5b24f-f6aa-4693-964e-1c4058f38b09_paper_session.json
+	reports/paper_trading/c2d5b24f-f6aa-4693-964e-1c4058f38b09_paper_session.md
+	reports/paper_trading/e42799a6-9a72-4bbc-a54f-cd338e04ea07_paper_session.json
+	reports/paper_trading/e42799a6-9a72-4bbc-a54f-cd338e04ea07_paper_session.md
+	reports/paper_trading/e6b84f81-020b-47e6-bcba-d44291ad6c3c_paper_session.json
+	reports/paper_trading/e6b84f81-020b-47e6-bcba-d44291ad6c3c_paper_session.md
+	reports/paper_trading/e920b055-2099-486d-ba36-4a5f78aac082_paper_session.json
+	reports/paper_trading/e920b055-2099-486d-ba36-4a5f78aac082_paper_session.md
+	reports/paper_trading/fdb9ded2-291f-49ca-acf9-f48602b940c3_paper_session.json
+	reports/paper_trading/fdb9ded2-291f-49ca-acf9-f48602b940c3_paper_session.md
+	reports/signals/0a36da75-c996-421d-9e47-2e1f8980b72f_decision_audit.csv
+	reports/signals/0a36da75-c996-421d-9e47-2e1f8980b72f_decision_audit.json
+	reports/signals/0a36da75-c996-421d-9e47-2e1f8980b72f_decision_audit.md
+	reports/signals/2578b158-a9de-4195-b194-d679103c784c_decision_audit.csv
+	reports/signals/2578b158-a9de-4195-b194-d679103c784c_decision_audit.json
+	reports/signals/2578b158-a9de-4195-b194-d679103c784c_decision_audit.md
+	reports/signals/2d3b54ea-8cd9-482c-945f-8adbf76989ab_decision_audit.csv
+	reports/signals/2d3b54ea-8cd9-482c-945f-8adbf76989ab_decision_audit.json
+	reports/signals/2d3b54ea-8cd9-482c-945f-8adbf76989ab_decision_audit.md
+	reports/signals/3817087d-a514-41c9-b718-fb1598c45aa0_decision_audit.csv
+	reports/signals/3817087d-a514-41c9-b718-fb1598c45aa0_decision_audit.json
+	reports/signals/3817087d-a514-41c9-b718-fb1598c45aa0_decision_audit.md
+	reports/signals/4ec0496a-2e8a-4f2d-82b6-14f90fc3d8a7_decision_audit.csv
+	reports/signals/4ec0496a-2e8a-4f2d-82b6-14f90fc3d8a7_decision_audit.json
+	reports/signals/4ec0496a-2e8a-4f2d-82b6-14f90fc3d8a7_decision_audit.md
+	reports/signals/65fdc63a-e002-477d-856d-3b64dc736c50_decision_audit.csv
+	reports/signals/65fdc63a-e002-477d-856d-3b64dc736c50_decision_audit.json
+	reports/signals/65fdc63a-e002-477d-856d-3b64dc736c50_decision_audit.md
+	reports/signals/6d906268-9262-4e30-a6ee-651f83c0f53a_decision_audit.csv
+	reports/signals/6d906268-9262-4e30-a6ee-651f83c0f53a_decision_audit.json
+	reports/signals/6d906268-9262-4e30-a6ee-651f83c0f53a_decision_audit.md
+	reports/signals/831d9ae4-8da2-4fc5-8924-8abd8b5efba0_decision_audit.csv
+	reports/signals/831d9ae4-8da2-4fc5-8924-8abd8b5efba0_decision_audit.json
+	reports/signals/831d9ae4-8da2-4fc5-8924-8abd8b5efba0_decision_audit.md
+	reports/signals/97d028eb-4e15-4ebe-afe2-2ce360acdef1_decision_audit.csv
+	reports/signals/97d028eb-4e15-4ebe-afe2-2ce360acdef1_decision_audit.json
+	reports/signals/97d028eb-4e15-4ebe-afe2-2ce360acdef1_decision_audit.md
+	reports/signals/a767fea4-12a8-481b-9e45-9f4e710a6686_decision_audit.csv
+	reports/signals/a767fea4-12a8-481b-9e45-9f4e710a6686_decision_audit.json
+	reports/signals/a767fea4-12a8-481b-9e45-9f4e710a6686_decision_audit.md
+	reports/signals/b0a16f79-b49f-40df-ac8a-d6cee9ee237f_decision_audit.csv
+	reports/signals/b0a16f79-b49f-40df-ac8a-d6cee9ee237f_decision_audit.json
+	reports/signals/b0a16f79-b49f-40df-ac8a-d6cee9ee237f_decision_audit.md
+	reports/signals/c2d5b24f-f6aa-4693-964e-1c4058f38b09_decision_audit.csv
+	reports/signals/c2d5b24f-f6aa-4693-964e-1c4058f38b09_decision_audit.json
+	reports/signals/c2d5b24f-f6aa-4693-964e-1c4058f38b09_decision_audit.md
+	reports/signals/e42799a6-9a72-4bbc-a54f-cd338e04ea07_decision_audit.csv
+	reports/signals/e42799a6-9a72-4bbc-a54f-cd338e04ea07_decision_audit.json
+	reports/signals/e42799a6-9a72-4bbc-a54f-cd338e04ea07_decision_audit.md
+	reports/signals/e6b84f81-020b-47e6-bcba-d44291ad6c3c_decision_audit.csv
+	reports/signals/e6b84f81-020b-47e6-bcba-d44291ad6c3c_decision_audit.json
+	reports/signals/e6b84f81-020b-47e6-bcba-d44291ad6c3c_decision_audit.md
+	reports/signals/e920b055-2099-486d-ba36-4a5f78aac082_decision_audit.csv
+	reports/signals/e920b055-2099-486d-ba36-4a5f78aac082_decision_audit.json
+	reports/signals/e920b055-2099-486d-ba36-4a5f78aac082_decision_audit.md
+	reports/signals/fdb9ded2-291f-49ca-acf9-f48602b940c3_decision_audit.csv
+	reports/signals/fdb9ded2-291f-49ca-acf9-f48602b940c3_decision_audit.json
+	reports/signals/fdb9ded2-291f-49ca-acf9-f48602b940c3_decision_audit.md
+
+no changes added to commit (use "git add" and/or "git commit -a")

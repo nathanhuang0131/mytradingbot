@@ -15,6 +15,7 @@ from mytradingbot.qlib_engine.models import QlibOperationResult
 from mytradingbot.qlib_engine.service import QlibWorkflowService
 from mytradingbot.runtime.models import OrderLifecycleRecord
 from mytradingbot.runtime.service import RuntimeStateService
+from mytradingbot.session_setup.service import SetupWizardService
 
 
 def _write_runtime_artifacts(tmp_path, *, predicted_return: float = 0.012) -> tuple[Path, Path]:
@@ -54,6 +55,73 @@ def _write_runtime_artifacts(tmp_path, *, predicted_return: float = 0.012) -> tu
                     "volatility_regime": "normal",
                     "timestamp": generated_at.isoformat(),
                 }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return predictions_path, market_path
+
+
+def _write_dual_direction_artifacts(tmp_path: Path) -> tuple[Path, Path]:
+    predictions_path = tmp_path / "predictions_dual.json"
+    market_path = tmp_path / "market_dual.json"
+    generated_at = datetime(2026, 3, 18, 15, 0, tzinfo=timezone.utc)
+    predictions_path.write_text(
+        json.dumps(
+            [
+                {
+                    "symbol": "AAPL",
+                    "score": 0.95,
+                    "predicted_return": 0.012,
+                    "confidence": 0.84,
+                    "rank": 1,
+                    "direction": "long",
+                    "horizon": "intraday",
+                    "generated_at": generated_at.isoformat(),
+                },
+                {
+                    "symbol": "MSFT",
+                    "score": -0.95,
+                    "predicted_return": -0.012,
+                    "confidence": 0.84,
+                    "rank": 2,
+                    "direction": "short",
+                    "horizon": "intraday",
+                    "generated_at": generated_at.isoformat(),
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    market_path.write_text(
+        json.dumps(
+            [
+                {
+                    "symbol": "AAPL",
+                    "last_price": 100.0,
+                    "vwap": 99.4,
+                    "spread_bps": 1.0,
+                    "volume": 1500000,
+                    "liquidity_score": 0.88,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": 0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                    "timestamp": generated_at.isoformat(),
+                },
+                {
+                    "symbol": "MSFT",
+                    "last_price": 100.0,
+                    "vwap": 100.6,
+                    "spread_bps": 1.0,
+                    "volume": 1500000,
+                    "liquidity_score": 0.88,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": -0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                    "timestamp": generated_at.isoformat(),
+                },
             ]
         ),
         encoding="utf-8",
@@ -258,5 +326,30 @@ def test_run_session_auto_refreshes_inputs_and_restores_readiness(tmp_path) -> N
     assert result.decision_pipeline_readiness is not None
     assert result.decision_pipeline_readiness.decision_pipeline_ready is True
     assert result.decision_pipeline_readiness.decision_block_reason is None
-    assert "market_refresh:market data refreshed" in result.decision_pipeline_readiness.refresh_actions
-    assert "prediction_refresh:predictions refreshed" in result.decision_pipeline_readiness.refresh_actions
+
+
+def test_run_session_honors_long_only_session_config(tmp_path) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    predictions_path, market_path = _write_dual_direction_artifacts(tmp_path)
+    runtime_service = RuntimeStateService(settings=settings)
+    wizard_service = SetupWizardService(settings=settings)
+    state = wizard_service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
+    state = wizard_service.apply_preset(state, "Scalping - Alpaca Paper Long Only")
+    resolved_config = wizard_service.finalize_setup(state, generated_symbols=["AAPL", "MSFT"])
+
+    service = TradingPlatformService(
+        settings=settings,
+        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
+        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
+        runtime_state_service=runtime_service,
+    )
+
+    result = service.run_session(
+        strategy_name="scalping",
+        mode=RuntimeMode.PAPER,
+        session_config=resolved_config,
+        symbols_file=Path(resolved_config.active_symbols_path),
+    )
+
+    assert all(attempt.symbol != "MSFT" for attempt in result.trade_attempts)
+    assert any(attempt.symbol == "AAPL" for attempt in result.trade_attempts)

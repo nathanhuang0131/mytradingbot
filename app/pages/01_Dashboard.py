@@ -25,6 +25,11 @@ st.json(payload.health.model_dump(mode="json"))
 st.subheader("Phase Capabilities")
 st.json(payload.capabilities.model_dump(mode="json"))
 
+if hasattr(st, "page_link"):
+    st.page_link("pages/00_Setup_Wizard.py", label="Start New Trading Session (Wizard)")
+else:
+    st.info("Open `00_Setup_Wizard` from the sidebar to use the guided setup flow.")
+
 if payload.last_session is not None:
     st.subheader("Last Session")
     st.json(payload.last_session.model_dump(mode="json"))

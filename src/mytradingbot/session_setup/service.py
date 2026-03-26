@@ -8,6 +8,8 @@ from typing import Iterable
 
 from mytradingbot.core.settings import AppSettings
 from mytradingbot.session_setup.models import (
+    FinalUniversePreview,
+    FinalUniverseSaveResult,
     PresetName,
     ResolvedSessionConfig,
     SetupWizardState,
@@ -162,14 +164,11 @@ class SetupWizardService:
         existing_symbols = self._default_active_symbols(profile_slug=profile_slug)
         if generated_symbols is None and state.universe.selection_mode != "keep_old":
             generated_symbols = self.resolve_generated_symbols(state.model_copy(deep=True))
-        new_symbols = self._normalize_symbols(generated_symbols or [])
-
-        if state.universe.selection_mode == "keep_old":
-            resolved_symbols = existing_symbols
-        elif state.universe.selection_mode == "combine_old_and_new":
-            resolved_symbols = self._normalize_symbols([*existing_symbols, *new_symbols])
-        else:
-            resolved_symbols = new_symbols
+        resolved_symbols = self._resolve_active_symbols(
+            selection_mode=state.universe.selection_mode,
+            existing_symbols=existing_symbols,
+            generated_symbols=generated_symbols or [],
+        )
 
         path = self.storage.write_active_symbols(
             profile_slug=profile_slug,
@@ -187,12 +186,89 @@ class SetupWizardService:
     ) -> list[str]:
         profile_slug = state.profile.profile_slug
         existing_symbols = self._default_active_symbols(profile_slug=profile_slug)
-        new_symbols = self._normalize_symbols(generated_symbols or [])
-        if state.universe.selection_mode == "keep_old":
-            return existing_symbols
-        if state.universe.selection_mode == "combine_old_and_new":
-            return self._normalize_symbols([*existing_symbols, *new_symbols])
-        return new_symbols
+        return self._resolve_active_symbols(
+            selection_mode=state.universe.selection_mode,
+            existing_symbols=existing_symbols,
+            generated_symbols=generated_symbols or [],
+        )
+
+    def preview_final_universe(
+        self,
+        state: SetupWizardState,
+        *,
+        generated_symbols: list[str] | None = None,
+        manual_symbols: list[str] | None = None,
+    ) -> FinalUniversePreview:
+        profile_slug = state.profile.profile_slug
+        previous_symbols = self._normalize_symbols(
+            self._default_active_symbols(profile_slug=profile_slug)
+        )
+        if generated_symbols is None and state.universe.selection_mode != "keep_old":
+            generated_symbols = self.resolve_generated_symbols(state.model_copy(deep=True))
+        normalized_generated = self._normalize_symbols(generated_symbols or [])
+        normalized_manual = self._normalize_symbols(manual_symbols or [])
+        final_symbols = self._resolve_active_symbols(
+            selection_mode=state.universe.selection_mode,
+            existing_symbols=previous_symbols,
+            generated_symbols=normalized_generated,
+            manual_symbols=normalized_manual,
+        )
+        previous_set = set(previous_symbols)
+        final_set = set(final_symbols)
+        added_symbols = sorted(final_set - previous_set)
+        removed_symbols = sorted(previous_set - final_set)
+        return FinalUniversePreview(
+            previous_symbols=previous_symbols,
+            generated_symbols=normalized_generated,
+            manual_symbols=normalized_manual,
+            final_symbols=final_symbols,
+            added_symbols=added_symbols,
+            removed_symbols=removed_symbols,
+            final_symbol_count=len(final_symbols),
+            added_symbol_count=len(added_symbols),
+            removed_symbol_count=len(removed_symbols),
+        )
+
+    def save_final_universe(
+        self,
+        state: SetupWizardState,
+        *,
+        generated_symbols: list[str] | None = None,
+        manual_symbols: list[str] | None = None,
+    ) -> FinalUniverseSaveResult:
+        preview = self.preview_final_universe(
+            state,
+            generated_symbols=generated_symbols,
+            manual_symbols=manual_symbols,
+        )
+        active_symbols_path = self.storage.write_active_symbols(
+            profile_slug=state.profile.profile_slug,
+            symbols=preview.final_symbols,
+        )
+        state.universe.active_symbols_path = str(active_symbols_path)
+        state.universe.active_symbol_count = len(preview.final_symbols)
+        state.profile.latest_active_symbols_path = str(active_symbols_path)
+        self.storage.save_profile(state.profile)
+
+        latest_session_config_path: str | None = None
+        latest_config = self.storage.load_latest_session_config(state.profile.profile_slug)
+        if latest_config is not None:
+            latest_config.universe.selection_mode = state.universe.selection_mode
+            latest_config.universe.active_symbols_path = str(active_symbols_path)
+            latest_config.universe.active_symbol_count = len(preview.final_symbols)
+            latest_config.active_symbols_path = str(active_symbols_path)
+            latest_config.active_symbols = preview.final_symbols
+            saved_path = self.storage.save_latest_session_config(latest_config)
+            latest_session_config_path = str(saved_path)
+            state.profile.latest_session_config_path = latest_session_config_path
+            self.storage.save_profile(state.profile)
+
+        return FinalUniverseSaveResult(
+            profile_slug=state.profile.profile_slug,
+            active_symbols_path=str(active_symbols_path),
+            latest_session_config_path=latest_session_config_path,
+            **preview.model_dump(mode="python"),
+        )
 
     def finalize_setup(
         self,
@@ -292,6 +368,26 @@ class SetupWizardService:
     def _normalize_symbols(symbols: Iterable[str]) -> list[str]:
         cleaned = sorted({str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()})
         return cleaned
+
+    def _resolve_active_symbols(
+        self,
+        *,
+        selection_mode: str,
+        existing_symbols: list[str],
+        generated_symbols: list[str],
+        manual_symbols: list[str] | None = None,
+    ) -> list[str]:
+        normalized_existing = self._normalize_symbols(existing_symbols)
+        normalized_generated = self._normalize_symbols(generated_symbols)
+        normalized_manual = self._normalize_symbols(manual_symbols or [])
+
+        if selection_mode == "keep_old":
+            return self._normalize_symbols([*normalized_existing, *normalized_manual])
+        if selection_mode == "combine_old_and_new":
+            return self._normalize_symbols(
+                [*normalized_existing, *normalized_generated, *normalized_manual]
+            )
+        return self._normalize_symbols([*normalized_generated, *normalized_manual])
 
     @staticmethod
     def _resolve_dotted_value(state: SetupWizardState, dotted_key: str):

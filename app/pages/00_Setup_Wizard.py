@@ -354,6 +354,36 @@ def _render_alpha_step(state: SetupWizardState) -> None:
             key=_wizard_state_key("refresh_predictions_before_run"),
         )
     )
+    threshold_col, confidence_col = st.columns(2)
+    state.alpha.predicted_return_threshold = (
+        float(
+            threshold_col.number_input(
+                "Predicted return threshold (%)",
+                min_value=0.0,
+                value=float(state.alpha.predicted_return_threshold * 100),
+                step=0.05,
+                format="%.2f",
+                key=_wizard_state_key("predicted_return_threshold"),
+                help="Minimum absolute qlib predicted return required before scalping can consider a symbol.",
+            )
+        )
+        / 100
+    )
+    state.alpha.confidence_threshold = float(
+        confidence_col.number_input(
+            "Confidence threshold",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(state.alpha.confidence_threshold),
+            step=0.01,
+            format="%.2f",
+            key=_wizard_state_key("confidence_threshold"),
+            help="Minimum qlib confidence required before scalping can consider a symbol.",
+        )
+    )
+    st.caption(
+        "Default scalping gates are 0.50% predicted return and 0.60 confidence. Lower them to allow more symbols through, or raise them to make entry selection stricter."
+    )
     with st.expander("Advanced alpha settings", expanded=st.session_state.get("wizard_visibility_mode") != "basic"):
         state.alpha.candidate_count = int(
             st.number_input(
@@ -605,6 +635,8 @@ def _render_review_step(service: SetupWizardUIService, state: SetupWizardState) 
                     f"Broker mode: `{state.strategy.broker_mode}`",
                     f"Session mode: `{state.strategy.session_mode}`",
                     f"Side mode: `{state.alpha.side_mode}`",
+                    f"Predicted return gate: `{state.alpha.predicted_return_threshold * 100:.2f}%`",
+                    f"Confidence gate: `{state.alpha.confidence_threshold:.2f}`",
                 ]
             )
         )

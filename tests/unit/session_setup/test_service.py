@@ -187,3 +187,79 @@ def test_setup_wizard_service_resolves_generated_symbols_with_universe_filters(t
             "include_etfs": True,
         }
     ]
+
+
+def test_setup_wizard_service_persists_scalping_thresholds_in_latest_config(tmp_path) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    service = SetupWizardService(settings=settings)
+    state = service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
+    state.alpha.predicted_return_threshold = 0.007
+    state.alpha.confidence_threshold = 0.72
+
+    resolved = service.finalize_setup(state, generated_symbols=["AAPL", "MSFT"])
+    latest = service.storage.load_latest_session_config(state.profile.profile_slug)
+
+    assert resolved.alpha.predicted_return_threshold == 0.007
+    assert resolved.alpha.confidence_threshold == 0.72
+    assert latest is not None
+    assert latest.alpha.predicted_return_threshold == 0.007
+    assert latest.alpha.confidence_threshold == 0.72
+
+
+def test_setup_wizard_service_previews_final_universe_with_diff_counts_and_manual_additions(
+    tmp_path,
+) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    service = SetupWizardService(settings=settings)
+    state = service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
+    state.universe.selection_mode = "replace_with_new"
+    service.storage.write_active_symbols(
+        profile_slug=state.profile.profile_slug,
+        symbols=["AAPL", "MSFT", "AMD"],
+    )
+
+    preview = service.preview_final_universe(
+        state,
+        generated_symbols=["MSFT", "NVDA"],
+        manual_symbols=[" tsla ", "nvda"],
+    )
+
+    assert preview.previous_symbols == ["AAPL", "AMD", "MSFT"]
+    assert preview.generated_symbols == ["MSFT", "NVDA"]
+    assert preview.manual_symbols == ["NVDA", "TSLA"]
+    assert preview.final_symbols == ["MSFT", "NVDA", "TSLA"]
+    assert preview.added_symbols == ["NVDA", "TSLA"]
+    assert preview.removed_symbols == ["AAPL", "AMD"]
+    assert preview.final_symbol_count == 3
+    assert preview.added_symbol_count == 2
+    assert preview.removed_symbol_count == 2
+
+
+def test_setup_wizard_service_save_final_universe_updates_manifest_and_latest_config(
+    tmp_path,
+) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    service = SetupWizardService(settings=settings)
+    state = service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
+    state.universe.selection_mode = "combine_old_and_new"
+    service.finalize_setup(state, generated_symbols=["AAPL", "MSFT"])
+
+    saved = service.save_final_universe(
+        state,
+        generated_symbols=["MSFT", "NVDA"],
+        manual_symbols=[" tsla "],
+    )
+
+    latest_config = service.storage.load_latest_session_config(state.profile.profile_slug)
+    assert latest_config is not None
+    assert saved.final_symbols == ["AAPL", "MSFT", "NVDA", "TSLA"]
+    assert json.loads(
+        service.storage
+        .active_symbols_path(state.profile.profile_slug)
+        .read_text(encoding="utf-8")
+    ) == ["AAPL", "MSFT", "NVDA", "TSLA"]
+    assert latest_config.active_symbols == ["AAPL", "MSFT", "NVDA", "TSLA"]
+    assert latest_config.universe.active_symbol_count == 4
+    assert latest_config.active_symbols_path == str(
+        service.storage.active_symbols_path(state.profile.profile_slug)
+    )

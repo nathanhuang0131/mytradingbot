@@ -76,6 +76,7 @@ python scripts/run_live_trading.py
 The recommended new setup flow is the dedicated Streamlit wizard page:
 
 - `app/pages/00_Setup_Wizard.py`
+- `app/pages/09_Trading_Universe.py`
 
 Launch the app as usual:
 
@@ -90,6 +91,7 @@ The wizard does not replace the current dashboard, CLI, or script-based workflow
 For a field-by-field explanation of the wizard, scalping presets, training vs. latest-model usage, and where to find logs and reports, see:
 
 - `docs/USER_MANUAL.md`
+- `standard operation.md`
 
 ### Wizard profile and config files
 
@@ -121,9 +123,28 @@ The wizard supports three active-universe modes:
 
 These modes only change the active universe manifest. They do **not** delete historical downloaded raw or normalized parquet data. Historical data remains on disk for future training and analysis even when the active symbol set changes.
 
+The standalone `Trading Universe` sidebar page extends this by showing the previous active universe, the generated new universe, the final saved universe, and the added/removed symbol diffs before you persist the final manifest for future runs.
+
+It also shows the current qlib prediction artifact in both raw and final-universe views, including the raw prediction fields plus `is_final_symbol`, `indicated_tp_pct`, and `indicated_sl_pct` derived from the existing scalping logic.
+
+Qlib prediction artifact semantics:
+
+- `score` stays signed
+- `predicted_return` stays signed
+- `direction` is `long` for non-negative scores and `short` for negative scores
+- `rank` is based on `abs(score)`, so stronger long and short ideas share the same leaderboard
+- `confidence` is derived from `abs(score)`, so larger-magnitude predictions carry higher confidence regardless of side
+
 ### Recommended defaults
 
 Fields marked with `Recommended default` are safe to leave unchanged for most operators. Basic mode is designed to be sufficient for a normal paper-trading session. Advanced and expert sections remain available when you want deeper control.
+
+The `Alpha & Model` step now exposes the scalping qlib gates directly:
+
+- `Predicted return threshold (%)` default: `0.50%`
+- `Confidence threshold` default: `0.60`
+
+Lower them to admit more candidates, or raise them to tighten symbol selection before execution.
 
 The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
 ## Canonical Institutional Runtime

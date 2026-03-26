@@ -31,7 +31,10 @@ from mytradingbot.runtime.models import BrokerMode, BrokerReconciliationSnapshot
 from mytradingbot.runtime.models import DecisionPipelineReadiness
 from mytradingbot.runtime.service import RuntimeStateService
 from mytradingbot.session_setup.models import ResolvedSessionConfig
-from mytradingbot.session_setup.runtime import filter_predictions_for_config
+from mytradingbot.session_setup.runtime import (
+    apply_resolved_config_to_settings,
+    filter_predictions_for_config,
+)
 from mytradingbot.strategies.registry import StrategyRegistry
 from mytradingbot.universe.storage import UniverseStorage
 
@@ -66,7 +69,7 @@ class TradingPlatformService:
             settings=self.settings
         )
         self.capability_service = CapabilityService(settings=self.settings)
-        self.strategy_registry = strategy_registry or StrategyRegistry.build_default()
+        self.strategy_registry = strategy_registry or StrategyRegistry.build_default(self.settings)
         self.risk_engine = risk_engine or RiskEngine()
         self.runtime_state_service = runtime_state_service or RuntimeStateService(
             settings=self.settings
@@ -129,6 +132,7 @@ class TradingPlatformService:
         end_at: datetime | None = None,
         full_refresh: bool = False,
         normalize_only: bool = False,
+        progress_callback=None,
     ):
         resolved_symbols = self.resolve_symbols(symbols=symbols, symbols_file=symbols_file)
         return self.data_pipeline.download_update_normalize_and_snapshot(
@@ -138,6 +142,7 @@ class TradingPlatformService:
             end_at=end_at,
             full_refresh=full_refresh,
             normalize_only=normalize_only,
+            progress_callback=progress_callback,
         )
 
     def refresh_predictions(self, *, strategy_name: str | None = None):
@@ -730,7 +735,10 @@ class TradingPlatformService:
             strategy_name=strategy_name,
             signals=signals,
         )
-        strategy = self.strategy_registry.get(strategy_name)
+        strategy = self._resolve_strategy_for_session(
+            strategy_name,
+            session_config=session_config,
+        )
         attempts: list[TradeAttemptTrace] = []
         audits = []
         rejection_reasons: list[str] = []
@@ -917,3 +925,17 @@ class TradingPlatformService:
         )
         self.last_session_result = result
         return result
+
+    def _resolve_strategy_for_session(
+        self,
+        strategy_name: str,
+        *,
+        session_config: ResolvedSessionConfig | None,
+    ):
+        if session_config is None:
+            return self.strategy_registry.get(strategy_name)
+        session_settings = apply_resolved_config_to_settings(
+            self.settings,
+            session_config,
+        )
+        return StrategyRegistry.build_default(session_settings).get(strategy_name)

@@ -103,6 +103,8 @@ class AlphaModelProfile(BaseModel):
     model_artifact_path: str | None = None
     long_threshold: float = 0.0
     short_threshold: float = 0.0
+    predicted_return_threshold: float = 0.005
+    confidence_threshold: float = 0.6
 
 
 class RiskProfile(BaseModel):
@@ -168,3 +170,21 @@ class ResolvedSessionConfig(BaseModel):
     active_symbols: list[str]
     expected_actions: list[str] = Field(default_factory=list)
     launch_ready: bool = True
+
+
+class FinalUniversePreview(BaseModel):
+    previous_symbols: list[str] = Field(default_factory=list)
+    generated_symbols: list[str] = Field(default_factory=list)
+    manual_symbols: list[str] = Field(default_factory=list)
+    final_symbols: list[str] = Field(default_factory=list)
+    added_symbols: list[str] = Field(default_factory=list)
+    removed_symbols: list[str] = Field(default_factory=list)
+    final_symbol_count: int = 0
+    added_symbol_count: int = 0
+    removed_symbol_count: int = 0
+
+
+class FinalUniverseSaveResult(FinalUniversePreview):
+    profile_slug: str
+    active_symbols_path: str
+    latest_session_config_path: str | None = None

@@ -219,6 +219,8 @@ class QlibSettings(BaseModel):
 class ScalpingBracketSettings(BaseModel):
     """Bracket-planning controls for scalping."""
 
+    predicted_return_threshold: float = 0.005
+    confidence_threshold: float = 0.6
     minimum_reward_risk_ratio: float = 1.4
     estimated_slippage_bps: float = 2.5
     estimated_fee_per_share: float = 0.0

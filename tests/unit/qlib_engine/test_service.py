@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -8,6 +9,7 @@ import pandas as pd
 
 from mytradingbot.core.paths import RepoPaths
 from mytradingbot.core.settings import AppSettings
+from mytradingbot.qlib_engine.adapter import FEATURE_COLUMNS, PyQlibWorkflowAdapter
 from mytradingbot.qlib_engine.service import QlibWorkflowService
 
 
@@ -199,6 +201,23 @@ class _FakeQlibAdapter:
         return output_path
 
 
+class _PredictableModel:
+    def __init__(self, scores: dict[str, float]) -> None:
+        self.scores = scores
+
+    def predict(self, dataset, segment: str = "predict"):
+        latest_rows = dataset.sort_values("datetime").groupby("instrument").tail(1)
+        index = []
+        values = []
+        for row in latest_rows.itertuples(index=False):
+            index.append((row.datetime, row.instrument))
+            values.append(float(self.scores[row.instrument]))
+        return pd.Series(
+            values,
+            index=pd.MultiIndex.from_tuples(index, names=["datetime", "instrument"]),
+        )
+
+
 def _write_normalized_bars(root: Path, timeframe: str = "1m") -> None:
     normalized_path = root / "data" / "normalized" / "bars" / timeframe
     normalized_path.mkdir(parents=True, exist_ok=True)
@@ -368,3 +387,46 @@ def test_prediction_artifact_with_utf8_bom_loads_cleanly(tmp_path) -> None:
 
     assert result.ok
     assert result.predictions[0].symbol == "AAPL"
+
+
+def test_pyqlib_adapter_ranks_predictions_by_absolute_score_and_preserves_sign(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "datetime": pd.Timestamp("2026-03-18T15:00:00Z"),
+                "instrument": "AAPL",
+                **{column: 0.1 for column in FEATURE_COLUMNS},
+            },
+            {
+                "datetime": pd.Timestamp("2026-03-18T15:00:00Z"),
+                "instrument": "MSFT",
+                **{column: 0.2 for column in FEATURE_COLUMNS},
+            },
+        ]
+    )
+    model_path = tmp_path / "model.pkl"
+    output_path = tmp_path / "latest.json"
+    model_path.write_bytes(
+        pickle.dumps(_PredictableModel({"AAPL": 0.02, "MSFT": -0.05}))
+    )
+
+    monkeypatch.setattr(
+        PyQlibWorkflowAdapter,
+        "_build_dataset_object",
+        lambda self, frame, include_label=False, segment_name="predict": frame,
+    )
+
+    adapter = PyQlibWorkflowAdapter()
+    adapter.generate_predictions(frame, model_path, output_path, "scalping")
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert [row["symbol"] for row in payload] == ["MSFT", "AAPL"]
+    assert payload[0]["rank"] == 1
+    assert payload[0]["direction"] == "short"
+    assert payload[0]["score"] == -0.05
+    assert payload[0]["predicted_return"] == -0.05
+    assert payload[0]["confidence"] > payload[1]["confidence"]

@@ -34,6 +34,8 @@ def apply_resolved_config_to_settings(
         config.refresh.predictions_max_age_minutes
     )
     resolved.scalping.max_position_notional = config.risk.max_dollars_per_trade
+    resolved.scalping.predicted_return_threshold = config.alpha.predicted_return_threshold
+    resolved.scalping.confidence_threshold = config.alpha.confidence_threshold
     resolved.scalping.stop_loss_buffer_bps = config.execution.stop_loss_percent * 100
     return resolved
 

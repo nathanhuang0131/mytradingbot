@@ -17,6 +17,7 @@
 The recommended operator setup flow is the dedicated Streamlit wizard page:
 
 - `app/pages/00_Setup_Wizard.py`
+- `app/pages/09_Trading_Universe.py`
 
 Launch the app:
 
@@ -25,6 +26,10 @@ Launch the app:
 Then open `Setup Wizard` from the sidebar or use `Start New Trading Session (Wizard)` from the landing page or dashboard.
 
 The wizard coexists with the current dashboard and CLI workflows. It does not replace them.
+
+For the command-by-command reference covering standard scalping operations, one-off scripts, and current Streamlit entry points, see:
+
+- `standard operation.md`
 
 ### Auto-saved profile and session files
 
@@ -46,9 +51,28 @@ The wizard supports:
 
 These modes update the profile-scoped active universe manifest only. They do **not** delete any historical market data already downloaded under `data/raw/` or `data/normalized/`.
 
+The standalone `Trading Universe` page lets you preview the final manifest, see added and removed symbols versus the last saved universe, add extra symbols that persist for future runs, and save the final active set before starting scalping.
+
+The same page also exposes the qlib prediction artifact with a toggle between raw rows and the final qlib trading universe, plus `is_final_symbol`, `indicated_tp_pct`, and `indicated_sl_pct` columns derived from the current scalping logic.
+
+Interpret qlib prediction rows as follows:
+
+- `score` is signed model output
+- `predicted_return` keeps the same sign as the score
+- negative score plus `direction=short` means the model expects downside and the idea is favorable for a short, not a long
+- `rank` is ordered by `abs(score)` so the strongest short can outrank a weaker long
+- `confidence` follows `abs(score)` strength, not raw positive-score ordering
+
 ### Recommended defaults
 
 Fields marked `Recommended default` are the safe operator defaults. Basic mode is sufficient for a standard paper setup. Advanced and expert sections expose additional tuning without forcing every operator to understand the full backend dependency chain.
+
+Use the `Alpha & Model` step to adjust the qlib entry gates for scalping:
+
+- `Predicted return threshold (%)` default: `0.50%`
+- `Confidence threshold` default: `0.60`
+
+Lowering them allows more symbols through. Raising them makes the qlib filter stricter.
 
 ## Canonical Institutional Order
 
@@ -156,11 +180,12 @@ Inspect:
 
 ## Daily UI Order
 
-1. Open `app/pages/01_Dashboard.py` from the Streamlit sidebar.
+1. Launch `app/app.py` with Streamlit and start from the Dashboard landing page.
 2. Check the phase capability snapshot and prediction freshness.
-3. Use `app/pages/03_Data_and_Training.py` for phase-2 and phase-3 actions.
-4. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
-5. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
+3. Use `app/pages/03_Data_Management.py` for phase-2 and phase-3 actions.
+4. Use `app/pages/09_Trading_Universe.py` to review and save the final active universe for the selected profile.
+5. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
+6. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
 
 ## If Phase 2 Fails
 

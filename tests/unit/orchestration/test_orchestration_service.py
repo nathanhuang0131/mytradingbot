@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import pickle
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pandas as pd
 
 from mytradingbot.core.enums import RuntimeMode
 from mytradingbot.core.paths import RepoPaths
@@ -11,6 +14,7 @@ from mytradingbot.core.settings import AppSettings
 from mytradingbot.data.models import MarketDataPipelineResult
 from mytradingbot.data.service import MarketDataService
 from mytradingbot.orchestration.service import TradingPlatformService
+from mytradingbot.qlib_engine.adapter import FEATURE_COLUMNS, PyQlibWorkflowAdapter
 from mytradingbot.qlib_engine.models import QlibOperationResult
 from mytradingbot.qlib_engine.service import QlibWorkflowService
 from mytradingbot.runtime.models import OrderLifecycleRecord
@@ -93,6 +97,90 @@ def _write_dual_direction_artifacts(tmp_path: Path) -> tuple[Path, Path]:
         ),
         encoding="utf-8",
     )
+    market_path.write_text(
+        json.dumps(
+            [
+                {
+                    "symbol": "AAPL",
+                    "last_price": 100.0,
+                    "vwap": 99.4,
+                    "spread_bps": 1.0,
+                    "volume": 1500000,
+                    "liquidity_score": 0.88,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": 0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                    "timestamp": generated_at.isoformat(),
+                },
+                {
+                    "symbol": "MSFT",
+                    "last_price": 100.0,
+                    "vwap": 100.6,
+                    "spread_bps": 1.0,
+                    "volume": 1500000,
+                    "liquidity_score": 0.88,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": -0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                    "timestamp": generated_at.isoformat(),
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return predictions_path, market_path
+
+
+class _PredictableModel:
+    def __init__(self, scores: dict[str, float]) -> None:
+        self.scores = scores
+
+    def predict(self, dataset, segment: str = "predict"):
+        latest_rows = dataset.sort_values("datetime").groupby("instrument").tail(1)
+        index = []
+        values = []
+        for row in latest_rows.itertuples(index=False):
+            index.append((row.datetime, row.instrument))
+            values.append(float(self.scores[row.instrument]))
+        return pd.Series(
+            values,
+            index=pd.MultiIndex.from_tuples(index, names=["datetime", "instrument"]),
+        )
+
+
+def _write_generated_dual_direction_artifacts(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    predictions_path = tmp_path / "predictions_generated.json"
+    market_path = tmp_path / "market_generated.json"
+    model_path = tmp_path / "model.pkl"
+    generated_at = datetime(2026, 3, 18, 15, 0, tzinfo=timezone.utc)
+    frame = pd.DataFrame(
+        [
+            {
+                "datetime": pd.Timestamp(generated_at),
+                "instrument": "AAPL",
+                **{column: 0.1 for column in FEATURE_COLUMNS},
+            },
+            {
+                "datetime": pd.Timestamp(generated_at),
+                "instrument": "MSFT",
+                **{column: 0.2 for column in FEATURE_COLUMNS},
+            },
+        ]
+    )
+    model_path.write_bytes(
+        pickle.dumps(_PredictableModel({"AAPL": 0.02, "MSFT": -0.05}))
+    )
+
+    monkeypatch.setattr(
+        PyQlibWorkflowAdapter,
+        "_build_dataset_object",
+        lambda self, frame, include_label=False, segment_name="predict": frame,
+    )
+    adapter = PyQlibWorkflowAdapter()
+    adapter.generate_predictions(frame, model_path, predictions_path, "scalping")
+
     market_path.write_text(
         json.dumps(
             [
@@ -353,3 +441,69 @@ def test_run_session_honors_long_only_session_config(tmp_path) -> None:
 
     assert all(attempt.symbol != "MSFT" for attempt in result.trade_attempts)
     assert any(attempt.symbol == "AAPL" for attempt in result.trade_attempts)
+
+
+def test_run_session_honors_saved_scalping_predicted_return_threshold(tmp_path) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.012)
+    runtime_service = RuntimeStateService(settings=settings)
+    wizard_service = SetupWizardService(settings=settings)
+    state = wizard_service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
+    state.alpha.predicted_return_threshold = 0.02
+    resolved_config = wizard_service.finalize_setup(state, generated_symbols=["AAPL"])
+
+    service = TradingPlatformService(
+        settings=settings,
+        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
+        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
+        runtime_state_service=runtime_service,
+    )
+
+    result = service.run_session(
+        strategy_name="scalping",
+        mode=RuntimeMode.PAPER,
+        session_config=resolved_config,
+        symbols_file=Path(resolved_config.active_symbols_path),
+    )
+
+    assert result.session_summary.trade_count == 0
+    assert "predicted_return_threshold" in result.rejection_reasons
+
+
+def test_run_session_candidate_count_prefers_stronger_short_signal_by_absolute_score(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    predictions_path, market_path = _write_generated_dual_direction_artifacts(
+        tmp_path,
+        monkeypatch,
+    )
+    runtime_service = RuntimeStateService(settings=settings)
+    wizard_service = SetupWizardService(settings=settings)
+    state = wizard_service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
+    state.alpha.side_mode = "both"
+    state.alpha.candidate_count = 1
+    state.alpha.predicted_return_threshold = 0.0
+    state.alpha.confidence_threshold = 0.0
+    resolved_config = wizard_service.finalize_setup(state, generated_symbols=["AAPL", "MSFT"])
+
+    service = TradingPlatformService(
+        settings=settings,
+        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
+        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
+        runtime_state_service=runtime_service,
+    )
+
+    result = service.run_session(
+        strategy_name="scalping",
+        mode=RuntimeMode.PAPER,
+        session_config=resolved_config,
+        symbols_file=Path(resolved_config.active_symbols_path),
+    )
+
+    assert len(result.trade_attempts) == 1
+    assert result.trade_attempts[0].symbol == "MSFT"
+    assert result.trade_attempts[0].strategy_outcome is not None
+    assert result.trade_attempts[0].strategy_outcome.intent is not None
+    assert result.trade_attempts[0].strategy_outcome.intent.side == "sell"

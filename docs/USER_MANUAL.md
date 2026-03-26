@@ -337,7 +337,7 @@ Good choice when:
 
 ### If You Want To Train A New Model
 
-Use the Data and Training page or the CLI before launching the session.
+Use the Data Management page or the CLI before launching the session.
 
 Typical order:
 

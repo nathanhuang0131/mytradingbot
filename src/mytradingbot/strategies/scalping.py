@@ -16,8 +16,6 @@ class ScalpingStrategy(BaseStrategy):
 
     name = "scalping"
 
-    predicted_return_threshold = 0.005
-    confidence_threshold = 0.6
     max_spread_bps = 5.0
     min_liquidity_score = 0.5
     max_liquidity_stress = 0.7
@@ -26,6 +24,8 @@ class ScalpingStrategy(BaseStrategy):
 
     def __init__(self, settings: AppSettings | None = None) -> None:
         self.settings = settings or AppSettings()
+        self.predicted_return_threshold = self.settings.scalping.predicted_return_threshold
+        self.confidence_threshold = self.settings.scalping.confidence_threshold
         self.timeout_seconds = self.settings.scalping.max_holding_seconds
 
     def evaluate(self, signal: SignalBundle) -> StrategyDecision:

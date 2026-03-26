@@ -1,0 +1,346 @@
+diff --git a/README.md b/README.md
+index aa1d9c4..206e89a 100644
+--- a/README.md
++++ b/README.md
+@@ -76,6 +76,7 @@ python scripts/run_live_trading.py
+ The recommended new setup flow is the dedicated Streamlit wizard page:
+ 
+ - `app/pages/00_Setup_Wizard.py`
++- `app/pages/09_Trading_Universe.py`
+ 
+ Launch the app as usual:
+ 
+@@ -90,6 +91,7 @@ The wizard does not replace the current dashboard, CLI, or script-based workflow
+ For a field-by-field explanation of the wizard, scalping presets, training vs. latest-model usage, and where to find logs and reports, see:
+ 
+ - `docs/USER_MANUAL.md`
++- `standard operation.md`
+ 
+ ### Wizard profile and config files
+ 
+@@ -121,6 +123,8 @@ The wizard supports three active-universe modes:
+ 
+ These modes only change the active universe manifest. They do **not** delete historical downloaded raw or normalized parquet data. Historical data remains on disk for future training and analysis even when the active symbol set changes.
+ 
++The standalone `Trading Universe` sidebar page extends this by showing the previous active universe, the generated new universe, the final saved universe, and the added/removed symbol diffs before you persist the final manifest for future runs.
++
+ ### Recommended defaults
+ 
+ Fields marked with `Recommended default` are safe to leave unchanged for most operators. Basic mode is designed to be sufficient for a normal paper-trading session. Advanced and expert sections remain available when you want deeper control.
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index d3d5fcc..fa279ad 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -17,6 +17,7 @@
+ The recommended operator setup flow is the dedicated Streamlit wizard page:
+ 
+ - `app/pages/00_Setup_Wizard.py`
++- `app/pages/09_Trading_Universe.py`
+ 
+ Launch the app:
+ 
+@@ -26,6 +27,10 @@ Then open `Setup Wizard` from the sidebar or use `Start New Trading Session (Wiz
+ 
+ The wizard coexists with the current dashboard and CLI workflows. It does not replace them.
+ 
++For the command-by-command reference covering standard scalping operations, one-off scripts, and current Streamlit entry points, see:
++
++- `standard operation.md`
++
+ ### Auto-saved profile and session files
+ 
+ The wizard automatically writes:
+@@ -46,6 +51,8 @@ The wizard supports:
+ 
+ These modes update the profile-scoped active universe manifest only. They do **not** delete any historical market data already downloaded under `data/raw/` or `data/normalized/`.
+ 
++The standalone `Trading Universe` page lets you preview the final manifest, see added and removed symbols versus the last saved universe, add extra symbols that persist for future runs, and save the final active set before starting scalping.
++
+ ### Recommended defaults
+ 
+ Fields marked `Recommended default` are the safe operator defaults. Basic mode is sufficient for a standard paper setup. Advanced and expert sections expose additional tuning without forcing every operator to understand the full backend dependency chain.
+@@ -156,11 +163,12 @@ Inspect:
+ 
+ ## Daily UI Order
+ 
+-1. Open `app/pages/01_Dashboard.py` from the Streamlit sidebar.
++1. Launch `app/app.py` with Streamlit and start from the Dashboard landing page.
+ 2. Check the phase capability snapshot and prediction freshness.
+ 3. Use `app/pages/03_Data_and_Training.py` for phase-2 and phase-3 actions.
+-4. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
+-5. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
++4. Use `app/pages/09_Trading_Universe.py` to review and save the final active universe for the selected profile.
++5. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
++6. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
+ 
+ ## If Phase 2 Fails
+ 
+diff --git a/src/mytradingbot/session_setup/models.py b/src/mytradingbot/session_setup/models.py
+index e587c1a..3357758 100644
+--- a/src/mytradingbot/session_setup/models.py
++++ b/src/mytradingbot/session_setup/models.py
+@@ -168,3 +168,21 @@ class ResolvedSessionConfig(BaseModel):
+     active_symbols: list[str]
+     expected_actions: list[str] = Field(default_factory=list)
+     launch_ready: bool = True
++
++
++class FinalUniversePreview(BaseModel):
++    previous_symbols: list[str] = Field(default_factory=list)
++    generated_symbols: list[str] = Field(default_factory=list)
++    manual_symbols: list[str] = Field(default_factory=list)
++    final_symbols: list[str] = Field(default_factory=list)
++    added_symbols: list[str] = Field(default_factory=list)
++    removed_symbols: list[str] = Field(default_factory=list)
++    final_symbol_count: int = 0
++    added_symbol_count: int = 0
++    removed_symbol_count: int = 0
++
++
++class FinalUniverseSaveResult(FinalUniversePreview):
++    profile_slug: str
++    active_symbols_path: str
++    latest_session_config_path: str | None = None
+diff --git a/src/mytradingbot/session_setup/service.py b/src/mytradingbot/session_setup/service.py
+index 1dfea54..3fc80c0 100644
+--- a/src/mytradingbot/session_setup/service.py
++++ b/src/mytradingbot/session_setup/service.py
+@@ -8,6 +8,8 @@ from typing import Iterable
+ 
+ from mytradingbot.core.settings import AppSettings
+ from mytradingbot.session_setup.models import (
++    FinalUniversePreview,
++    FinalUniverseSaveResult,
+     PresetName,
+     ResolvedSessionConfig,
+     SetupWizardState,
+@@ -162,14 +164,11 @@ class SetupWizardService:
+         existing_symbols = self._default_active_symbols(profile_slug=profile_slug)
+         if generated_symbols is None and state.universe.selection_mode != "keep_old":
+             generated_symbols = self.resolve_generated_symbols(state.model_copy(deep=True))
+-        new_symbols = self._normalize_symbols(generated_symbols or [])
+-
+-        if state.universe.selection_mode == "keep_old":
+-            resolved_symbols = existing_symbols
+-        elif state.universe.selection_mode == "combine_old_and_new":
+-            resolved_symbols = self._normalize_symbols([*existing_symbols, *new_symbols])
+-        else:
+-            resolved_symbols = new_symbols
++        resolved_symbols = self._resolve_active_symbols(
++            selection_mode=state.universe.selection_mode,
++            existing_symbols=existing_symbols,
++            generated_symbols=generated_symbols or [],
++        )
+ 
+         path = self.storage.write_active_symbols(
+             profile_slug=profile_slug,
+@@ -187,12 +186,89 @@ class SetupWizardService:
+     ) -> list[str]:
+         profile_slug = state.profile.profile_slug
+         existing_symbols = self._default_active_symbols(profile_slug=profile_slug)
+-        new_symbols = self._normalize_symbols(generated_symbols or [])
+-        if state.universe.selection_mode == "keep_old":
+-            return existing_symbols
+-        if state.universe.selection_mode == "combine_old_and_new":
+-            return self._normalize_symbols([*existing_symbols, *new_symbols])
+-        return new_symbols
++        return self._resolve_active_symbols(
++            selection_mode=state.universe.selection_mode,
++            existing_symbols=existing_symbols,
++            generated_symbols=generated_symbols or [],
++        )
++
++    def preview_final_universe(
++        self,
++        state: SetupWizardState,
++        *,
++        generated_symbols: list[str] | None = None,
++        manual_symbols: list[str] | None = None,
++    ) -> FinalUniversePreview:
++        profile_slug = state.profile.profile_slug
++        previous_symbols = self._normalize_symbols(
++            self._default_active_symbols(profile_slug=profile_slug)
++        )
++        if generated_symbols is None and state.universe.selection_mode != "keep_old":
++            generated_symbols = self.resolve_generated_symbols(state.model_copy(deep=True))
++        normalized_generated = self._normalize_symbols(generated_symbols or [])
++        normalized_manual = self._normalize_symbols(manual_symbols or [])
++        final_symbols = self._resolve_active_symbols(
++            selection_mode=state.universe.selection_mode,
++            existing_symbols=previous_symbols,
++            generated_symbols=normalized_generated,
++            manual_symbols=normalized_manual,
++        )
++        previous_set = set(previous_symbols)
++        final_set = set(final_symbols)
++        added_symbols = sorted(final_set - previous_set)
++        removed_symbols = sorted(previous_set - final_set)
++        return FinalUniversePreview(
++            previous_symbols=previous_symbols,
++            generated_symbols=normalized_generated,
++            manual_symbols=normalized_manual,
++            final_symbols=final_symbols,
++            added_symbols=added_symbols,
++            removed_symbols=removed_symbols,
++            final_symbol_count=len(final_symbols),
++            added_symbol_count=len(added_symbols),
++            removed_symbol_count=len(removed_symbols),
++        )
++
++    def save_final_universe(
++        self,
++        state: SetupWizardState,
++        *,
++        generated_symbols: list[str] | None = None,
++        manual_symbols: list[str] | None = None,
++    ) -> FinalUniverseSaveResult:
++        preview = self.preview_final_universe(
++            state,
++            generated_symbols=generated_symbols,
++            manual_symbols=manual_symbols,
++        )
++        active_symbols_path = self.storage.write_active_symbols(
++            profile_slug=state.profile.profile_slug,
++            symbols=preview.final_symbols,
++        )
++        state.universe.active_symbols_path = str(active_symbols_path)
++        state.universe.active_symbol_count = len(preview.final_symbols)
++        state.profile.latest_active_symbols_path = str(active_symbols_path)
++        self.storage.save_profile(state.profile)
++
++        latest_session_config_path: str | None = None
++        latest_config = self.storage.load_latest_session_config(state.profile.profile_slug)
++        if latest_config is not None:
++            latest_config.universe.selection_mode = state.universe.selection_mode
++            latest_config.universe.active_symbols_path = str(active_symbols_path)
++            latest_config.universe.active_symbol_count = len(preview.final_symbols)
++            latest_config.active_symbols_path = str(active_symbols_path)
++            latest_config.active_symbols = preview.final_symbols
++            saved_path = self.storage.save_latest_session_config(latest_config)
++            latest_session_config_path = str(saved_path)
++            state.profile.latest_session_config_path = latest_session_config_path
++            self.storage.save_profile(state.profile)
++
++        return FinalUniverseSaveResult(
++            profile_slug=state.profile.profile_slug,
++            active_symbols_path=str(active_symbols_path),
++            latest_session_config_path=latest_session_config_path,
++            **preview.model_dump(mode="python"),
++        )
+ 
+     def finalize_setup(
+         self,
+@@ -293,6 +369,26 @@ class SetupWizardService:
+         cleaned = sorted({str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()})
+         return cleaned
+ 
++    def _resolve_active_symbols(
++        self,
++        *,
++        selection_mode: str,
++        existing_symbols: list[str],
++        generated_symbols: list[str],
++        manual_symbols: list[str] | None = None,
++    ) -> list[str]:
++        normalized_existing = self._normalize_symbols(existing_symbols)
++        normalized_generated = self._normalize_symbols(generated_symbols)
++        normalized_manual = self._normalize_symbols(manual_symbols or [])
++
++        if selection_mode == "keep_old":
++            return self._normalize_symbols([*normalized_existing, *normalized_manual])
++        if selection_mode == "combine_old_and_new":
++            return self._normalize_symbols(
++                [*normalized_existing, *normalized_generated, *normalized_manual]
++            )
++        return self._normalize_symbols([*normalized_generated, *normalized_manual])
++
+     @staticmethod
+     def _resolve_dotted_value(state: SetupWizardState, dotted_key: str):
+         current = state
+diff --git a/tests/smoke/test_streamlit_structure.py b/tests/smoke/test_streamlit_structure.py
+index 8fbc450..a024bfd 100644
+--- a/tests/smoke/test_streamlit_structure.py
++++ b/tests/smoke/test_streamlit_structure.py
+@@ -13,6 +13,7 @@ def test_streamlit_page_files_exist() -> None:
+         "app/pages/06_LLM_Copilot.py",
+         "app/pages/07_Diagnostics.py",
+         "app/pages/08_Settings.py",
++        "app/pages/09_Trading_Universe.py",
+     ]
+ 
+     for relative_path in required:
+@@ -33,6 +34,7 @@ def test_streamlit_entrypoints_do_not_use_package_shadowed_runtime_imports() ->
+         "app/pages/06_LLM_Copilot.py",
+         "app/pages/07_Diagnostics.py",
+         "app/pages/08_Settings.py",
++        "app/pages/09_Trading_Universe.py",
+     ]
+ 
+     for relative_path in entrypoints:
+diff --git a/tests/unit/session_setup/test_service.py b/tests/unit/session_setup/test_service.py
+index ad25f15..f98424c 100644
+--- a/tests/unit/session_setup/test_service.py
++++ b/tests/unit/session_setup/test_service.py
+@@ -187,3 +187,62 @@ def test_setup_wizard_service_resolves_generated_symbols_with_universe_filters(t
+             "include_etfs": True,
+         }
+     ]
++
++
++def test_setup_wizard_service_previews_final_universe_with_diff_counts_and_manual_additions(
++    tmp_path,
++) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    service = SetupWizardService(settings=settings)
++    state = service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
++    state.universe.selection_mode = "replace_with_new"
++    service.storage.write_active_symbols(
++        profile_slug=state.profile.profile_slug,
++        symbols=["AAPL", "MSFT", "AMD"],
++    )
++
++    preview = service.preview_final_universe(
++        state,
++        generated_symbols=["MSFT", "NVDA"],
++        manual_symbols=[" tsla ", "nvda"],
++    )
++
++    assert preview.previous_symbols == ["AAPL", "AMD", "MSFT"]
++    assert preview.generated_symbols == ["MSFT", "NVDA"]
++    assert preview.manual_symbols == ["NVDA", "TSLA"]
++    assert preview.final_symbols == ["MSFT", "NVDA", "TSLA"]
++    assert preview.added_symbols == ["NVDA", "TSLA"]
++    assert preview.removed_symbols == ["AAPL", "AMD"]
++    assert preview.final_symbol_count == 3
++    assert preview.added_symbol_count == 2
++    assert preview.removed_symbol_count == 2
++
++
++def test_setup_wizard_service_save_final_universe_updates_manifest_and_latest_config(
++    tmp_path,
++) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    service = SetupWizardService(settings=settings)
++    state = service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
++    state.universe.selection_mode = "combine_old_and_new"
++    service.finalize_setup(state, generated_symbols=["AAPL", "MSFT"])
++
++    saved = service.save_final_universe(
++        state,
++        generated_symbols=["MSFT", "NVDA"],
++        manual_symbols=[" tsla "],
++    )
++
++    latest_config = service.storage.load_latest_session_config(state.profile.profile_slug)
++    assert latest_config is not None
++    assert saved.final_symbols == ["AAPL", "MSFT", "NVDA", "TSLA"]
++    assert json.loads(
++        service.storage
++        .active_symbols_path(state.profile.profile_slug)
++        .read_text(encoding="utf-8")
++    ) == ["AAPL", "MSFT", "NVDA", "TSLA"]
++    assert latest_config.active_symbols == ["AAPL", "MSFT", "NVDA", "TSLA"]
++    assert latest_config.universe.active_symbol_count == 4
++    assert latest_config.active_symbols_path == str(
++        service.storage.active_symbols_path(state.profile.profile_slug)
++    )

@@ -1,0 +1,1251 @@
+diff --git a/README.md b/README.md
+index aa1d9c4..6ec6eaa 100644
+--- a/README.md
++++ b/README.md
+@@ -76,6 +76,7 @@ python scripts/run_live_trading.py
+ The recommended new setup flow is the dedicated Streamlit wizard page:
+ 
+ - `app/pages/00_Setup_Wizard.py`
++- `app/pages/09_Trading_Universe.py`
+ 
+ Launch the app as usual:
+ 
+@@ -90,6 +91,7 @@ The wizard does not replace the current dashboard, CLI, or script-based workflow
+ For a field-by-field explanation of the wizard, scalping presets, training vs. latest-model usage, and where to find logs and reports, see:
+ 
+ - `docs/USER_MANUAL.md`
++- `standard operation.md`
+ 
+ ### Wizard profile and config files
+ 
+@@ -121,10 +123,21 @@ The wizard supports three active-universe modes:
+ 
+ These modes only change the active universe manifest. They do **not** delete historical downloaded raw or normalized parquet data. Historical data remains on disk for future training and analysis even when the active symbol set changes.
+ 
++The standalone `Trading Universe` sidebar page extends this by showing the previous active universe, the generated new universe, the final saved universe, and the added/removed symbol diffs before you persist the final manifest for future runs.
++
++It also shows the current qlib prediction artifact in both raw and final-universe views, including the raw prediction fields plus `is_final_symbol`, `indicated_tp_pct`, and `indicated_sl_pct` derived from the existing scalping logic.
++
+ ### Recommended defaults
+ 
+ Fields marked with `Recommended default` are safe to leave unchanged for most operators. Basic mode is designed to be sufficient for a normal paper-trading session. Advanced and expert sections remain available when you want deeper control.
+ 
++The `Alpha & Model` step now exposes the scalping qlib gates directly:
++
++- `Predicted return threshold (%)` default: `0.50%`
++- `Confidence threshold` default: `0.60`
++
++Lower them to admit more candidates, or raise them to tighten symbol selection before execution.
++
+ The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
+ ## Canonical Institutional Runtime
+ 
+diff --git a/app/pages/00_Setup_Wizard.py b/app/pages/00_Setup_Wizard.py
+index 36173d9..b21bc6a 100644
+--- a/app/pages/00_Setup_Wizard.py
++++ b/app/pages/00_Setup_Wizard.py
+@@ -354,6 +354,36 @@ def _render_alpha_step(state: SetupWizardState) -> None:
+             key=_wizard_state_key("refresh_predictions_before_run"),
+         )
+     )
++    threshold_col, confidence_col = st.columns(2)
++    state.alpha.predicted_return_threshold = (
++        float(
++            threshold_col.number_input(
++                "Predicted return threshold (%)",
++                min_value=0.0,
++                value=float(state.alpha.predicted_return_threshold * 100),
++                step=0.05,
++                format="%.2f",
++                key=_wizard_state_key("predicted_return_threshold"),
++                help="Minimum absolute qlib predicted return required before scalping can consider a symbol.",
++            )
++        )
++        / 100
++    )
++    state.alpha.confidence_threshold = float(
++        confidence_col.number_input(
++            "Confidence threshold",
++            min_value=0.0,
++            max_value=1.0,
++            value=float(state.alpha.confidence_threshold),
++            step=0.01,
++            format="%.2f",
++            key=_wizard_state_key("confidence_threshold"),
++            help="Minimum qlib confidence required before scalping can consider a symbol.",
++        )
++    )
++    st.caption(
++        "Default scalping gates are 0.50% predicted return and 0.60 confidence. Lower them to allow more symbols through, or raise them to make entry selection stricter."
++    )
+     with st.expander("Advanced alpha settings", expanded=st.session_state.get("wizard_visibility_mode") != "basic"):
+         state.alpha.candidate_count = int(
+             st.number_input(
+@@ -605,6 +635,8 @@ def _render_review_step(service: SetupWizardUIService, state: SetupWizardState)
+                     f"Broker mode: `{state.strategy.broker_mode}`",
+                     f"Session mode: `{state.strategy.session_mode}`",
+                     f"Side mode: `{state.alpha.side_mode}`",
++                    f"Predicted return gate: `{state.alpha.predicted_return_threshold * 100:.2f}%`",
++                    f"Confidence gate: `{state.alpha.confidence_threshold:.2f}`",
+                 ]
+             )
+         )
+diff --git a/app/pages/03_Data_and_Training.py b/app/pages/03_Data_and_Training.py
+deleted file mode 100644
+index 1a4c218..0000000
+--- a/app/pages/03_Data_and_Training.py
++++ /dev/null
+@@ -1,53 +0,0 @@
+-from __future__ import annotations
+-
+-import sys
+-from pathlib import Path
+-
+-import streamlit as st
+-
+-APP_DIR = Path(__file__).resolve().parents[1]
+-if str(APP_DIR) not in sys.path:
+-    sys.path.insert(0, str(APP_DIR))
+-
+-from components.runtime import get_platform_service, get_selected_strategy
+-from mytradingbot.ui_services.data_training import DataTrainingService
+-
+-service = DataTrainingService(get_platform_service())
+-payload = service.get_payload()
+-strategy = get_selected_strategy() or payload.default_strategy
+-
+-st.title("Data and Training")
+-st.caption("Run repo-local data download/update, qlib dataset build, training, and prediction refresh actions.")
+-
+-st.subheader("Capabilities")
+-st.json(payload.capabilities.model_dump(mode="json"))
+-
+-st.subheader("Works Without pyqlib")
+-st.write(payload.works_without_pyqlib)
+-
+-st.subheader("Works Without Alpaca Credentials")
+-st.write(payload.works_without_alpaca_credentials)
+-
+-if st.button("Download Market Data"):
+-    st.json(service.download_market_data().model_dump(mode="json"))
+-
+-if st.button("Update Market Data"):
+-    st.json(service.update_market_data().model_dump(mode="json"))
+-
+-if st.button("Build Dataset"):
+-    st.json(service.build_dataset(strategy_name=strategy).model_dump(mode="json"))
+-
+-if st.button("Train Models"):
+-    st.json(service.train_models(strategy_name=strategy).model_dump(mode="json"))
+-
+-if st.button("Refresh Predictions"):
+-    st.json(service.refresh_predictions(strategy_name=strategy).model_dump(mode="json"))
+-
+-if st.button("Generate Top Liquidity Universe"):
+-    st.json(service.generate_top_liquidity_universe().model_dump(mode="json"))
+-
+-if st.button("Check Training Data Quality"):
+-    st.json(service.check_training_data_quality(strategy_name=strategy).model_dump(mode="json"))
+-
+-if st.button("Run Alpha Robust Training"):
+-    st.json(service.run_alpha_robust_training(strategy_name=strategy).model_dump(mode="json"))
+diff --git a/docs/RELEASE_NOTES_V2.md b/docs/RELEASE_NOTES_V2.md
+index 28e4b04..8ea6a1b 100644
+--- a/docs/RELEASE_NOTES_V2.md
++++ b/docs/RELEASE_NOTES_V2.md
+@@ -21,7 +21,7 @@ Version `0.2.0` upgrades the repository from a phase-1 runnable paper path into
+ - `src/mytradingbot/data/providers/alpaca_provider.py` now uses deterministic chunking and guarded multi-window fetch behavior.
+ - `src/mytradingbot/strategies/scalping.py`, `src/mytradingbot/risk/service.py`, `src/mytradingbot/execution/service.py`, and `src/mytradingbot/brokers/paper.py` now operate with typed bracket planning and persistent runtime safety context.
+ - `src/mytradingbot/orchestration/service.py` now records decision audit artifacts and uses restart-safe runtime state.
+-- `app/pages/03_Data_and_Training.py` and `src/mytradingbot/ui_services/data_training.py` now expose universe generation, training quality, and alpha-robust training actions.
++- `app/pages/03_Data_Management.py` and `src/mytradingbot/ui_services/data_training.py` now expose universe generation, training quality, and alpha-robust training actions.
+ 
+ ## Canonical V2 Command
+ 
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index d3d5fcc..cd4a2bc 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -17,6 +17,7 @@
+ The recommended operator setup flow is the dedicated Streamlit wizard page:
+ 
+ - `app/pages/00_Setup_Wizard.py`
++- `app/pages/09_Trading_Universe.py`
+ 
+ Launch the app:
+ 
+@@ -26,6 +27,10 @@ Then open `Setup Wizard` from the sidebar or use `Start New Trading Session (Wiz
+ 
+ The wizard coexists with the current dashboard and CLI workflows. It does not replace them.
+ 
++For the command-by-command reference covering standard scalping operations, one-off scripts, and current Streamlit entry points, see:
++
++- `standard operation.md`
++
+ ### Auto-saved profile and session files
+ 
+ The wizard automatically writes:
+@@ -46,10 +51,21 @@ The wizard supports:
+ 
+ These modes update the profile-scoped active universe manifest only. They do **not** delete any historical market data already downloaded under `data/raw/` or `data/normalized/`.
+ 
++The standalone `Trading Universe` page lets you preview the final manifest, see added and removed symbols versus the last saved universe, add extra symbols that persist for future runs, and save the final active set before starting scalping.
++
++The same page also exposes the qlib prediction artifact with a toggle between raw rows and the final qlib trading universe, plus `is_final_symbol`, `indicated_tp_pct`, and `indicated_sl_pct` columns derived from the current scalping logic.
++
+ ### Recommended defaults
+ 
+ Fields marked `Recommended default` are the safe operator defaults. Basic mode is sufficient for a standard paper setup. Advanced and expert sections expose additional tuning without forcing every operator to understand the full backend dependency chain.
+ 
++Use the `Alpha & Model` step to adjust the qlib entry gates for scalping:
++
++- `Predicted return threshold (%)` default: `0.50%`
++- `Confidence threshold` default: `0.60`
++
++Lowering them allows more symbols through. Raising them makes the qlib filter stricter.
++
+ ## Canonical Institutional Order
+ 
+ `python scripts/run_institutional_pipeline.py --strategy scalping --use-top-liquidity-universe --timeframes 1m 5m 15m 1d --mode paper`
+@@ -156,11 +172,12 @@ Inspect:
+ 
+ ## Daily UI Order
+ 
+-1. Open `app/pages/01_Dashboard.py` from the Streamlit sidebar.
++1. Launch `app/app.py` with Streamlit and start from the Dashboard landing page.
+ 2. Check the phase capability snapshot and prediction freshness.
+-3. Use `app/pages/03_Data_and_Training.py` for phase-2 and phase-3 actions.
+-4. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
+-5. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
++3. Use `app/pages/03_Data_Management.py` for phase-2 and phase-3 actions.
++4. Use `app/pages/09_Trading_Universe.py` to review and save the final active universe for the selected profile.
++5. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
++6. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
+ 
+ ## If Phase 2 Fails
+ 
+diff --git a/docs/USER_MANUAL.md b/docs/USER_MANUAL.md
+index 7a27692..177fc7e 100644
+--- a/docs/USER_MANUAL.md
++++ b/docs/USER_MANUAL.md
+@@ -337,7 +337,7 @@ Good choice when:
+ 
+ ### If You Want To Train A New Model
+ 
+-Use the Data and Training page or the CLI before launching the session.
++Use the Data Management page or the CLI before launching the session.
+ 
+ Typical order:
+ 
+diff --git a/reports/universe/top_liquidity_universe_report.md b/reports/universe/top_liquidity_universe_report.md
+index 7c94fc2..be5e97a 100644
+--- a/reports/universe/top_liquidity_universe_report.md
++++ b/reports/universe/top_liquidity_universe_report.md
+@@ -4,23 +4,23 @@
+ 
+ | Rank | Symbol | Avg Close | Avg Volume | Avg Dollar Volume |
+ | --- | --- | ---: | ---: | ---: |
+-| 1 | NVDA | 184.35 | 4,590,670 | 842,326,159.54 |
+-| 2 | MSFT | 408.09 | 1,085,535 | 444,899,933.24 |
+-| 3 | AMZN | 215.52 | 2,065,679 | 443,965,651.62 |
+-| 4 | AAPL | 262.57 | 1,359,514 | 357,998,749.54 |
+-| 5 | TSLA | 407.56 | 761,284 | 309,417,734.95 |
+-| 6 | GOOGL | 314.31 | 964,210 | 305,178,341.19 |
+-| 7 | META | 653.80 | 389,857 | 258,405,395.89 |
+-| 8 | MU | 412.34 | 622,125 | 257,101,177.18 |
+-| 9 | AVGO | 327.93 | 747,889 | 244,731,324.28 |
+-| 10 | SNDK | 619.21 | 315,259 | 195,448,118.80 |
+-| 11 | AMD | 210.24 | 864,734 | 179,990,934.31 |
+-| 12 | XOM | 149.70 | 1,018,384 | 151,752,306.17 |
+-| 13 | INTC | 46.16 | 3,259,741 | 151,202,501.12 |
+-| 14 | TSM | 351.87 | 412,455 | 144,682,331.09 |
+-| 15 | GOOG | 314.13 | 437,408 | 137,822,983.27 |
+-| 16 | LITE | 595.83 | 224,161 | 133,138,020.80 |
+-| 17 | BAC | 51.14 | 2,537,266 | 129,833,536.70 |
+-| 18 | LLY | 1010.50 | 121,033 | 122,980,066.28 |
+-| 19 | SPOT | 492.77 | 249,698 | 119,937,403.78 |
+-| 20 | PLTR | 145.77 | 793,936 | 115,293,780.07 |
++| 1 | NVDA | 181.99 | 5,040,573 | 914,896,879.20 |
++| 2 | AMZN | 210.91 | 1,772,242 | 374,772,168.58 |
++| 3 | MSFT | 397.44 | 809,825 | 321,787,917.20 |
++| 4 | TSLA | 396.84 | 748,788 | 295,942,124.43 |
++| 5 | AAPL | 258.88 | 1,099,802 | 284,966,680.53 |
++| 6 | NFLX | 93.58 | 2,930,562 | 275,271,643.27 |
++| 7 | MU | 414.80 | 609,210 | 255,063,801.15 |
++| 8 | AVGO | 325.41 | 742,556 | 242,828,378.42 |
++| 9 | GOOGL | 305.13 | 788,187 | 239,859,606.39 |
++| 10 | META | 635.78 | 306,999 | 194,280,759.64 |
++| 11 | AMD | 201.02 | 904,024 | 182,136,389.43 |
++| 12 | SNDK | 649.69 | 269,218 | 175,189,770.46 |
++| 13 | LITE | 683.93 | 231,291 | 157,069,264.73 |
++| 14 | TSM | 352.32 | 414,464 | 145,427,688.83 |
++| 15 | XOM | 154.04 | 914,281 | 141,013,166.75 |
++| 16 | INTC | 45.33 | 2,804,280 | 127,163,894.49 |
++| 17 | GOOG | 304.44 | 411,937 | 125,070,554.12 |
++| 18 | BAC | 48.69 | 2,528,996 | 122,943,314.48 |
++| 19 | INTU | 437.49 | 249,208 | 107,224,158.99 |
++| 20 | PLTR | 149.41 | 713,571 | 106,634,496.58 |
+diff --git a/scripts/goalcheck.py b/scripts/goalcheck.py
+index 2c4bb91..37035da 100644
+--- a/scripts/goalcheck.py
++++ b/scripts/goalcheck.py
+@@ -13,7 +13,7 @@ def main() -> int:
+     page_paths = [
+         project_root / "app/pages/01_Dashboard.py",
+         project_root / "app/pages/02_Strategy_Control.py",
+-        project_root / "app/pages/03_Data_and_Training.py",
++        project_root / "app/pages/03_Data_Management.py",
+         project_root / "app/pages/04_Paper_Trading.py",
+         project_root / "app/pages/05_Live_Trading.py",
+         project_root / "app/pages/06_LLM_Copilot.py",
+diff --git a/src/mytradingbot/core/settings.py b/src/mytradingbot/core/settings.py
+index 378f993..52e8777 100644
+--- a/src/mytradingbot/core/settings.py
++++ b/src/mytradingbot/core/settings.py
+@@ -219,6 +219,8 @@ class QlibSettings(BaseModel):
+ class ScalpingBracketSettings(BaseModel):
+     """Bracket-planning controls for scalping."""
+ 
++    predicted_return_threshold: float = 0.005
++    confidence_threshold: float = 0.6
+     minimum_reward_risk_ratio: float = 1.4
+     estimated_slippage_bps: float = 2.5
+     estimated_fee_per_share: float = 0.0
+diff --git a/src/mytradingbot/orchestration/service.py b/src/mytradingbot/orchestration/service.py
+index e494d37..ffc4402 100644
+--- a/src/mytradingbot/orchestration/service.py
++++ b/src/mytradingbot/orchestration/service.py
+@@ -31,7 +31,10 @@ from mytradingbot.runtime.models import BrokerMode, BrokerReconciliationSnapshot
+ from mytradingbot.runtime.models import DecisionPipelineReadiness
+ from mytradingbot.runtime.service import RuntimeStateService
+ from mytradingbot.session_setup.models import ResolvedSessionConfig
+-from mytradingbot.session_setup.runtime import filter_predictions_for_config
++from mytradingbot.session_setup.runtime import (
++    apply_resolved_config_to_settings,
++    filter_predictions_for_config,
++)
+ from mytradingbot.strategies.registry import StrategyRegistry
+ from mytradingbot.universe.storage import UniverseStorage
+ 
+@@ -66,7 +69,7 @@ class TradingPlatformService:
+             settings=self.settings
+         )
+         self.capability_service = CapabilityService(settings=self.settings)
+-        self.strategy_registry = strategy_registry or StrategyRegistry.build_default()
++        self.strategy_registry = strategy_registry or StrategyRegistry.build_default(self.settings)
+         self.risk_engine = risk_engine or RiskEngine()
+         self.runtime_state_service = runtime_state_service or RuntimeStateService(
+             settings=self.settings
+@@ -129,6 +132,7 @@ class TradingPlatformService:
+         end_at: datetime | None = None,
+         full_refresh: bool = False,
+         normalize_only: bool = False,
++        progress_callback=None,
+     ):
+         resolved_symbols = self.resolve_symbols(symbols=symbols, symbols_file=symbols_file)
+         return self.data_pipeline.download_update_normalize_and_snapshot(
+@@ -138,6 +142,7 @@ class TradingPlatformService:
+             end_at=end_at,
+             full_refresh=full_refresh,
+             normalize_only=normalize_only,
++            progress_callback=progress_callback,
+         )
+ 
+     def refresh_predictions(self, *, strategy_name: str | None = None):
+@@ -730,7 +735,10 @@ class TradingPlatformService:
+             strategy_name=strategy_name,
+             signals=signals,
+         )
+-        strategy = self.strategy_registry.get(strategy_name)
++        strategy = self._resolve_strategy_for_session(
++            strategy_name,
++            session_config=session_config,
++        )
+         attempts: list[TradeAttemptTrace] = []
+         audits = []
+         rejection_reasons: list[str] = []
+@@ -917,3 +925,17 @@ class TradingPlatformService:
+         )
+         self.last_session_result = result
+         return result
++
++    def _resolve_strategy_for_session(
++        self,
++        strategy_name: str,
++        *,
++        session_config: ResolvedSessionConfig | None,
++    ):
++        if session_config is None:
++            return self.strategy_registry.get(strategy_name)
++        session_settings = apply_resolved_config_to_settings(
++            self.settings,
++            session_config,
++        )
++        return StrategyRegistry.build_default(session_settings).get(strategy_name)
+diff --git a/src/mytradingbot/session_setup/models.py b/src/mytradingbot/session_setup/models.py
+index e587c1a..75e0149 100644
+--- a/src/mytradingbot/session_setup/models.py
++++ b/src/mytradingbot/session_setup/models.py
+@@ -103,6 +103,8 @@ class AlphaModelProfile(BaseModel):
+     model_artifact_path: str | None = None
+     long_threshold: float = 0.0
+     short_threshold: float = 0.0
++    predicted_return_threshold: float = 0.005
++    confidence_threshold: float = 0.6
+ 
+ 
+ class RiskProfile(BaseModel):
+@@ -168,3 +170,21 @@ class ResolvedSessionConfig(BaseModel):
+     active_symbols: list[str]
+     expected_actions: list[str] = Field(default_factory=list)
+     launch_ready: bool = True
++
++
++class FinalUniversePreview(BaseModel):
++    previous_symbols: list[str] = Field(default_factory=list)
++    generated_symbols: list[str] = Field(default_factory=list)
++    manual_symbols: list[str] = Field(default_factory=list)
++    final_symbols: list[str] = Field(default_factory=list)
++    added_symbols: list[str] = Field(default_factory=list)
++    removed_symbols: list[str] = Field(default_factory=list)
++    final_symbol_count: int = 0
++    added_symbol_count: int = 0
++    removed_symbol_count: int = 0
++
++
++class FinalUniverseSaveResult(FinalUniversePreview):
++    profile_slug: str
++    active_symbols_path: str
++    latest_session_config_path: str | None = None
+diff --git a/src/mytradingbot/session_setup/runtime.py b/src/mytradingbot/session_setup/runtime.py
+index 4e3456b..83e2b4b 100644
+--- a/src/mytradingbot/session_setup/runtime.py
++++ b/src/mytradingbot/session_setup/runtime.py
+@@ -34,6 +34,8 @@ def apply_resolved_config_to_settings(
+         config.refresh.predictions_max_age_minutes
+     )
+     resolved.scalping.max_position_notional = config.risk.max_dollars_per_trade
++    resolved.scalping.predicted_return_threshold = config.alpha.predicted_return_threshold
++    resolved.scalping.confidence_threshold = config.alpha.confidence_threshold
+     resolved.scalping.stop_loss_buffer_bps = config.execution.stop_loss_percent * 100
+     return resolved
+ 
+diff --git a/src/mytradingbot/session_setup/service.py b/src/mytradingbot/session_setup/service.py
+index 1dfea54..3fc80c0 100644
+--- a/src/mytradingbot/session_setup/service.py
++++ b/src/mytradingbot/session_setup/service.py
+@@ -8,6 +8,8 @@ from typing import Iterable
+ 
+ from mytradingbot.core.settings import AppSettings
+ from mytradingbot.session_setup.models import (
++    FinalUniversePreview,
++    FinalUniverseSaveResult,
+     PresetName,
+     ResolvedSessionConfig,
+     SetupWizardState,
+@@ -162,14 +164,11 @@ class SetupWizardService:
+         existing_symbols = self._default_active_symbols(profile_slug=profile_slug)
+         if generated_symbols is None and state.universe.selection_mode != "keep_old":
+             generated_symbols = self.resolve_generated_symbols(state.model_copy(deep=True))
+-        new_symbols = self._normalize_symbols(generated_symbols or [])
+-
+-        if state.universe.selection_mode == "keep_old":
+-            resolved_symbols = existing_symbols
+-        elif state.universe.selection_mode == "combine_old_and_new":
+-            resolved_symbols = self._normalize_symbols([*existing_symbols, *new_symbols])
+-        else:
+-            resolved_symbols = new_symbols
++        resolved_symbols = self._resolve_active_symbols(
++            selection_mode=state.universe.selection_mode,
++            existing_symbols=existing_symbols,
++            generated_symbols=generated_symbols or [],
++        )
+ 
+         path = self.storage.write_active_symbols(
+             profile_slug=profile_slug,
+@@ -187,12 +186,89 @@ class SetupWizardService:
+     ) -> list[str]:
+         profile_slug = state.profile.profile_slug
+         existing_symbols = self._default_active_symbols(profile_slug=profile_slug)
+-        new_symbols = self._normalize_symbols(generated_symbols or [])
+-        if state.universe.selection_mode == "keep_old":
+-            return existing_symbols
+-        if state.universe.selection_mode == "combine_old_and_new":
+-            return self._normalize_symbols([*existing_symbols, *new_symbols])
+-        return new_symbols
++        return self._resolve_active_symbols(
++            selection_mode=state.universe.selection_mode,
++            existing_symbols=existing_symbols,
++            generated_symbols=generated_symbols or [],
++        )
++
++    def preview_final_universe(
++        self,
++        state: SetupWizardState,
++        *,
++        generated_symbols: list[str] | None = None,
++        manual_symbols: list[str] | None = None,
++    ) -> FinalUniversePreview:
++        profile_slug = state.profile.profile_slug
++        previous_symbols = self._normalize_symbols(
++            self._default_active_symbols(profile_slug=profile_slug)
++        )
++        if generated_symbols is None and state.universe.selection_mode != "keep_old":
++            generated_symbols = self.resolve_generated_symbols(state.model_copy(deep=True))
++        normalized_generated = self._normalize_symbols(generated_symbols or [])
++        normalized_manual = self._normalize_symbols(manual_symbols or [])
++        final_symbols = self._resolve_active_symbols(
++            selection_mode=state.universe.selection_mode,
++            existing_symbols=previous_symbols,
++            generated_symbols=normalized_generated,
++            manual_symbols=normalized_manual,
++        )
++        previous_set = set(previous_symbols)
++        final_set = set(final_symbols)
++        added_symbols = sorted(final_set - previous_set)
++        removed_symbols = sorted(previous_set - final_set)
++        return FinalUniversePreview(
++            previous_symbols=previous_symbols,
++            generated_symbols=normalized_generated,
++            manual_symbols=normalized_manual,
++            final_symbols=final_symbols,
++            added_symbols=added_symbols,
++            removed_symbols=removed_symbols,
++            final_symbol_count=len(final_symbols),
++            added_symbol_count=len(added_symbols),
++            removed_symbol_count=len(removed_symbols),
++        )
++
++    def save_final_universe(
++        self,
++        state: SetupWizardState,
++        *,
++        generated_symbols: list[str] | None = None,
++        manual_symbols: list[str] | None = None,
++    ) -> FinalUniverseSaveResult:
++        preview = self.preview_final_universe(
++            state,
++            generated_symbols=generated_symbols,
++            manual_symbols=manual_symbols,
++        )
++        active_symbols_path = self.storage.write_active_symbols(
++            profile_slug=state.profile.profile_slug,
++            symbols=preview.final_symbols,
++        )
++        state.universe.active_symbols_path = str(active_symbols_path)
++        state.universe.active_symbol_count = len(preview.final_symbols)
++        state.profile.latest_active_symbols_path = str(active_symbols_path)
++        self.storage.save_profile(state.profile)
++
++        latest_session_config_path: str | None = None
++        latest_config = self.storage.load_latest_session_config(state.profile.profile_slug)
++        if latest_config is not None:
++            latest_config.universe.selection_mode = state.universe.selection_mode
++            latest_config.universe.active_symbols_path = str(active_symbols_path)
++            latest_config.universe.active_symbol_count = len(preview.final_symbols)
++            latest_config.active_symbols_path = str(active_symbols_path)
++            latest_config.active_symbols = preview.final_symbols
++            saved_path = self.storage.save_latest_session_config(latest_config)
++            latest_session_config_path = str(saved_path)
++            state.profile.latest_session_config_path = latest_session_config_path
++            self.storage.save_profile(state.profile)
++
++        return FinalUniverseSaveResult(
++            profile_slug=state.profile.profile_slug,
++            active_symbols_path=str(active_symbols_path),
++            latest_session_config_path=latest_session_config_path,
++            **preview.model_dump(mode="python"),
++        )
+ 
+     def finalize_setup(
+         self,
+@@ -293,6 +369,26 @@ class SetupWizardService:
+         cleaned = sorted({str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()})
+         return cleaned
+ 
++    def _resolve_active_symbols(
++        self,
++        *,
++        selection_mode: str,
++        existing_symbols: list[str],
++        generated_symbols: list[str],
++        manual_symbols: list[str] | None = None,
++    ) -> list[str]:
++        normalized_existing = self._normalize_symbols(existing_symbols)
++        normalized_generated = self._normalize_symbols(generated_symbols)
++        normalized_manual = self._normalize_symbols(manual_symbols or [])
++
++        if selection_mode == "keep_old":
++            return self._normalize_symbols([*normalized_existing, *normalized_manual])
++        if selection_mode == "combine_old_and_new":
++            return self._normalize_symbols(
++                [*normalized_existing, *normalized_generated, *normalized_manual]
++            )
++        return self._normalize_symbols([*normalized_generated, *normalized_manual])
++
+     @staticmethod
+     def _resolve_dotted_value(state: SetupWizardState, dotted_key: str):
+         current = state
+diff --git a/src/mytradingbot/strategies/registry.py b/src/mytradingbot/strategies/registry.py
+index f1abdce..caeab9b 100644
+--- a/src/mytradingbot/strategies/registry.py
++++ b/src/mytradingbot/strategies/registry.py
+@@ -4,6 +4,7 @@ from __future__ import annotations
+ 
+ import logging
+ 
++from mytradingbot.core.settings import AppSettings
+ from mytradingbot.strategies.base import BaseStrategy
+ from mytradingbot.strategies.intraday import IntradayStrategy
+ from mytradingbot.strategies.long_term import LongTermStrategy
+@@ -20,10 +21,10 @@ class StrategyRegistry:
+         self._strategies = strategies
+ 
+     @classmethod
+-    def build_default(cls) -> "StrategyRegistry":
++    def build_default(cls, settings: AppSettings | None = None) -> "StrategyRegistry":
+         return cls(
+             strategies={
+-                "scalping": ScalpingStrategy(),
++                "scalping": ScalpingStrategy(settings=settings),
+                 "intraday": IntradayStrategy(),
+                 "short_term": ShortTermStrategy(),
+                 "long_term": LongTermStrategy(),
+diff --git a/src/mytradingbot/strategies/scalping.py b/src/mytradingbot/strategies/scalping.py
+index f849165..66c71b4 100644
+--- a/src/mytradingbot/strategies/scalping.py
++++ b/src/mytradingbot/strategies/scalping.py
+@@ -16,8 +16,6 @@ class ScalpingStrategy(BaseStrategy):
+ 
+     name = "scalping"
+ 
+-    predicted_return_threshold = 0.005
+-    confidence_threshold = 0.6
+     max_spread_bps = 5.0
+     min_liquidity_score = 0.5
+     max_liquidity_stress = 0.7
+@@ -26,6 +24,8 @@ class ScalpingStrategy(BaseStrategy):
+ 
+     def __init__(self, settings: AppSettings | None = None) -> None:
+         self.settings = settings or AppSettings()
++        self.predicted_return_threshold = self.settings.scalping.predicted_return_threshold
++        self.confidence_threshold = self.settings.scalping.confidence_threshold
+         self.timeout_seconds = self.settings.scalping.max_holding_seconds
+ 
+     def evaluate(self, signal: SignalBundle) -> StrategyDecision:
+diff --git a/src/mytradingbot/ui_services/data_training.py b/src/mytradingbot/ui_services/data_training.py
+index 1ff0f0d..c6f9a02 100644
+--- a/src/mytradingbot/ui_services/data_training.py
++++ b/src/mytradingbot/ui_services/data_training.py
+@@ -3,17 +3,25 @@
+ from __future__ import annotations
+ 
+ import logging
++from pathlib import Path
+ 
+-from pydantic import BaseModel
++from pydantic import BaseModel, Field
+ 
+ from mytradingbot.core.capabilities import CapabilitySnapshot
+ from mytradingbot.orchestration.service import TradingPlatformService
+ from mytradingbot.qlib_engine.models import QlibOperationResult
+ from mytradingbot.data.models import MarketDataPipelineResult
++from mytradingbot.session_setup.models import slugify_profile_name
++from mytradingbot.session_setup.service import SetupWizardService
+ from mytradingbot.training.models import AlphaTrainingRunResult, TrainingDataQualityReport
+ from mytradingbot.training.service import AlphaRobustTrainingService
++from mytradingbot.ui_services.market_data_progress import (
++    MarketDataProgressPayload,
++    MarketDataProgressTracker,
++)
+ from mytradingbot.universe.models import TopLiquidityUniverseResult
+ from mytradingbot.universe.service import TopLiquidityUniverseService
++from mytradingbot.universe.storage import UniverseStorage
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -26,6 +34,19 @@ class DataTrainingPayload(BaseModel):
+     default_timeframes: list[str]
+     works_without_pyqlib: list[str]
+     works_without_alpaca_credentials: list[str]
++    profile_names: list[str] = Field(default_factory=list)
++    default_profile_name: str | None = None
++
++
++class UniverseSourcePayload(BaseModel):
++    selected_profile_name: str | None = None
++    default_universe_file_path: str
++    selected_universe_file_path: str
++    alternate_universe_file_path: str
++    symbols: list[str] = Field(default_factory=list)
++    symbol_count: int = 0
++    is_ready: bool = False
++    validation_message: str | None = None
+ 
+ 
+ class DataTrainingService:
+@@ -36,12 +57,16 @@ class DataTrainingService:
+         self.universe_service = TopLiquidityUniverseService(
+             settings=self.platform_service.settings
+         )
++        self.universe_storage = UniverseStorage(settings=self.platform_service.settings)
+         self.training_service = AlphaRobustTrainingService(
+             settings=self.platform_service.settings
+         )
++        self.wizard_service = SetupWizardService(settings=self.platform_service.settings)
+ 
+     def get_payload(self) -> DataTrainingPayload:
+         settings = self.platform_service.settings
++        profiles = self.wizard_service.list_profiles()
++        profile_names = [profile.profile_name for profile in profiles]
+         return DataTrainingPayload(
+             capabilities=self.platform_service.get_capabilities(),
+             default_strategy=settings.strategies.default_strategy.value,
+@@ -57,6 +82,46 @@ class DataTrainingService:
+                 "paper_trading_with_explicit_artifacts",
+                 "qlib_artifact_inspection",
+             ],
++            profile_names=profile_names,
++            default_profile_name=profile_names[0] if profile_names else None,
++        )
++
++    def resolve_universe_source(
++        self,
++        *,
++        profile_name: str | None,
++        universe_file_path: str | None = None,
++    ) -> UniverseSourcePayload:
++        selected_profile_name = profile_name or self.get_payload().default_profile_name
++        default_path = self._default_universe_file_path(selected_profile_name)
++        selected_path = Path(universe_file_path.strip()) if universe_file_path and universe_file_path.strip() else default_path
++        alternate_path = self.platform_service.settings.paths.universe_dir / "latest_top_liquidity_universe.json"
++        if not selected_path.exists():
++            return UniverseSourcePayload(
++                selected_profile_name=selected_profile_name,
++                default_universe_file_path=str(default_path),
++                selected_universe_file_path=str(selected_path),
++                alternate_universe_file_path=str(alternate_path),
++                validation_message=f"Universe file not found: {selected_path}",
++            )
++        try:
++            symbols = self.universe_storage.load_symbols(selected_path)
++        except (OSError, ValueError) as exc:
++            return UniverseSourcePayload(
++                selected_profile_name=selected_profile_name,
++                default_universe_file_path=str(default_path),
++                selected_universe_file_path=str(selected_path),
++                alternate_universe_file_path=str(alternate_path),
++                validation_message=str(exc),
++            )
++        return UniverseSourcePayload(
++            selected_profile_name=selected_profile_name,
++            default_universe_file_path=str(default_path),
++            selected_universe_file_path=str(selected_path),
++            alternate_universe_file_path=str(alternate_path),
++            symbols=symbols,
++            symbol_count=len(symbols),
++            is_ready=True,
+         )
+ 
+     def generate_top_liquidity_universe(self) -> TopLiquidityUniverseResult:
+@@ -66,29 +131,53 @@ class DataTrainingService:
+         self,
+         *,
+         symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
+         timeframes: list[str] | None = None,
++        progress_callback=None,
+     ) -> MarketDataPipelineResult:
++        kwargs = {
++            "symbols": symbols,
++            "symbols_file": symbols_file,
++            "timeframes": timeframes,
++            "full_refresh": True,
++        }
++        if progress_callback is not None:
++            kwargs["progress_callback"] = progress_callback
+         return self.platform_service.download_market_data(
+-            symbols=symbols,
+-            timeframes=timeframes,
+-            full_refresh=True,
++            **kwargs,
+         )
+ 
+     def update_market_data(
+         self,
+         *,
+         symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
+         timeframes: list[str] | None = None,
++        progress_callback=None,
+     ) -> MarketDataPipelineResult:
+-        return self.platform_service.download_market_data(
++        kwargs = {
++            "symbols": symbols,
++            "symbols_file": symbols_file,
++            "timeframes": timeframes,
++            "full_refresh": False,
++        }
++        if progress_callback is not None:
++            kwargs["progress_callback"] = progress_callback
++        return self.platform_service.download_market_data(**kwargs)
++
++    def build_dataset(
++        self,
++        *,
++        strategy_name: str | None = None,
++        symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
++    ) -> QlibOperationResult:
++        return self.platform_service.build_dataset(
++            strategy_name=strategy_name,
+             symbols=symbols,
+-            timeframes=timeframes,
+-            full_refresh=False,
++            symbols_file=symbols_file,
+         )
+ 
+-    def build_dataset(self, *, strategy_name: str | None = None) -> QlibOperationResult:
+-        return self.platform_service.build_dataset(strategy_name=strategy_name)
+-
+     def train_models(self, *, strategy_name: str | None = None) -> QlibOperationResult:
+         return self.platform_service.train_models(strategy_name=strategy_name)
+ 
+@@ -99,20 +188,59 @@ class DataTrainingService:
+         self,
+         *,
+         strategy_name: str | None = None,
++        symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
++        timeframes: list[str] | None = None,
+     ) -> TrainingDataQualityReport:
+         del strategy_name
+-        symbols = self.training_service.ensure_universe()
+-        return self.training_service.run_quality_check(
++        resolved_symbols = self.training_service.ensure_universe(
+             symbols=symbols,
+-            timeframes=self.platform_service.settings.data.default_timeframes,
++            symbols_file=symbols_file,
++        )
++        return self.training_service.run_quality_check(
++            symbols=resolved_symbols,
++            timeframes=timeframes or self.platform_service.settings.data.default_timeframes,
+         )
+ 
+     def run_alpha_robust_training(
+         self,
+         *,
+         strategy_name: str | None = None,
++        symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
++        timeframes: list[str] | None = None,
+     ) -> AlphaTrainingRunResult:
+         return self.training_service.run_alpha_robust_training(
+             strategy_name=strategy_name
+             or self.platform_service.settings.strategies.default_strategy.value,
++            symbols=symbols,
++            symbols_file=symbols_file,
++            timeframes=timeframes,
+         )
++
++    def create_market_data_progress_tracker(
++        self,
++        *,
++        operation: str,
++        requested_symbols: list[str],
++        requested_timeframes: list[str],
++        on_update=None,
++    ) -> MarketDataProgressTracker:
++        return MarketDataProgressTracker(
++            settings=self.platform_service.settings,
++            operation=operation,
++            requested_symbols=requested_symbols,
++            requested_timeframes=requested_timeframes,
++            provider_name=self.platform_service.data_pipeline.provider_name,
++            on_update=on_update,
++        )
++
++    def get_market_data_progress(self) -> MarketDataProgressPayload | None:
++        return MarketDataProgressTracker.load(self.platform_service.settings)
++
++    def _default_universe_file_path(self, profile_name: str | None) -> Path:
++        if profile_name:
++            return self.platform_service.settings.paths.active_universes_dir / (
++                f"{slugify_profile_name(profile_name)}_active_symbols.json"
++            )
++        return self.platform_service.settings.paths.universe_dir / "latest_top_liquidity_universe.json"
+diff --git a/tests/smoke/test_streamlit_structure.py b/tests/smoke/test_streamlit_structure.py
+index 8fbc450..ee13a71 100644
+--- a/tests/smoke/test_streamlit_structure.py
++++ b/tests/smoke/test_streamlit_structure.py
+@@ -7,12 +7,13 @@ def test_streamlit_page_files_exist() -> None:
+         "app/app.py",
+         "app/pages/00_Setup_Wizard.py",
+         "app/pages/02_Strategy_Control.py",
+-        "app/pages/03_Data_and_Training.py",
++        "app/pages/03_Data_Management.py",
+         "app/pages/04_Paper_Trading.py",
+         "app/pages/05_Live_Trading.py",
+         "app/pages/06_LLM_Copilot.py",
+         "app/pages/07_Diagnostics.py",
+         "app/pages/08_Settings.py",
++        "app/pages/09_Trading_Universe.py",
+     ]
+ 
+     for relative_path in required:
+@@ -27,12 +28,13 @@ def test_streamlit_entrypoints_do_not_use_package_shadowed_runtime_imports() ->
+         "app/app.py",
+         "app/pages/00_Setup_Wizard.py",
+         "app/pages/02_Strategy_Control.py",
+-        "app/pages/03_Data_and_Training.py",
++        "app/pages/03_Data_Management.py",
+         "app/pages/04_Paper_Trading.py",
+         "app/pages/05_Live_Trading.py",
+         "app/pages/06_LLM_Copilot.py",
+         "app/pages/07_Diagnostics.py",
+         "app/pages/08_Settings.py",
++        "app/pages/09_Trading_Universe.py",
+     ]
+ 
+     for relative_path in entrypoints:
+@@ -46,3 +48,27 @@ def test_streamlit_app_landing_page_is_dashboard() -> None:
+ 
+     assert 'st.set_page_config(page_title="Dashboard"' in source
+     assert 'st.title("Dashboard")' in source
++
++
++def test_data_management_page_uses_real_operation_tabs() -> None:
++    project_root = Path(__file__).resolve().parents[2]
++    source = (project_root / "app/pages/03_Data_Management.py").read_text(encoding="utf-8")
++
++    assert 'st.title("Data Management")' in source
++    assert "st.tabs(" in source
++    assert '"Universe file path"' in source
++    assert "service.resolve_universe_source(" in source
++    assert "active_universes" in source
++    assert "service.generate_top_liquidity_universe()" in source
++    assert "service.download_market_data(" in source
++    assert "service.update_market_data(" in source
++    assert "service.build_dataset(" in source
++    assert "service.train_models(" in source
++    assert "service.refresh_predictions(" in source
++    assert "service.check_training_data_quality(" in source
++    assert "service.run_alpha_robust_training(" in source
++    assert "Market Data Progress" in source
++    assert "Per-Timeframe Progress" in source
++    assert "Remaining Steps" in source
++    assert "service.create_market_data_progress_tracker(" in source
++    assert "service.get_market_data_progress()" in source
+diff --git a/tests/unit/orchestration/test_orchestration_service.py b/tests/unit/orchestration/test_orchestration_service.py
+index 750b798..d585b9b 100644
+--- a/tests/unit/orchestration/test_orchestration_service.py
++++ b/tests/unit/orchestration/test_orchestration_service.py
+@@ -353,3 +353,30 @@ def test_run_session_honors_long_only_session_config(tmp_path) -> None:
+ 
+     assert all(attempt.symbol != "MSFT" for attempt in result.trade_attempts)
+     assert any(attempt.symbol == "AAPL" for attempt in result.trade_attempts)
++
++
++def test_run_session_honors_saved_scalping_predicted_return_threshold(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.012)
++    runtime_service = RuntimeStateService(settings=settings)
++    wizard_service = SetupWizardService(settings=settings)
++    state = wizard_service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
++    state.alpha.predicted_return_threshold = 0.02
++    resolved_config = wizard_service.finalize_setup(state, generated_symbols=["AAPL"])
++
++    service = TradingPlatformService(
++        settings=settings,
++        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
++        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
++        runtime_state_service=runtime_service,
++    )
++
++    result = service.run_session(
++        strategy_name="scalping",
++        mode=RuntimeMode.PAPER,
++        session_config=resolved_config,
++        symbols_file=Path(resolved_config.active_symbols_path),
++    )
++
++    assert result.session_summary.trade_count == 0
++    assert "predicted_return_threshold" in result.rejection_reasons
+diff --git a/tests/unit/session_setup/test_service.py b/tests/unit/session_setup/test_service.py
+index ad25f15..6bcda14 100644
+--- a/tests/unit/session_setup/test_service.py
++++ b/tests/unit/session_setup/test_service.py
+@@ -187,3 +187,79 @@ def test_setup_wizard_service_resolves_generated_symbols_with_universe_filters(t
+             "include_etfs": True,
+         }
+     ]
++
++
++def test_setup_wizard_service_persists_scalping_thresholds_in_latest_config(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    service = SetupWizardService(settings=settings)
++    state = service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
++    state.alpha.predicted_return_threshold = 0.007
++    state.alpha.confidence_threshold = 0.72
++
++    resolved = service.finalize_setup(state, generated_symbols=["AAPL", "MSFT"])
++    latest = service.storage.load_latest_session_config(state.profile.profile_slug)
++
++    assert resolved.alpha.predicted_return_threshold == 0.007
++    assert resolved.alpha.confidence_threshold == 0.72
++    assert latest is not None
++    assert latest.alpha.predicted_return_threshold == 0.007
++    assert latest.alpha.confidence_threshold == 0.72
++
++
++def test_setup_wizard_service_previews_final_universe_with_diff_counts_and_manual_additions(
++    tmp_path,
++) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    service = SetupWizardService(settings=settings)
++    state = service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
++    state.universe.selection_mode = "replace_with_new"
++    service.storage.write_active_symbols(
++        profile_slug=state.profile.profile_slug,
++        symbols=["AAPL", "MSFT", "AMD"],
++    )
++
++    preview = service.preview_final_universe(
++        state,
++        generated_symbols=["MSFT", "NVDA"],
++        manual_symbols=[" tsla ", "nvda"],
++    )
++
++    assert preview.previous_symbols == ["AAPL", "AMD", "MSFT"]
++    assert preview.generated_symbols == ["MSFT", "NVDA"]
++    assert preview.manual_symbols == ["NVDA", "TSLA"]
++    assert preview.final_symbols == ["MSFT", "NVDA", "TSLA"]
++    assert preview.added_symbols == ["NVDA", "TSLA"]
++    assert preview.removed_symbols == ["AAPL", "AMD"]
++    assert preview.final_symbol_count == 3
++    assert preview.added_symbol_count == 2
++    assert preview.removed_symbol_count == 2
++
++
++def test_setup_wizard_service_save_final_universe_updates_manifest_and_latest_config(
++    tmp_path,
++) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    service = SetupWizardService(settings=settings)
++    state = service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
++    state.universe.selection_mode = "combine_old_and_new"
++    service.finalize_setup(state, generated_symbols=["AAPL", "MSFT"])
++
++    saved = service.save_final_universe(
++        state,
++        generated_symbols=["MSFT", "NVDA"],
++        manual_symbols=[" tsla "],
++    )
++
++    latest_config = service.storage.load_latest_session_config(state.profile.profile_slug)
++    assert latest_config is not None
++    assert saved.final_symbols == ["AAPL", "MSFT", "NVDA", "TSLA"]
++    assert json.loads(
++        service.storage
++        .active_symbols_path(state.profile.profile_slug)
++        .read_text(encoding="utf-8")
++    ) == ["AAPL", "MSFT", "NVDA", "TSLA"]
++    assert latest_config.active_symbols == ["AAPL", "MSFT", "NVDA", "TSLA"]
++    assert latest_config.universe.active_symbol_count == 4
++    assert latest_config.active_symbols_path == str(
++        service.storage.active_symbols_path(state.profile.profile_slug)
++    )
+diff --git a/tests/unit/strategies/test_scalping_strategy.py b/tests/unit/strategies/test_scalping_strategy.py
+index a4db1e8..a4a28fc 100644
+--- a/tests/unit/strategies/test_scalping_strategy.py
++++ b/tests/unit/strategies/test_scalping_strategy.py
+@@ -80,3 +80,29 @@ def test_scalping_rejects_trade_when_fee_adjusted_expectancy_is_poor(
+ 
+     assert not decision.should_trade
+     assert "fee_adjusted_expectancy" in decision.failed_filters
++
++
++def test_scalping_uses_runtime_configured_predicted_return_threshold(signal_bundle_factory) -> None:
++    strategy = ScalpingStrategy(
++        settings=AppSettings(
++            scalping=ScalpingBracketSettings(predicted_return_threshold=0.02)
++        )
++    )
++
++    decision = strategy.evaluate(signal_bundle_factory(predicted_return=0.012))
++
++    assert not decision.should_trade
++    assert "predicted_return_threshold" in decision.failed_filters
++
++
++def test_scalping_uses_runtime_configured_confidence_threshold(signal_bundle_factory) -> None:
++    strategy = ScalpingStrategy(
++        settings=AppSettings(
++            scalping=ScalpingBracketSettings(confidence_threshold=0.95)
++        )
++    )
++
++    decision = strategy.evaluate(signal_bundle_factory(confidence=0.84))
++
++    assert not decision.should_trade
++    assert "confidence_threshold" in decision.failed_filters
+diff --git a/tests/unit/ui_services/test_data_training.py b/tests/unit/ui_services/test_data_training.py
+index 225269e..f9528f2 100644
+--- a/tests/unit/ui_services/test_data_training.py
++++ b/tests/unit/ui_services/test_data_training.py
+@@ -1,7 +1,23 @@
++import json
++from pathlib import Path
++
++from mytradingbot.core.models import utc_now
++from mytradingbot.core.paths import RepoPaths
++from mytradingbot.core.settings import AppSettings
++from mytradingbot.data.models import MarketDataPipelineResult
+ from mytradingbot.orchestration.service import TradingPlatformService
++from mytradingbot.qlib_engine.models import QlibOperationResult
++from mytradingbot.session_setup.service import SetupWizardService
++from mytradingbot.training.models import AlphaTrainingRunResult, TrainingDataQualityReport
+ from mytradingbot.ui_services.data_training import DataTrainingService
+ 
+ 
++def _build_settings(repo_root: Path) -> AppSettings:
++    settings = AppSettings(paths=RepoPaths.for_root(repo_root))
++    settings.ensure_runtime_directories()
++    return settings
++
++
+ def test_data_training_service_surfaces_capability_truth() -> None:
+     payload = DataTrainingService(
+         TradingPlatformService.bootstrap_default()
+@@ -9,3 +25,131 @@ def test_data_training_service_surfaces_capability_truth() -> None:
+ 
+     assert payload.capabilities.phase_1.name == "Phase 1"
+     assert "download_market_data" in payload.works_without_pyqlib
++
++
++def test_data_training_service_resolves_profile_active_universe_file(tmp_path: Path) -> None:
++    settings = _build_settings(tmp_path)
++    wizard_service = SetupWizardService(settings=settings)
++    state = wizard_service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
++    state.universe.selection_mode = "replace_with_new"
++    wizard_service.finalize_setup(state, generated_symbols=["AAPL", "MSFT"])
++
++    service = DataTrainingService(
++        TradingPlatformService(settings=settings),
++    )
++
++    payload = service.get_payload()
++    universe_source = service.resolve_universe_source(profile_name="Alice Trader")
++
++    assert "Alice Trader" in payload.profile_names
++    assert payload.default_profile_name == "Alice Trader"
++    assert universe_source.default_universe_file_path == str(
++        settings.paths.active_universes_dir / "alice_trader_active_symbols.json"
++    )
++    assert universe_source.selected_universe_file_path == universe_source.default_universe_file_path
++    assert universe_source.symbols == ["AAPL", "MSFT"]
++    assert universe_source.symbol_count == 2
++    assert universe_source.alternate_universe_file_path == str(
++        settings.paths.universe_dir / "latest_top_liquidity_universe.json"
++    )
++
++
++def test_data_training_service_prefers_symbols_file_for_file_scoped_actions(tmp_path: Path) -> None:
++    settings = _build_settings(tmp_path)
++    universe_file = settings.paths.active_universes_dir / "alice_trader_active_symbols.json"
++    universe_file.parent.mkdir(parents=True, exist_ok=True)
++    universe_file.write_text(json.dumps(["AAPL", "MSFT"]), encoding="utf-8")
++    platform_service = TradingPlatformService(settings=settings)
++    service = DataTrainingService(platform_service)
++    captured: dict[str, object] = {"market_data_calls": []}
++
++    def fake_download_market_data(**kwargs):
++        captured["market_data_calls"].append(kwargs)
++        return MarketDataPipelineResult(ok=True, message="downloaded")
++
++    def fake_build_dataset(**kwargs):
++        captured["build_dataset"] = kwargs
++        return QlibOperationResult(ok=True, message="dataset built")
++
++    def fake_ensure_universe(*, symbols=None, symbols_file=None, top_n=None):
++        captured["ensure_universe"] = {
++            "symbols": symbols,
++            "symbols_file": symbols_file,
++            "top_n": top_n,
++        }
++        return ["AAPL", "MSFT"]
++
++    def fake_run_quality_check(*, symbols, timeframes, minimum_eligible_symbols=None):
++        captured["quality_check"] = {
++            "symbols": symbols,
++            "timeframes": timeframes,
++            "minimum_eligible_symbols": minimum_eligible_symbols,
++        }
++        return TrainingDataQualityReport(
++            ok=True,
++            message="quality ok",
++            generated_at=utc_now(),
++            timeframes=timeframes,
++            requested_symbols=symbols,
++            eligible_symbols=symbols,
++        )
++
++    def fake_run_alpha_robust_training(**kwargs):
++        captured["alpha_training"] = kwargs
++        return AlphaTrainingRunResult(ok=True, message="training ok")
++
++    platform_service.download_market_data = fake_download_market_data
++    platform_service.build_dataset = fake_build_dataset
++    service.training_service.ensure_universe = fake_ensure_universe
++    service.training_service.run_quality_check = fake_run_quality_check
++    service.training_service.run_alpha_robust_training = fake_run_alpha_robust_training
++
++    service.download_market_data(symbols_file=universe_file, timeframes=["1m"])
++    service.update_market_data(symbols_file=universe_file, timeframes=["5m"])
++    service.build_dataset(strategy_name="scalping", symbols_file=universe_file)
++    service.check_training_data_quality(
++        strategy_name="scalping",
++        symbols_file=universe_file,
++        timeframes=["1m", "5m"],
++    )
++    service.run_alpha_robust_training(
++        strategy_name="scalping",
++        symbols_file=universe_file,
++        timeframes=["1m", "5m"],
++    )
++
++    assert captured["market_data_calls"] == [
++        {
++            "symbols": None,
++            "symbols_file": universe_file,
++            "timeframes": ["1m"],
++            "full_refresh": True,
++        },
++        {
++            "symbols": None,
++            "symbols_file": universe_file,
++            "timeframes": ["5m"],
++            "full_refresh": False,
++        },
++    ]
++    assert captured["build_dataset"] == {
++        "strategy_name": "scalping",
++        "symbols": None,
++        "symbols_file": universe_file,
++    }
++    assert captured["ensure_universe"] == {
++        "symbols": None,
++        "symbols_file": universe_file,
++        "top_n": None,
++    }
++    assert captured["quality_check"] == {
++        "symbols": ["AAPL", "MSFT"],
++        "timeframes": ["1m", "5m"],
++        "minimum_eligible_symbols": None,
++    }
++    assert captured["alpha_training"] == {
++        "strategy_name": "scalping",
++        "symbols": None,
++        "symbols_file": universe_file,
++        "timeframes": ["1m", "5m"],
++    }

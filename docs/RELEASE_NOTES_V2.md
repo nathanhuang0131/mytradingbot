@@ -21,7 +21,7 @@ Version `0.2.0` upgrades the repository from a phase-1 runnable paper path into 
 - `src/mytradingbot/data/providers/alpaca_provider.py` now uses deterministic chunking and guarded multi-window fetch behavior.
 - `src/mytradingbot/strategies/scalping.py`, `src/mytradingbot/risk/service.py`, `src/mytradingbot/execution/service.py`, and `src/mytradingbot/brokers/paper.py` now operate with typed bracket planning and persistent runtime safety context.
 - `src/mytradingbot/orchestration/service.py` now records decision audit artifacts and uses restart-safe runtime state.
-- `app/pages/03_Data_and_Training.py` and `src/mytradingbot/ui_services/data_training.py` now expose universe generation, training quality, and alpha-robust training actions.
+- `app/pages/03_Data_Management.py` and `src/mytradingbot/ui_services/data_training.py` now expose universe generation, training quality, and alpha-robust training actions.
 
 ## Canonical V2 Command
 

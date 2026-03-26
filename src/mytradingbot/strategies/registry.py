@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from mytradingbot.core.settings import AppSettings
 from mytradingbot.strategies.base import BaseStrategy
 from mytradingbot.strategies.intraday import IntradayStrategy
 from mytradingbot.strategies.long_term import LongTermStrategy
@@ -20,10 +21,10 @@ class StrategyRegistry:
         self._strategies = strategies
 
     @classmethod
-    def build_default(cls) -> "StrategyRegistry":
+    def build_default(cls, settings: AppSettings | None = None) -> "StrategyRegistry":
         return cls(
             strategies={
-                "scalping": ScalpingStrategy(),
+                "scalping": ScalpingStrategy(settings=settings),
                 "intraday": IntradayStrategy(),
                 "short_term": ShortTermStrategy(),
                 "long_term": LongTermStrategy(),

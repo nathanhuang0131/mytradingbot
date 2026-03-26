@@ -80,3 +80,29 @@ def test_scalping_rejects_trade_when_fee_adjusted_expectancy_is_poor(
 
     assert not decision.should_trade
     assert "fee_adjusted_expectancy" in decision.failed_filters
+
+
+def test_scalping_uses_runtime_configured_predicted_return_threshold(signal_bundle_factory) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(predicted_return_threshold=0.02)
+        )
+    )
+
+    decision = strategy.evaluate(signal_bundle_factory(predicted_return=0.012))
+
+    assert not decision.should_trade
+    assert "predicted_return_threshold" in decision.failed_filters
+
+
+def test_scalping_uses_runtime_configured_confidence_threshold(signal_bundle_factory) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(confidence_threshold=0.95)
+        )
+    )
+
+    decision = strategy.evaluate(signal_bundle_factory(confidence=0.84))
+
+    assert not decision.should_trade
+    assert "confidence_threshold" in decision.failed_filters

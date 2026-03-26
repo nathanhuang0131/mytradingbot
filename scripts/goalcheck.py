@@ -13,7 +13,7 @@ def main() -> int:
     page_paths = [
         project_root / "app/pages/01_Dashboard.py",
         project_root / "app/pages/02_Strategy_Control.py",
-        project_root / "app/pages/03_Data_and_Training.py",
+        project_root / "app/pages/03_Data_Management.py",
         project_root / "app/pages/04_Paper_Trading.py",
         project_root / "app/pages/05_Live_Trading.py",
         project_root / "app/pages/06_LLM_Copilot.py",

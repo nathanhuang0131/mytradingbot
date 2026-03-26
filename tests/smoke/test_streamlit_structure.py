@@ -7,12 +7,13 @@ def test_streamlit_page_files_exist() -> None:
         "app/app.py",
         "app/pages/00_Setup_Wizard.py",
         "app/pages/02_Strategy_Control.py",
-        "app/pages/03_Data_and_Training.py",
+        "app/pages/03_Data_Management.py",
         "app/pages/04_Paper_Trading.py",
         "app/pages/05_Live_Trading.py",
         "app/pages/06_LLM_Copilot.py",
         "app/pages/07_Diagnostics.py",
         "app/pages/08_Settings.py",
+        "app/pages/09_Trading_Universe.py",
     ]
 
     for relative_path in required:
@@ -27,12 +28,13 @@ def test_streamlit_entrypoints_do_not_use_package_shadowed_runtime_imports() -> 
         "app/app.py",
         "app/pages/00_Setup_Wizard.py",
         "app/pages/02_Strategy_Control.py",
-        "app/pages/03_Data_and_Training.py",
+        "app/pages/03_Data_Management.py",
         "app/pages/04_Paper_Trading.py",
         "app/pages/05_Live_Trading.py",
         "app/pages/06_LLM_Copilot.py",
         "app/pages/07_Diagnostics.py",
         "app/pages/08_Settings.py",
+        "app/pages/09_Trading_Universe.py",
     ]
 
     for relative_path in entrypoints:
@@ -46,3 +48,27 @@ def test_streamlit_app_landing_page_is_dashboard() -> None:
 
     assert 'st.set_page_config(page_title="Dashboard"' in source
     assert 'st.title("Dashboard")' in source
+
+
+def test_data_management_page_uses_real_operation_tabs() -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    source = (project_root / "app/pages/03_Data_Management.py").read_text(encoding="utf-8")
+
+    assert 'st.title("Data Management")' in source
+    assert "st.tabs(" in source
+    assert '"Universe file path"' in source
+    assert "service.resolve_universe_source(" in source
+    assert "active_universes" in source
+    assert "service.generate_top_liquidity_universe()" in source
+    assert "service.download_market_data(" in source
+    assert "service.update_market_data(" in source
+    assert "service.build_dataset(" in source
+    assert "service.train_models(" in source
+    assert "service.refresh_predictions(" in source
+    assert "service.check_training_data_quality(" in source
+    assert "service.run_alpha_robust_training(" in source
+    assert "Market Data Progress" in source
+    assert "Per-Timeframe Progress" in source
+    assert "Remaining Steps" in source
+    assert "service.create_market_data_progress_tracker(" in source
+    assert "service.get_market_data_progress()" in source

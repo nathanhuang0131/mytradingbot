@@ -1,0 +1,108 @@
+# Decision Audit
+
+- candidates audited: `100`
+- broker_mode: `alpaca_paper_api`
+- broker_description: `Alpaca paper API broker`
+
+| Symbol | Timestamp | Source | Status | Rejection | Score | Confidence | Predicted Return | Spread (bps) | Liquidity | VWAP OK | Expectancy OK | Rejection Reasons |
+| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
+| MSFT | 2026-03-27T13:23:00+00:00 | qlib_candidate_only | rejected | liquidity_too_low | -0.0106 | 0.9900 | -0.0106 | 0.50 | 0.00 | True | None | liquidity_filter |
+| SMCI | 2026-03-26T20:34:00+00:00 | qlib_candidate_only | rejected | liquidity_too_low | -0.0078 | 0.9900 | -0.0078 | 3.34 | 0.01 | True | None | liquidity_filter |
+| IREN | 2026-03-26T20:41:00+00:00 | qlib_candidate_only | rejected | liquidity_too_low | -0.0021 | 0.9900 | -0.0021 | 0.50 | 0.01 | True | None | liquidity_filter |
+| ODD | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | bracket_invalid | 0.0015 | 0.9900 | 0.0015 | 5.58 | 1.00 | True | False | fee_adjusted_expectancy |
+| TSM | 2026-03-27T13:07:00+00:00 | qlib_candidate_only | rejected | liquidity_too_low | -0.0014 | 0.9900 | -0.0014 | 0.50 | 0.01 | True | None | liquidity_filter |
+| CSX | 2026-03-26T20:11:00+00:00 | qlib_candidate_only | rejected | liquidity_too_low | 0.0013 | 0.9900 | 0.0013 | 0.50 | 0.01 | True | None | liquidity_filter |
+| DYN | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | bracket_invalid | 0.0013 | 0.9900 | 0.0013 | 4.72 | 1.00 | True | False | fee_adjusted_expectancy |
+| VTR | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | vwap_relationship_blocked | -0.0013 | 0.9900 | -0.0013 | 5.29 | 1.00 | False | None | vwap_relationship |
+| SCO | 2026-03-27T12:27:00+00:00 | qlib_candidate_only | rejected | liquidity_too_low | 0.0012 | 0.9896 | 0.0012 | 0.50 | 0.00 | True | None | liquidity_filter |
+| GLL | 2026-03-27T12:49:00+00:00 | qlib_candidate_only | rejected | liquidity_too_low | 0.0012 | 0.9896 | 0.0012 | 0.50 | 0.01 | True | None | liquidity_filter |
+| LOW | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | bracket_invalid | -0.0011 | 0.9878 | -0.0011 | 4.98 | 1.00 | True | False | fee_adjusted_expectancy |
+| HD | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | vwap_relationship_blocked | -0.0011 | 0.9866 | -0.0011 | 2.74 | 1.00 | False | None | vwap_relationship |
+| PK | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | spread_too_wide | 0.0010 | 0.9854 | 0.0010 | 7.00 | 1.00 | True | None | spread_filter |
+| AMKR | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | vwap_relationship_blocked | 0.0010 | 0.9841 | 0.0010 | 2.77 | 1.00 | False | None | vwap_relationship |
+| SOC | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | vwap_relationship_blocked | 0.0010 | 0.9829 | 0.0010 | 18.13 | 1.00 | False | None | vwap_relationship, spread_filter, liquidity_sweep_detection |
+| CPNG | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | spread_too_wide | 0.0009 | 0.9817 | 0.0009 | 12.89 | 1.00 | True | None | spread_filter, liquidity_sweep_detection |
+| KRMN | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | vwap_relationship_blocked | 0.0009 | 0.9805 | 0.0009 | 13.23 | 1.00 | False | None | vwap_relationship, spread_filter, liquidity_sweep_detection |
+| AAL | 2026-03-26T20:11:00+00:00 | qlib_candidate_only | rejected | liquidity_too_low | -0.0009 | 0.9793 | -0.0009 | 0.50 | 0.00 | True | None | liquidity_filter |
+| ERAS | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | vwap_relationship_blocked | 0.0008 | 0.9780 | 0.0008 | 4.13 | 0.74 | False | None | vwap_relationship |
+| NOW | 2026-03-27T12:41:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0007 | 0.9768 | 0.0007 | 0.50 | 0.02 | True | None | predicted_return_threshold, liquidity_filter |
+| VG | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0007 | 0.9756 | 0.0007 | 8.18 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| GOOGL | 2026-03-27T12:56:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0007 | 0.9744 | -0.0007 | 0.50 | 0.01 | True | None | predicted_return_threshold, liquidity_filter |
+| CC | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0007 | 0.9732 | 0.0007 | 4.63 | 1.00 | True | None | predicted_return_threshold |
+| PRGO | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0007 | 0.9720 | 0.0007 | 9.33 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| NVST | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0006 | 0.9707 | 0.0006 | 2.90 | 1.00 | True | None | predicted_return_threshold |
+| FIG | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0006 | 0.9695 | 0.0006 | 9.58 | 1.00 | True | None | predicted_return_threshold, spread_filter |
+| WAL | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0006 | 0.9683 | 0.0006 | 4.27 | 1.00 | True | None | predicted_return_threshold |
+| ADMA | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0006 | 0.9671 | -0.0006 | 13.58 | 0.97 | True | None | predicted_return_threshold, spread_filter |
+| CARR | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0006 | 0.9659 | 0.0006 | 6.18 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| ES | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0005 | 0.9646 | -0.0005 | 2.02 | 1.00 | False | None | predicted_return_threshold, vwap_relationship |
+| REAL | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.9634 | 0.0005 | 6.94 | 1.00 | True | None | predicted_return_threshold, spread_filter |
+| PSKY | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.9622 | 0.0005 | 5.64 | 1.00 | True | None | predicted_return_threshold |
+| NESR | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0005 | 0.9610 | -0.0005 | 16.90 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter, liquidity_sweep_detection |
+| TNGX | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.9598 | 0.0005 | 11.32 | 0.65 | True | None | predicted_return_threshold, spread_filter |
+| SMTC | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.9585 | 0.0005 | 5.23 | 1.00 | False | None | predicted_return_threshold, vwap_relationship |
+| PRCT | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.9573 | 0.0005 | 2.50 | 1.00 | True | None | predicted_return_threshold |
+| PATH | 2026-03-27T13:23:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.9561 | 0.0005 | 0.50 | 0.01 | True | None | predicted_return_threshold, liquidity_filter |
+| RNA | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.9549 | 0.0005 | 11.45 | 0.73 | True | None | predicted_return_threshold, spread_filter |
+| SOFI | 2026-03-27T12:51:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.9537 | 0.0005 | 0.50 | 0.00 | True | None | predicted_return_threshold, liquidity_filter |
+| ANET | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.9524 | 0.0005 | 5.30 | 1.00 | True | None | predicted_return_threshold |
+| FLY | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0005 | 0.9512 | -0.0005 | 20.02 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter, liquidity_sweep_detection |
+| SFM | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9500 | 0.0004 | 9.22 | 1.00 | True | None | predicted_return_threshold, spread_filter |
+| UCO | 2026-03-27T12:15:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9488 | 0.0004 | 1.77 | 0.21 | False | None | predicted_return_threshold, vwap_relationship, liquidity_filter, intraday_volatility_regime |
+| DUOL | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9476 | 0.0004 | 3.69 | 1.00 | True | None | predicted_return_threshold |
+| INFY | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0004 | 0.9463 | -0.0004 | 6.64 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| ALKT | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9451 | 0.0004 | 3.09 | 1.00 | True | None | predicted_return_threshold |
+| Q | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9439 | 0.0004 | 7.77 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| QXO | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9427 | 0.0004 | 11.44 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| SATS | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9415 | 0.0004 | 4.04 | 1.00 | True | None | predicted_return_threshold |
+| AKAM | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9402 | 0.0004 | 4.90 | 1.00 | False | None | predicted_return_threshold, vwap_relationship |
+| FPS | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9390 | 0.0004 | 8.30 | 1.00 | True | None | predicted_return_threshold, spread_filter |
+| MSTR | 2026-03-27T13:04:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0004 | 0.9378 | -0.0004 | 0.50 | 0.01 | True | None | predicted_return_threshold, liquidity_filter |
+| RDDT | 2026-03-27T12:26:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9366 | 0.0004 | 0.50 | 0.04 | True | None | predicted_return_threshold, liquidity_filter |
+| FSLY | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0004 | 0.9354 | -0.0004 | 18.78 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter, liquidity_sweep_detection |
+| FRPT | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9341 | 0.0004 | 6.81 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| CHWY | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9329 | 0.0004 | 5.09 | 1.00 | True | None | predicted_return_threshold |
+| NTSK | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9317 | 0.0004 | 4.42 | 1.00 | True | None | predicted_return_threshold |
+| CORZ | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9305 | 0.0004 | 10.28 | 1.00 | True | None | predicted_return_threshold, spread_filter |
+| ARIS | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9293 | 0.0004 | 4.54 | 0.61 | False | None | predicted_return_threshold, vwap_relationship |
+| RWM | 2026-03-27T13:25:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9280 | 0.0004 | 0.50 | 0.04 | True | None | predicted_return_threshold, liquidity_filter |
+| BTSG | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0004 | 0.9268 | -0.0004 | 4.67 | 0.76 | False | None | predicted_return_threshold, vwap_relationship |
+| SLDE | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9256 | 0.0004 | 6.93 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| UMAC | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9244 | 0.0004 | 5.60 | 1.00 | False | None | predicted_return_threshold, vwap_relationship |
+| TXG | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.9232 | 0.0004 | 6.11 | 1.00 | True | None | predicted_return_threshold, spread_filter |
+| HAL | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9220 | 0.0003 | 9.34 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| UEC | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9207 | 0.0003 | 4.79 | 1.00 | True | None | predicted_return_threshold |
+| CIEN | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9195 | 0.0003 | 2.06 | 1.00 | False | None | predicted_return_threshold, vwap_relationship |
+| OLN | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9183 | 0.0003 | 5.68 | 1.00 | True | None | predicted_return_threshold |
+| BRKR | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9171 | 0.0003 | 6.37 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| M | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9159 | 0.0003 | 4.06 | 1.00 | True | None | predicted_return_threshold |
+| FND | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9146 | 0.0003 | 6.66 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| AVGO | 2026-03-27T13:06:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0003 | 0.9134 | -0.0003 | 0.50 | 0.01 | True | None | predicted_return_threshold, liquidity_filter |
+| TENB | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9122 | 0.0003 | 10.25 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| FSK | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9110 | 0.0003 | 6.14 | 1.00 | True | None | predicted_return_threshold, spread_filter |
+| BAX | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9098 | 0.0003 | 9.01 | 0.87 | True | None | predicted_return_threshold, spread_filter |
+| KTOS | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9085 | 0.0003 | 2.47 | 1.00 | True | None | predicted_return_threshold |
+| F | 2026-03-27T12:34:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9073 | 0.0003 | 0.50 | 0.00 | True | None | predicted_return_threshold, liquidity_filter |
+| GM | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9061 | 0.0003 | 5.62 | 0.88 | True | None | predicted_return_threshold |
+| PAAS | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9049 | 0.0003 | 4.03 | 1.00 | False | None | predicted_return_threshold, vwap_relationship |
+| CRBG | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9037 | 0.0003 | 5.12 | 1.00 | True | None | predicted_return_threshold |
+| TRI | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9024 | 0.0003 | 2.35 | 1.00 | True | None | predicted_return_threshold |
+| CCL | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0003 | 0.9012 | -0.0003 | 3.95 | 1.00 | True | None | predicted_return_threshold |
+| VXX | 2026-03-27T13:18:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.9000 | 0.0003 | 0.50 | 0.06 | True | None | predicted_return_threshold, liquidity_filter |
+| DASH | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8988 | 0.0003 | 2.63 | 0.54 | True | None | predicted_return_threshold |
+| FIVN | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8976 | 0.0003 | 4.14 | 1.00 | True | None | predicted_return_threshold |
+| MAT | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8963 | 0.0003 | 5.99 | 1.00 | False | None | predicted_return_threshold, vwap_relationship |
+| BP | 2026-03-27T12:55:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | -0.0003 | 0.8951 | -0.0003 | 0.50 | 0.00 | True | None | predicted_return_threshold, liquidity_filter |
+| HRL | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8939 | 0.0003 | 5.47 | 1.00 | True | None | predicted_return_threshold |
+| QURE | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8927 | 0.0003 | 7.20 | 1.00 | True | None | predicted_return_threshold, spread_filter |
+| PAGS | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8915 | 0.0003 | 6.34 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| ARM | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8902 | 0.0003 | 3.80 | 1.00 | True | None | predicted_return_threshold |
+| MKSI | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8890 | 0.0003 | 3.11 | 1.00 | True | None | predicted_return_threshold |
+| ELAN | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8878 | 0.0003 | 6.10 | 1.00 | False | None | predicted_return_threshold, vwap_relationship, spread_filter |
+| MMM | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8866 | 0.0003 | 2.34 | 1.00 | True | None | predicted_return_threshold |
+| ACHC | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8854 | 0.0003 | 2.62 | 1.00 | False | None | predicted_return_threshold, vwap_relationship |
+| NET | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8841 | 0.0003 | 4.64 | 1.00 | True | None | predicted_return_threshold |
+| FROG | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8829 | 0.0003 | 7.98 | 1.00 | True | None | predicted_return_threshold, spread_filter |
+| CAVA | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8817 | 0.0003 | 4.75 | 1.00 | False | None | predicted_return_threshold, vwap_relationship |
+| CAT | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8805 | 0.0003 | 5.03 | 1.00 | True | None | predicted_return_threshold |
+| NOG | 2026-03-26T19:59:00+00:00 | qlib_candidate_only | rejected | target_return_below_threshold | 0.0003 | 0.8793 | 0.0003 | 3.29 | 1.00 | True | None | predicted_return_threshold |

@@ -1,0 +1,58 @@
+# Decision Audit
+
+- candidates audited: `50`
+- broker_mode: `alpaca_paper_api`
+- broker_description: `Alpaca paper API broker`
+
+| Symbol | Broker Mode | Source | Status | Rejection | Score | Predicted Return |
+| --- | --- | --- | --- | --- | ---: | ---: |
+| DYN | alpaca_paper_api | qlib_candidate_only | rejected | liquidity_too_low | 0.0114 | 0.0114 |
+| WPM | alpaca_paper_api | qlib_candidate_only | rejected | liquidity_too_low | 0.0094 | 0.0094 |
+| KT | alpaca_paper_api | qlib_candidate_only | rejected | liquidity_too_low | 0.0058 | 0.0058 |
+| KNX | alpaca_paper_api | qlib_candidate_only | rejected | invalid_signal_payload | -0.0032 | -0.0032 |
+| CRGY | alpaca_paper_api | qlib_candidate_only | rejected | invalid_signal_payload | 0.0018 | 0.0018 |
+| FIGR | alpaca_paper_api | qlib_candidate_only | rejected | spread_too_wide | -0.0016 | -0.0016 |
+| ZM | alpaca_paper_api | qlib_candidate_only | rejected | invalid_signal_payload | -0.0015 | -0.0015 |
+| NESR | alpaca_paper_api | qlib_candidate_only | rejected | invalid_signal_payload | 0.0015 | 0.0015 |
+| ADMA | alpaca_paper_api | qlib_candidate_only | rejected | invalid_signal_payload | 0.0012 | 0.0012 |
+| FIVN | alpaca_paper_api | qlib_candidate_only | rejected | spread_too_wide | 0.0012 | 0.0012 |
+| GLL | alpaca_paper_api | qlib_candidate_only | rejected | liquidity_too_low | -0.0011 | -0.0011 |
+| TGT | alpaca_paper_api | qlib_candidate_only | rejected | liquidity_too_low | -0.0011 | -0.0011 |
+| LSCC | alpaca_paper_api | qlib_candidate_only | rejected | liquidity_too_low | -0.0011 | -0.0011 |
+| CSTM | alpaca_paper_api | qlib_candidate_only | rejected | spread_too_wide | -0.0010 | -0.0010 |
+| AU | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0009 | 0.0009 |
+| EIX | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0009 | 0.0009 |
+| SRPT | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0009 | -0.0009 |
+| BROS | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0009 | 0.0009 |
+| FND | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0008 | -0.0008 |
+| ARIS | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0008 | 0.0008 |
+| W | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0008 | 0.0008 |
+| QURE | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0008 | 0.0008 |
+| AXTI | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0007 | 0.0007 |
+| NOG | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0007 | -0.0007 |
+| GTLB | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0007 | -0.0007 |
+| GTES | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0006 | -0.0006 |
+| AMKR | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0006 | -0.0006 |
+| SAIL | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0005 | -0.0005 |
+| ZTO | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.0005 |
+| AJG | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.0005 |
+| VG | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.0005 |
+| CNM | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0005 | -0.0005 |
+| EXLS | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0005 | -0.0005 |
+| MDB | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.0005 |
+| OKTA | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0005 | -0.0005 |
+| KRMN | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0005 | -0.0005 |
+| SSRM | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.0005 |
+| DHT | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0005 | -0.0005 |
+| BOX | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.0005 |
+| FNGU | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0005 | 0.0005 |
+| CPNG | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.0004 |
+| AFRM | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.0004 |
+| TECH | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.0004 |
+| PR | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.0004 |
+| BRBR | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0004 | -0.0004 |
+| BTSG | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.0004 |
+| KLAR | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.0004 |
+| WBS | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | -0.0004 | -0.0004 |
+| FRPT | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.0004 |
+| PL | alpaca_paper_api | qlib_candidate_only | rejected | target_return_below_threshold | 0.0004 | 0.0004 |

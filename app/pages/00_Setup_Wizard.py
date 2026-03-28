@@ -9,7 +9,9 @@ APP_DIR = Path(__file__).resolve().parents[1]
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
+from components.descriptive_sections import render_descriptive_section
 from components.runtime import get_platform_service
+from components.runtime import set_selected_profile_name
 from mytradingbot.core.enums import RuntimeMode
 from mytradingbot.session_setup.models import SetupWizardState
 from mytradingbot.ui_services.setup_wizard import SetupWizardUIService
@@ -80,6 +82,36 @@ def _profile_card(payload, selected_name: str | None) -> None:
             ]
         )
     )
+
+
+def _render_action_result(result_payload: dict) -> None:
+    st.markdown("### Latest Wizard Action")
+    st.caption("This is the most recent save, smoke, or session-launch result produced by the wizard.")
+    st.markdown(f"**Message:** {result_payload.get('message', 'No message')}")
+    st.markdown(
+        f"**Profile config path:** {result_payload.get('profile_path', 'Not available')}"
+    )
+    st.markdown(
+        f"**Latest session config path:** {result_payload.get('session_config_path', 'Not available')}"
+    )
+    st.markdown(
+        f"**Active universe path:** {result_payload.get('active_symbols_path', 'Not available')}"
+    )
+    if result_payload.get("process_id") is not None:
+        st.markdown(f"**Background process ID:** {result_payload['process_id']}")
+    launched_command = result_payload.get("launched_command") or []
+    if launched_command:
+        st.markdown(f"**Launched command:** {' '.join(str(part) for part in launched_command)}")
+    session_summary = result_payload.get("session_summary")
+    if session_summary:
+        st.markdown("#### Session Summary")
+        st.caption("High-level result returned by the wizard-triggered session run.")
+        st.markdown(f"**Session ID:** {session_summary.get('session_id', 'Unknown')}")
+        st.markdown(f"**Status:** {session_summary.get('status', 'Unknown')}")
+        st.markdown(f"**Trades placed:** {session_summary.get('trade_count', 0)}")
+        st.markdown(
+            f"**Rejected trade attempts:** {session_summary.get('rejected_trade_count', 0)}"
+        )
 
 
 def _render_profile_step(service: SetupWizardUIService, payload) -> None:
@@ -303,6 +335,9 @@ def _render_refresh_step(state: SetupWizardState) -> None:
                 key=_wizard_state_key("prediction_refresh_interval_seconds"),
             )
         )
+        _recommended_hint(
+            "600 seconds is the recommended overnight prediction refresh cadence. The loop can still wake every 300 seconds while qlib refresh runs on the slower cadence."
+        )
         state.refresh.dataset_refresh_interval_seconds = int(
             st.number_input(
                 "Dataset rebuild cadence (seconds)",
@@ -382,7 +417,7 @@ def _render_alpha_step(state: SetupWizardState) -> None:
         )
     )
     st.caption(
-        "Default scalping gates are 0.50% predicted return and 0.60 confidence. Lower them to allow more symbols through, or raise them to make entry selection stricter."
+        "Default overnight scalping gates are 0.08% predicted return and 0.60 confidence. The lower return gate is a controlled throughput adjustment for the 5-minute horizon, not a profitability guarantee."
     )
     with st.expander("Advanced alpha settings", expanded=st.session_state.get("wizard_visibility_mode") != "basic"):
         state.alpha.candidate_count = int(
@@ -393,6 +428,33 @@ def _render_alpha_step(state: SetupWizardState) -> None:
                 step=1,
                 key=_wizard_state_key("candidate_count"),
             )
+        )
+        state.alpha.top_n_per_cycle = int(
+            st.number_input(
+                "Top-N approvals per cycle",
+                min_value=1,
+                value=state.alpha.top_n_per_cycle,
+                step=1,
+                key=_wizard_state_key("top_n_per_cycle"),
+                help="After hard filters pass, only the best few eligible names for the cycle are allowed through.",
+            )
+        )
+        state.alpha.edge_after_cost_min_buffer = (
+            float(
+                st.number_input(
+                    "Minimum edge after cost (%)",
+                    min_value=0.0,
+                    value=float(state.alpha.edge_after_cost_min_buffer * 100),
+                    step=0.01,
+                    format="%.2f",
+                    key=_wizard_state_key("edge_after_cost_min_buffer"),
+                    help="Directional predicted return must exceed estimated spread, slippage, and fee drag by at least this buffer.",
+                )
+            )
+            / 100
+        )
+        st.caption(
+            "Top-N and edge-after-cost work together to prefer a few stronger names over many marginal passes."
         )
         state.alpha.long_threshold = float(
             st.number_input(
@@ -489,6 +551,9 @@ def _render_risk_step(state: SetupWizardState) -> None:
                 key=_wizard_state_key("cooldown_minutes"),
             )
         )
+        _recommended_hint(
+            "10 minutes is the recommended overnight cooldown when predictions refresh every 5 minutes."
+        )
         state.risk.block_foreign_manual_exposure = bool(
             st.checkbox(
                 "Block foreign/manual exposure",
@@ -514,6 +579,49 @@ def _render_risk_step(state: SetupWizardState) -> None:
                 value=state.risk.regime_gating_enabled,
                 key=_wizard_state_key("regime_gating_enabled"),
             )
+        )
+        state.risk.higher_timeframe_filter_enabled = bool(
+            st.checkbox(
+                "Higher-timeframe trend filter enabled",
+                value=state.risk.higher_timeframe_filter_enabled,
+                key=_wizard_state_key("higher_timeframe_filter_enabled"),
+            )
+        )
+        trend_col_1, trend_col_2, trend_col_3 = st.columns(3)
+        state.risk.higher_timeframe_source_timeframe = trend_col_1.selectbox(
+            "Higher timeframe",
+            options=["5m", "15m", "1d"],
+            index=["5m", "15m", "1d"].index(state.risk.higher_timeframe_source_timeframe),
+            key=_wizard_state_key("higher_timeframe_source_timeframe"),
+        )
+        state.risk.higher_timeframe_fast_ma_length = int(
+            trend_col_2.number_input(
+                "HTF fast EMA length",
+                min_value=2,
+                value=state.risk.higher_timeframe_fast_ma_length,
+                step=1,
+                key=_wizard_state_key("higher_timeframe_fast_ma_length"),
+            )
+        )
+        state.risk.higher_timeframe_slow_ma_length = int(
+            trend_col_3.number_input(
+                "HTF slow EMA length",
+                min_value=3,
+                value=state.risk.higher_timeframe_slow_ma_length,
+                step=1,
+                key=_wizard_state_key("higher_timeframe_slow_ma_length"),
+            )
+        )
+        state.risk.disable_pseudo_order_book_gate = bool(
+            st.checkbox(
+                "Disable pseudo order-book gate",
+                value=state.risk.disable_pseudo_order_book_gate,
+                key=_wizard_state_key("disable_pseudo_order_book_gate"),
+                help="For equities, this path uses bar/quote-derived spread and VWAP context rather than pretending to have true L2 depth.",
+            )
+        )
+        st.caption(
+            "Recommended overnight setting: keep the higher-timeframe filter on and keep the pseudo order-book gate disabled."
         )
     _set_wizard_state(state)
 
@@ -602,97 +710,30 @@ def _render_execution_step(state: SetupWizardState) -> None:
 
 def _render_review_step(service: SetupWizardUIService, state: SetupWizardState) -> None:
     st.subheader("Review and start")
-    review_flags = service.review_flags(state)
     generated_symbols = st.session_state.get("wizard_generated_symbols")
-    preview_symbols = service.wizard_service.preview_active_symbols(
-        state.model_copy(deep=True),
+    review_payload = service.build_review_payload(
+        state,
         generated_symbols=generated_symbols,
     )
     if state.universe.selection_mode != "keep_old" and not generated_symbols:
         st.warning(
             "No previewed liquidity universe is cached yet. Start, smoke, or save will run the liquidity flow automatically before persisting the active symbol manifest."
         )
-    expected_actions = service.wizard_service.build_expected_actions(
-        state,
-        active_symbols=preview_symbols,
-    )
-    profile_col, strategy_col = st.columns(2)
-    with profile_col:
-        st.info(
-            "\n".join(
-                [
-                    f"Profile: `{state.profile.profile_name}`",
-                    f"Profile config: `{service.wizard_service.storage.profile_path(state.profile.profile_slug)}`",
-                    f"Latest session config: `{service.wizard_service.storage.session_config_path(state.profile.profile_slug)}`",
-                ]
-            )
-        )
-    with strategy_col:
-        st.info(
-            "\n".join(
-                [
-                    f"Strategy: `{state.strategy.strategy_name}`",
-                    f"Broker mode: `{state.strategy.broker_mode}`",
-                    f"Session mode: `{state.strategy.session_mode}`",
-                    f"Side mode: `{state.alpha.side_mode}`",
-                    f"Predicted return gate: `{state.alpha.predicted_return_threshold * 100:.2f}%`",
-                    f"Confidence gate: `{state.alpha.confidence_threshold:.2f}`",
-                ]
-            )
-        )
-
-    universe_col, refresh_col = st.columns(2)
-    with universe_col:
-        st.success(
-            "\n".join(
-                [
-                    f"Universe mode: `{state.universe.selection_mode}`",
-                    f"Active symbols: `{len(preview_symbols)}`",
-                    f"Active manifest: `{service.wizard_service.storage.active_symbols_path(state.profile.profile_slug)}`",
-                    "Historical parquet retention: `enabled`",
-                ]
-            )
-        )
-    with refresh_col:
-        st.success(
-            "\n".join(
-                [
-                    f"Loop interval: `{state.refresh.loop_interval_seconds}` seconds",
-                    f"Snapshot refresh: `{state.refresh.auto_refresh_market_snapshot}`",
-                    f"Prediction refresh: `{state.refresh.auto_refresh_predictions}`",
-                    f"Dataset refresh: `{state.refresh.auto_refresh_dataset}`",
-                ]
-            )
-        )
-
-    risk_col, exec_col = st.columns(2)
-    with risk_col:
-        st.write(
-            {
-                "max_positions": state.risk.max_positions,
-                "max_dollars_per_trade": state.risk.max_dollars_per_trade,
-                "max_daily_loss_percent": state.risk.max_daily_loss_percent,
-                "same_symbol_protection": state.risk.same_symbol_protection,
-            }
-        )
-    with exec_col:
-        st.write(
-            {
-                "order_type": state.execution.order_type,
-                "bracket_enabled": state.execution.bracket_enabled,
-                "take_profit_percent": state.execution.take_profit_percent,
-                "stop_loss_percent": state.execution.stop_loss_percent,
-                "sizing_mode": state.execution.sizing_mode,
-                "quantity": state.execution.quantity,
-            }
-        )
+    first_col, second_col = st.columns(2)
+    for index, section in enumerate(review_payload.sections):
+        with first_col if index % 2 == 0 else second_col:
+            render_descriptive_section(section)
 
     st.markdown("#### Expected backend actions")
-    for action in expected_actions:
+    st.caption("This explains what the platform will do after the profile is saved and the session starts.")
+    for action in review_payload.expected_actions:
         st.write(f"- {action}")
 
-    st.markdown("#### Defaults vs customized")
-    st.write({"defaults_applied": review_flags["defaults"], "customized": review_flags["customized"]})
+    defaults_col, customized_col = st.columns(2)
+    with defaults_col:
+        render_descriptive_section(review_payload.defaults_section)
+    with customized_col:
+        render_descriptive_section(review_payload.customized_section)
     st.caption("Auto-save happens for profile and latest resolved session config before any launch action.")
 
     back_col, start_col, smoke_col, save_col = st.columns(4)
@@ -703,17 +744,17 @@ def _render_review_step(service: SetupWizardUIService, state: SetupWizardState) 
         result = service.start_session(state, generated_symbols=generated_symbols, smoke_only=False)
         st.session_state["wizard_last_action_result"] = result.model_dump(mode="json")
         st.success(result.message)
-        st.json(st.session_state["wizard_last_action_result"])
+        _render_action_result(st.session_state["wizard_last_action_result"])
     if smoke_col.button("Run smoke only", key=_wizard_state_key("review_smoke")):
         result = service.start_session(state, generated_symbols=generated_symbols, smoke_only=True)
         st.session_state["wizard_last_action_result"] = result.model_dump(mode="json")
         st.success(result.message)
-        st.json(st.session_state["wizard_last_action_result"])
+        _render_action_result(st.session_state["wizard_last_action_result"])
     if save_col.button("Save and exit", key=_wizard_state_key("review_save_exit")):
         result = service.save_and_exit(state, generated_symbols=generated_symbols)
         st.session_state["wizard_last_action_result"] = result.model_dump(mode="json")
         st.success(result.message)
-        st.json(st.session_state["wizard_last_action_result"])
+        _render_action_result(st.session_state["wizard_last_action_result"])
 
 
 def _handle_next(service: SetupWizardUIService) -> None:
@@ -739,6 +780,7 @@ def _handle_next(service: SetupWizardUIService) -> None:
             st.error(str(exc))
             return
         _set_wizard_state(state)
+        set_selected_profile_name(state.profile.profile_name)
         st.session_state["wizard_visibility_mode"] = state.visibility_mode
         _bump_form_version()
         st.session_state["wizard_step"] = step + 1
@@ -791,6 +833,7 @@ elif state is None:
     st.stop()
 else:
     state.visibility_mode = visibility_mode
+    set_selected_profile_name(state.profile.profile_name)
     if current_step == 1:
         _render_strategy_step(wizard_service, payload, state)
     elif current_step == 2:
@@ -821,5 +864,4 @@ if current_step < len(STEPS) - 1:
     )
 
 if "wizard_last_action_result" in st.session_state and current_step != 7:
-    st.subheader("Latest wizard action")
-    st.json(st.session_state["wizard_last_action_result"])
+    _render_action_result(st.session_state["wizard_last_action_result"])

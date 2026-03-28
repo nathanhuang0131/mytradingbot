@@ -52,6 +52,15 @@ def _write_runtime_artifacts(tmp_path: Path, *, predicted_return: float = 0.012)
                     "order_book_imbalance": 0.35,
                     "liquidity_sweep_detected": False,
                     "volatility_regime": "normal",
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bullish",
+                        "long_allowed": True,
+                        "short_allowed": False,
+                        "reason": "close_above_vwap_and_fast_above_slow"
+                    },
                     "timestamp": generated_at.isoformat(),
                 }
             ]
@@ -138,6 +147,15 @@ def test_paper_loop_auto_refreshes_inputs_and_reports_ready_state(tmp_path) -> N
                         "order_book_imbalance": 0.35,
                         "liquidity_sweep_detected": False,
                         "volatility_regime": "normal",
+                        "higher_timeframe_trend": {
+                            "source_timeframe": "15m",
+                            "fast_ma_length": 5,
+                            "slow_ma_length": 10,
+                            "state": "bullish",
+                            "long_allowed": True,
+                            "short_allowed": False,
+                            "reason": "close_above_vwap_and_fast_above_slow"
+                        },
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 ]

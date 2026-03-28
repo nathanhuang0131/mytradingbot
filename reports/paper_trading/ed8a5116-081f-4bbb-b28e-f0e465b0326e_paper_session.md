@@ -6,13 +6,19 @@
 - broker_mode: `alpaca_paper_api`
 - broker_description: `Alpaca paper API broker`
 - api_base_url: `https://paper-api.alpaca.markets`
-- external_broker_submission_enabled: `true`
+- external_broker_submission_enabled: `false`
 - ownership_mode: `bot_owned_only`
-- orders: `1`
-- fills: `0`
-- open positions: `2`
+- orders: `3`
+- fills: `2`
+- open positions: `0`
 - foreign_open_orders: `64`
 - foreign_open_positions: `3`
+- market_snapshot_ready: `None`
+- market_snapshot_age_seconds: `None`
+- predictions_ready: `None`
+- predictions_age_seconds: `None`
+- decision_pipeline_ready: `None`
+- decision_block_reason: `None`
 - incidents: `1`
 - no_trade_success: `False`
 

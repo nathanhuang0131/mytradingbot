@@ -179,11 +179,11 @@ class RuntimeSafetySettings(BaseModel):
     max_consecutive_broker_rejects: int = 3
     max_consecutive_execution_failures: int = 3
     max_consecutive_replace_stop_failures: int = 3
-    supervised_loop_interval_seconds: int = 60
+    supervised_loop_interval_seconds: int = 300
     auto_refresh_inputs_in_loop: bool = True
     market_refresh_interval_seconds: int = 300
     dataset_refresh_interval_seconds: int = 1800
-    prediction_refresh_interval_seconds: int = 1800
+    prediction_refresh_interval_seconds: int = 600
 
 
 class TrainingSettings(BaseModel):
@@ -219,8 +219,20 @@ class QlibSettings(BaseModel):
 class ScalpingBracketSettings(BaseModel):
     """Bracket-planning controls for scalping."""
 
-    predicted_return_threshold: float = 0.005
+    predicted_return_threshold: float = 0.0008
     confidence_threshold: float = 0.6
+    top_n_per_cycle: int = 3
+    edge_after_cost_min_buffer: float = 0.0005
+    max_spread_bps: float = 6.0
+    min_liquidity_score: float = 0.5
+    max_liquidity_stress: float = 0.7
+    cooldown_minutes: int = 10
+    flatten_near_close_minutes: int = 10
+    higher_timeframe_filter_enabled: bool = True
+    higher_timeframe_source_timeframe: str = "15m"
+    higher_timeframe_fast_ma_length: int = 5
+    higher_timeframe_slow_ma_length: int = 10
+    enable_pseudo_order_book_gate: bool = False
     minimum_reward_risk_ratio: float = 1.4
     estimated_slippage_bps: float = 2.5
     estimated_fee_per_share: float = 0.0

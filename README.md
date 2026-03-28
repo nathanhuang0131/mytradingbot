@@ -12,18 +12,18 @@ MyTradingBot Next is a qlib-first, dashboard-first quant trading platform with a
 ## Works Without `pyqlib`
 
 - `app/app.py`
-- `app/pages/01_Dashboard.py`
+- `app/pages/00_Setup_Wizard.py`
 - `app/pages/02_Strategy_Control.py`
-- `app/pages/04_Paper_Trading.py` when explicit prediction and market snapshot artifacts are provided
+- `app/pages/08_Status_Reference.py`
 - `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
 - `scripts/run_daily_maintenance.py --action download` and `scripts/run_daily_maintenance.py --action update` only if Alpaca credentials and `alpaca-py` are available
 
 ## Works Without Alpaca Credentials
 
 - `app/app.py`
-- `app/pages/01_Dashboard.py`
+- `app/pages/00_Setup_Wizard.py`
 - `app/pages/02_Strategy_Control.py`
-- `app/pages/04_Paper_Trading.py` with explicit artifacts
+- `app/pages/08_Status_Reference.py`
 - `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
 - `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, and `scripts/refresh_predictions.py` only if repo-local normalized data and `pyqlib` are already available
 
@@ -141,10 +141,27 @@ Fields marked with `Recommended default` are safe to leave unchanged for most op
 
 The `Alpha & Model` step now exposes the scalping qlib gates directly:
 
-- `Predicted return threshold (%)` default: `0.50%`
+- `Predicted return threshold (%)` default: `0.08%`
 - `Confidence threshold` default: `0.60`
+- `Top-N approvals per cycle` default: `3`
+- `Minimum edge after cost (%)` default: `0.05%`
+- `Prediction refresh cadence` default: `600 seconds`
+- `Cooldown after exit` default: `10 minutes`
 
-Lower them to admit more candidates, or raise them to tighten symbol selection before execution.
+The overnight scalping path also keeps the spread proxy at `6.0` bps by default, requires higher-timeframe directional alignment from `15m` bars with `EMA(5)` vs `EMA(10)`, and leaves the pseudo order-book gate disabled by default.
+
+Smarter selection is preferred over blindly increasing trade count. In the current equities path, the platform uses quotes/spread proxies, VWAP, and normalized bars. It does not pretend to have a true Alpaca stock L2 order book. Candidate approval therefore combines:
+
+- qlib predicted return and confidence
+- expected edge after cost
+- spread quality
+- liquidity quality
+- higher-timeframe trend alignment
+- bracket reward/risk quality
+
+`edge after cost` means the directional predicted return after subtracting estimated spread, slippage, configured per-share fees, and a lightweight equities regulatory-fee hook. A candidate must clear a positive buffer, not merely scrape above zero.
+
+The lower predicted-return default is a controlled throughput adjustment for the 5-minute scalping horizon. The loop still wakes every `300` seconds, but predictions now refresh every `600` seconds by default so the system is not constantly chasing a refresh path that often takes longer than one loop interval. The smarter top-N and trend-alignment path improves selection discipline, not profitability guarantees.
 
 The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
 ## Canonical Institutional Runtime
@@ -224,10 +241,21 @@ After an overnight run, inspect:
 - `reports/analytics/closed_trades.csv`
 - `reports/analytics/pnl_attribution.csv`
 - `reports/analytics/pnl_summary.md`
+- `reports/analytics/<session_id>_analytics.csv`
+- `reports/analytics/<session_id>_analytics.md`
 - `reports/paper_trading/`
 - `reports/signals/`
 
 `reports/analytics/closed_trades.csv` contains only realized, closed trades derived from stored entry and exit fills. `reports/analytics/pnl_attribution.csv` aggregates realized P&L and win rate by symbol, strategy, and `signal_source`.
+
+The per-session analytics files summarize:
+
+- reject counts by reason
+- approved symbols by frequency
+- symbols blocked by threshold, spread, and higher-timeframe trend alignment
+- highest-ranked symbols
+- positive-return names that still had negative edge after cost
+- edge-after-cost distribution
 
 ## Local Paper Broker Vs Alpaca Paper Account
 

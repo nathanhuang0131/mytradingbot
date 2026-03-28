@@ -69,10 +69,18 @@ Fields marked `Recommended default` are the safe operator defaults. Basic mode i
 
 Use the `Alpha & Model` step to adjust the qlib entry gates for scalping:
 
-- `Predicted return threshold (%)` default: `0.50%`
+- `Predicted return threshold (%)` default: `0.08%`
 - `Confidence threshold` default: `0.60`
+- `Top-N approvals per cycle` default: `3`
+- `Minimum edge after cost (%)` default: `0.05%`
+- `Prediction refresh cadence` default: `600 seconds`
+- `Cooldown after exit` default: `10 minutes`
 
-Lowering them allows more symbols through. Raising them makes the qlib filter stricter.
+The overnight scalping profile keeps the spread proxy at `6.0` bps, applies a `15m` higher-timeframe trend filter using `EMA(5)` and `EMA(10)`, and keeps the pseudo order-book gate disabled by default.
+
+Smarter selection is preferred over simply chasing more trades. The runtime now ranks only hard-filter-eligible names and keeps the best few per cycle by combining predicted return, confidence, edge after cost, spread quality, liquidity quality, higher-timeframe alignment, and bracket reward/risk. In the equities path, this is based on bars and quote-level spread proxies, not a fabricated stock L2 book.
+
+`edge after cost` is the directional predicted return minus estimated spread, slippage, configured per-share fees, and the lightweight equities regulatory fee hook. It is a throughput and selection discipline control, not a profitability guarantee.
 
 ## Canonical Institutional Order
 
@@ -184,8 +192,9 @@ Inspect:
 2. Check the phase capability snapshot and prediction freshness.
 3. Use `app/pages/03_Data_Management.py` for phase-2 and phase-3 actions.
 4. Use `app/pages/09_Trading_Universe.py` to review and save the final active universe for the selected profile.
-5. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
-6. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
+5. Use `app/pages/00_Setup_Wizard.py` to save the selected profile and launch sessions.
+6. Use `app/pages/08_Status_Reference.py` to review the saved profile state, artifact readiness, and recent Trading Track activity.
+7. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
 
 ## If Phase 2 Fails
 
@@ -260,7 +269,13 @@ For each symbol considered by the strategy, inspect:
 - side considered
 - whether bracket logic was evaluated
 - raw qlib score
+- confidence
 - predicted return / target return
+- spread proxy
+- liquidity score
+- VWAP relationship result
+- bracket expectancy result
+- rejection reasons list
 - filter outcomes
 - risk sizing result
 - bracket calculation result
@@ -284,16 +299,20 @@ Expected final decision statuses include:
 
 Common rejection reason codes include:
 
+- `signal_direction_conflict`
 - `score_below_threshold`
 - `target_return_below_threshold`
+- `vwap_relationship_blocked`
 - `spread_too_wide`
 - `liquidity_too_low`
+- `liquidity_stress_too_high`
 - `volatility_regime_blocked`
 - `imbalance_not_confirmed`
 - `liquidity_sweep_not_confirmed`
 - `risk_budget_exceeded`
 - `position_exists`
 - `cooldown_active`
+- `near_close_window_blocked`
 - `bracket_invalid`
 - `broker_rejected`
 - `missing_market_data`
@@ -313,6 +332,7 @@ When a run places zero trades:
 3. open the latest paper-trading session summary
 4. inspect rejection counts by reason
 5. inspect the detailed signal audit for each candidate
+6. inspect the per-session analytics markdown/CSV for trend blockers, top-ranked symbols, and edge-after-cost distribution
 6. determine whether the issue is:
    - normal selectivity
    - insufficient candidate quality
@@ -332,8 +352,10 @@ Use this sequence:
 3. check latest `reports/signals/` audit JSON/CSV
 4. review rejection counts by reason
 5. confirm whether any candidates passed score thresholds
-6. confirm whether spread/liquidity/microstructure filters are too restrictive
-7. confirm whether risk sizing or bracket validation blocked otherwise valid entries
+6. confirm whether edge after cost stayed positive after spread/slippage/fee drag
+7. confirm whether higher-timeframe trend alignment blocked otherwise attractive lower-timeframe entries
+8. confirm whether spread/liquidity filters are too restrictive
+9. confirm whether risk sizing, top-N selection, or bracket validation blocked otherwise valid entries
 
 ### Operational expectation
 

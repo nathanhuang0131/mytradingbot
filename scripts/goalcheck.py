@@ -6,20 +6,25 @@ from mytradingbot.brokers.alpaca import AlpacaBrokerScaffold
 from mytradingbot.orchestration.service import TradingPlatformService
 
 
+def _current_streamlit_page_paths(project_root: Path) -> list[Path]:
+    return [
+        project_root / "app/app.py",
+        project_root / "app/pages/00_Setup_Wizard.py",
+        project_root / "app/pages/02_Strategy_Control.py",
+        project_root / "app/pages/03_Data_Management.py",
+        project_root / "app/pages/05_Live_Trading.py",
+        project_root / "app/pages/06_LLM_Copilot.py",
+        project_root / "app/pages/07_Diagnostics.py",
+        project_root / "app/pages/08_Status_Reference.py",
+        project_root / "app/pages/09_Trading_Universe.py",
+    ]
+
+
 def main() -> int:
     project_root = Path(__file__).resolve().parents[1]
     service = TradingPlatformService.bootstrap_default()
     capabilities = service.get_capabilities()
-    page_paths = [
-        project_root / "app/pages/01_Dashboard.py",
-        project_root / "app/pages/02_Strategy_Control.py",
-        project_root / "app/pages/03_Data_Management.py",
-        project_root / "app/pages/04_Paper_Trading.py",
-        project_root / "app/pages/05_Live_Trading.py",
-        project_root / "app/pages/06_LLM_Copilot.py",
-        project_root / "app/pages/07_Diagnostics.py",
-        project_root / "app/pages/08_Settings.py",
-    ]
+    page_paths = _current_streamlit_page_paths(project_root)
 
     checks = {
         "strategies": service.get_strategy_names(),

@@ -50,7 +50,36 @@ def test_setup_wizard_service_applies_presets_with_real_defaults(tmp_path) -> No
     assert state.strategy.session_mode == "loop"
     assert state.refresh.auto_refresh_market_snapshot is True
     assert state.refresh.auto_refresh_predictions is True
+    assert state.refresh.prediction_refresh_interval_seconds == 600
     assert state.alpha.side_mode == "both"
+    assert state.alpha.predicted_return_threshold == 0.0008
+    assert state.alpha.confidence_threshold == 0.6
+    assert state.alpha.top_n_per_cycle == 3
+    assert state.alpha.edge_after_cost_min_buffer == 0.0005
+    assert state.risk.higher_timeframe_filter_enabled is True
+    assert state.risk.higher_timeframe_source_timeframe == "15m"
+    assert state.risk.higher_timeframe_fast_ma_length == 5
+    assert state.risk.higher_timeframe_slow_ma_length == 10
+    assert state.risk.disable_pseudo_order_book_gate is True
+    assert state.risk.cooldown_minutes == 10
+
+
+def test_setup_wizard_service_exposes_overnight_recommended_defaults(tmp_path) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    service = SetupWizardService(settings=settings)
+
+    assert service.recommended_defaults["refresh.loop_interval_seconds"] == 300
+    assert service.recommended_defaults["refresh.prediction_refresh_interval_seconds"] == 600
+    assert service.recommended_defaults["alpha.predicted_return_threshold"] == 0.0008
+    assert service.recommended_defaults["alpha.confidence_threshold"] == 0.6
+    assert service.recommended_defaults["alpha.top_n_per_cycle"] == 3
+    assert service.recommended_defaults["alpha.edge_after_cost_min_buffer"] == 0.0005
+    assert service.recommended_defaults["risk.higher_timeframe_filter_enabled"] is True
+    assert service.recommended_defaults["risk.higher_timeframe_source_timeframe"] == "15m"
+    assert service.recommended_defaults["risk.higher_timeframe_fast_ma_length"] == 5
+    assert service.recommended_defaults["risk.higher_timeframe_slow_ma_length"] == 10
+    assert service.recommended_defaults["risk.disable_pseudo_order_book_gate"] is True
+    assert service.recommended_defaults["risk.cooldown_minutes"] == 10
 
 
 def test_setup_wizard_service_keep_old_symbols_preserves_existing_manifest(tmp_path) -> None:

@@ -353,6 +353,93 @@ def test_alpaca_paper_broker_reconciliation_restores_bot_owned_short_position(tm
     assert store.list_positions()[0].quantity == -5.0
 
 
+def test_alpaca_paper_broker_reconciliation_propagates_parent_session_to_child_legs(tmp_path) -> None:
+    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+    from mytradingbot.runtime.models import OrderLifecycleRecord
+    from mytradingbot.runtime.store import RuntimeStateStore
+
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    settings.broker.alpaca_api_key = "key"
+    settings.broker.alpaca_secret_key = "secret"
+    fake_client = _FakeTradingClient()
+    fake_client.orders = [
+        SimpleNamespace(
+            id="bot-parent",
+            client_order_id="SCALPING-RDY-BUY-202603280350",
+            symbol="RDY",
+            side=SimpleNamespace(value="buy"),
+            qty="1",
+            filled_qty="1",
+            filled_avg_price="13.59",
+            status=SimpleNamespace(value="filled"),
+            submitted_at=datetime(2026, 3, 28, 3, 50, tzinfo=timezone.utc),
+            filled_at=datetime(2026, 3, 28, 3, 50, tzinfo=timezone.utc),
+            order_class=SimpleNamespace(value="bracket"),
+            limit_price=None,
+            stop_price=None,
+            legs=[
+                SimpleNamespace(
+                    id="bot-child-stop",
+                    client_order_id="child-stop-1",
+                    symbol="RDY",
+                    side=SimpleNamespace(value="sell"),
+                    qty="1",
+                    filled_qty="1",
+                    filled_avg_price="13.48",
+                    status=SimpleNamespace(value="filled"),
+                    submitted_at=datetime(2026, 3, 28, 6, 45, tzinfo=timezone.utc),
+                    filled_at=datetime(2026, 3, 28, 6, 45, tzinfo=timezone.utc),
+                    order_class=SimpleNamespace(value="bracket"),
+                    limit_price=None,
+                    stop_price="13.489",
+                    legs=[],
+                )
+            ],
+        )
+    ]
+    fake_client.positions = []
+
+    store = RuntimeStateStore(settings=settings)
+    store.record_order(
+        OrderLifecycleRecord(
+            order_id="bot-parent",
+            session_id="session-1",
+            run_id="run-1",
+            strategy="scalping",
+            mode=RuntimeMode.PAPER,
+            broker_mode="alpaca_paper_api",
+            ownership_class="bot_owned",
+            symbol="RDY",
+            side="buy",
+            quantity=1.0,
+            client_order_id="SCALPING-RDY-BUY-202603280350",
+            status="filled",
+            submitted_at=datetime(2026, 3, 28, 3, 50, tzinfo=timezone.utc),
+            avg_fill_price=13.59,
+            metadata={"broker_order_class": "bracket"},
+        )
+    )
+    broker = AlpacaPaperBroker(
+        settings=settings,
+        runtime_store=store,
+        trading_client_factory=lambda _settings: fake_client,
+    )
+
+    broker.reconcile_runtime_state(strategy_name="scalping")
+
+    child_order = next(
+        record for record in store.list_order_records() if record.order_id == "bot-child-stop"
+    )
+    child_fill = next(
+        record for record in store.list_fill_records() if record.order_id == "bot-child-stop"
+    )
+
+    assert child_order.session_id == "session-1"
+    assert child_order.run_id == "run-1"
+    assert child_fill.session_id == "session-1"
+    assert child_fill.run_id == "run-1"
+
+
 def test_alpaca_paper_broker_reconciliation_clears_stale_managed_positions_absent_from_alpaca(tmp_path) -> None:
     from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
     from mytradingbot.core.models import PositionSnapshot

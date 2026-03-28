@@ -51,21 +51,28 @@ DecisionStatus = Literal[
 ]
 
 RejectionReasonCode = Literal[
+    "signal_direction_conflict",
     "score_below_threshold",
     "target_return_below_threshold",
+    "edge_after_cost_below_buffer",
+    "vwap_relationship_blocked",
+    "higher_timeframe_trend_blocked",
     "spread_too_wide",
     "liquidity_too_low",
+    "liquidity_stress_too_high",
     "volatility_regime_blocked",
     "imbalance_not_confirmed",
     "liquidity_sweep_not_confirmed",
     "risk_budget_exceeded",
     "position_exists",
     "cooldown_active",
+    "near_close_window_blocked",
     "bracket_invalid",
     "broker_rejected",
     "missing_market_data",
     "invalid_signal_payload",
     "execution_guard_blocked",
+    "top_n_selection_cutoff",
     "no_candidate_from_predictions",
     "stale_predictions",
     "stale_market_snapshot",
@@ -130,9 +137,28 @@ class DecisionAuditRecord(BaseModel):
     bracket_considered: bool = False
     signal_source: SignalSource = "no_valid_signal"
     qlib_raw_score: float | None = None
+    confidence: float | None = None
     predicted_return: float | None = None
+    gross_predicted_return: float | None = None
     target_return: float | None = None
+    spread_bps: float | None = None
+    estimated_spread_cost: float | None = None
+    estimated_slippage_cost: float | None = None
+    estimated_fee_cost: float | None = None
+    estimated_regulatory_fee_cost: float | None = None
+    estimated_total_cost: float | None = None
+    expected_edge_after_cost: float | None = None
+    liquidity_score: float | None = None
+    liquidity_stress: float | None = None
+    vwap_alignment_passed: bool | None = None
+    higher_timeframe_state: str | None = None
+    higher_timeframe_reason: str | None = None
+    higher_timeframe_source_timeframe: str | None = None
+    bracket_expectancy_passed: bool | None = None
+    quality_score: float | None = None
     candidate_rank: int | None = None
+    selection_rank: int | None = None
+    selected_in_top_n: bool | None = None
     prediction_artifact_path: str
     model_artifact_path: str
     dataset_artifact_path: str
@@ -142,6 +168,7 @@ class DecisionAuditRecord(BaseModel):
     final_decision_status: DecisionStatus = "no_action"
     final_rejection_reason_code: RejectionReasonCode | None = None
     final_rejection_reason_detail: str | None = None
+    rejection_reasons: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -181,9 +208,21 @@ class SignalOutcomeLedgerRow(BaseModel):
     signal_source: SignalSource
     final_decision_status: DecisionStatus
     rejection_reason_code: RejectionReasonCode | None = None
+    confidence: float | None = None
     predicted_return: float | None = None
+    gross_predicted_return: float | None = None
     qlib_raw_score: float | None = None
+    spread_bps: float | None = None
+    expected_edge_after_cost: float | None = None
+    quality_score: float | None = None
+    liquidity_score: float | None = None
+    vwap_alignment_passed: bool | None = None
+    bracket_expectancy_passed: bool | None = None
+    higher_timeframe_state: str | None = None
+    rejection_reasons: list[str] = Field(default_factory=list)
     candidate_rank: int | None = None
+    selection_rank: int | None = None
+    selected_in_top_n: bool | None = None
     actual_exit_reason: str | None = None
     realized_pnl: float | None = None
 

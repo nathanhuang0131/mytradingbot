@@ -413,14 +413,57 @@ class RuntimeStateStore:
             rows = connection.execute("SELECT payload_json FROM orders ORDER BY submitted_at").fetchall()
         return [OrderLifecycleRecord.model_validate_json(row["payload_json"]) for row in rows]
 
+    def list_order_records_for_session(self, session_id: str) -> list[OrderLifecycleRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload_json FROM orders WHERE session_id = ? ORDER BY submitted_at",
+                (session_id,),
+            ).fetchall()
+        return [OrderLifecycleRecord.model_validate_json(row["payload_json"]) for row in rows]
+
+    def list_orders_for_session(self, session_id: str) -> list[BrokerOrder]:
+        orders: list[BrokerOrder] = []
+        for record in self.list_order_records_for_session(session_id):
+            orders.append(
+                BrokerOrder(
+                    order_id=record.order_id,
+                    symbol=record.symbol,
+                    side=record.side,  # type: ignore[arg-type]
+                    quantity=record.quantity,
+                    mode=record.mode,
+                    client_order_id=record.client_order_id,
+                    status=_normalize_broker_order_status(record.status),
+                    submitted_at=record.submitted_at,
+                    avg_fill_price=record.avg_fill_price,
+                    metadata=record.metadata,
+                )
+            )
+        return orders
+
     def list_fills(self) -> list[FillEvent]:
         with self._connect() as connection:
             rows = connection.execute("SELECT payload_json FROM fills ORDER BY filled_at").fetchall()
         return [FillEvent.model_validate_json(row["payload_json"]) for row in rows]
 
+    def list_fills_for_session(self, session_id: str) -> list[FillEvent]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload_json FROM fills WHERE session_id = ? ORDER BY filled_at",
+                (session_id,),
+            ).fetchall()
+        return [FillEvent.model_validate_json(row["payload_json"]) for row in rows]
+
     def list_fill_records(self) -> list[FillLifecycleRecord]:
         with self._connect() as connection:
             rows = connection.execute("SELECT payload_json FROM fills ORDER BY filled_at").fetchall()
+        return [FillLifecycleRecord.model_validate_json(row["payload_json"]) for row in rows]
+
+    def list_fill_records_for_session(self, session_id: str) -> list[FillLifecycleRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload_json FROM fills WHERE session_id = ? ORDER BY filled_at",
+                (session_id,),
+            ).fetchall()
         return [FillLifecycleRecord.model_validate_json(row["payload_json"]) for row in rows]
 
     def list_positions(self) -> list[PositionSnapshot]:
@@ -442,6 +485,16 @@ class RuntimeStateStore:
         with self._connect() as connection:
             rows = connection.execute("SELECT payload_json FROM session_reports ORDER BY completed_at").fetchall()
         return [PaperTradingSessionReport.model_validate_json(row["payload_json"]) for row in rows]
+
+    def get_session_report(self, session_id: str) -> PaperTradingSessionReport | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM session_reports WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return PaperTradingSessionReport.model_validate_json(row["payload_json"])
 
     def list_observed_orders(self) -> list[ObservedOrderRecord]:
         with self._connect() as connection:

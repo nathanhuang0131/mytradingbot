@@ -5,6 +5,21 @@ from pathlib import Path
 from mytradingbot.orchestration.service import TradingPlatformService
 
 
+def _current_streamlit_pages_present(project_root: Path) -> bool:
+    required_paths = [
+        project_root / "app/app.py",
+        project_root / "app/pages/00_Setup_Wizard.py",
+        project_root / "app/pages/02_Strategy_Control.py",
+        project_root / "app/pages/03_Data_Management.py",
+        project_root / "app/pages/05_Live_Trading.py",
+        project_root / "app/pages/06_LLM_Copilot.py",
+        project_root / "app/pages/07_Diagnostics.py",
+        project_root / "app/pages/08_Status_Reference.py",
+        project_root / "app/pages/09_Trading_Universe.py",
+    ]
+    return all(path.exists() for path in required_paths)
+
+
 def main() -> int:
     project_root = Path(__file__).resolve().parents[1]
     service = TradingPlatformService.bootstrap_default()
@@ -12,7 +27,7 @@ def main() -> int:
     payload = {
         "import_ok": True,
         "strategies": service.get_strategy_names(),
-        "pages_present": (project_root / "app/pages/01_Dashboard.py").exists(),
+        "pages_present": _current_streamlit_pages_present(project_root),
         "live_trading_enabled": service.settings.runtime.live_trading_enabled,
         "institutional_pipeline_present": (project_root / "scripts/run_institutional_pipeline.py").exists(),
         "alpha_training_present": (project_root / "scripts/run_alpha_robust_training.py").exists(),

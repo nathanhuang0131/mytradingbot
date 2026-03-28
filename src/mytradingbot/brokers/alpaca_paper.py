@@ -257,6 +257,7 @@ class AlpacaPaperBroker(BaseBroker):
         )
         flattened_orders = self._flatten_orders(response_orders)
         ownership_by_order_id: dict[str, OwnershipClass] = {}
+        resolved_records_by_order_id: dict[str, OrderLifecycleRecord] = {}
 
         observed_orders: list[ObservedOrderRecord] = []
         bot_owned_symbols: set[str] = set()
@@ -272,11 +273,25 @@ class AlpacaPaperBroker(BaseBroker):
             ownership_by_order_id[order_id] = ownership_class
             if ownership_class == "bot_owned":
                 bot_owned_order_count += 1
+                existing_record = known_orders_by_id.get(order_id)
+                if (
+                    parent_order_id is not None
+                    and (
+                        existing_record is None
+                        or not existing_record.session_id
+                        or not existing_record.run_id
+                    )
+                ):
+                    existing_record = (
+                        resolved_records_by_order_id.get(parent_order_id)
+                        or known_orders_by_id.get(parent_order_id)
+                    )
                 order_record = self._record_from_alpaca_order(
                     order,
-                    existing_record=known_orders_by_id.get(order_id),
+                    existing_record=existing_record,
                 )
                 self.runtime_store.record_order(order_record)
+                resolved_records_by_order_id[order_id] = order_record
                 bot_owned_symbols.add(order_record.symbol)
                 filled_qty = _float_or_zero(getattr(order, "filled_qty", None))
                 avg_fill_price = _float_or_none(getattr(order, "filled_avg_price", None))

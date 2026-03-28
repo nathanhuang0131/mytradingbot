@@ -9,7 +9,12 @@ APP_DIR = Path(__file__).resolve().parents[1]
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
-from components.runtime import get_platform_service, get_selected_strategy
+from components.runtime import (
+    get_platform_service,
+    get_selected_profile_name,
+    get_selected_strategy,
+    set_selected_profile_name,
+)
 from mytradingbot.ui_services.trading_universe import TradingUniverseUIService
 
 
@@ -40,8 +45,13 @@ if not payload.profile_names:
 profile_name = st.selectbox(
     "Profile",
     options=payload.profile_names,
-    index=payload.profile_names.index(payload.default_profile_name or payload.profile_names[0]),
+    index=payload.profile_names.index(
+        get_selected_profile_name()
+        if get_selected_profile_name() in payload.profile_names
+        else (payload.default_profile_name or payload.profile_names[0])
+    ),
 )
+set_selected_profile_name(profile_name)
 selection_mode = st.radio(
     "Final trading universe mode",
     options=payload.selection_modes,
@@ -157,4 +167,11 @@ if preview_payload:
             include_etfs=include_etfs,
         )
         st.success(f"Saved {len(result.final_symbols)} symbols to the active trading universe.")
-        st.json(result.model_dump(mode="json"))
+        st.markdown(f"**Active universe file:** {result.active_symbols_path}")
+        if result.latest_session_config_path:
+            st.markdown(
+                f"**Latest session config updated:** {result.latest_session_config_path}"
+            )
+        st.caption(
+            "The saved final universe becomes the profile-scoped active symbol manifest for future session runs."
+        )

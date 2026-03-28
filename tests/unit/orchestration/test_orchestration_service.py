@@ -46,17 +46,26 @@ def _write_runtime_artifacts(tmp_path, *, predicted_return: float = 0.012) -> tu
     market_path.write_text(
         json.dumps(
             [
-                {
-                    "symbol": "AAPL",
-                    "last_price": 100.0,
-                    "vwap": 99.4,
-                    "spread_bps": 1.0,
+                        {
+                            "symbol": "AAPL",
+                            "last_price": 100.0,
+                            "vwap": 99.4,
+                            "spread_bps": 1.0,
                     "volume": 1500000,
                     "liquidity_score": 0.88,
                     "liquidity_stress": 0.2,
                     "order_book_imbalance": 0.35,
                     "liquidity_sweep_detected": False,
                     "volatility_regime": "normal",
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bullish",
+                        "long_allowed": True,
+                        "short_allowed": False,
+                        "reason": "close_above_vwap_and_fast_above_slow",
+                    },
                     "timestamp": generated_at.isoformat(),
                 }
             ]
@@ -111,6 +120,15 @@ def _write_dual_direction_artifacts(tmp_path: Path) -> tuple[Path, Path]:
                     "order_book_imbalance": 0.35,
                     "liquidity_sweep_detected": False,
                     "volatility_regime": "normal",
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bullish",
+                        "long_allowed": True,
+                        "short_allowed": False,
+                        "reason": "close_above_vwap_and_fast_above_slow",
+                    },
                     "timestamp": generated_at.isoformat(),
                 },
                 {
@@ -124,6 +142,15 @@ def _write_dual_direction_artifacts(tmp_path: Path) -> tuple[Path, Path]:
                     "order_book_imbalance": -0.35,
                     "liquidity_sweep_detected": False,
                     "volatility_regime": "normal",
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bearish",
+                        "long_allowed": False,
+                        "short_allowed": True,
+                        "reason": "close_below_vwap_and_fast_below_slow",
+                    },
                     "timestamp": generated_at.isoformat(),
                 },
             ]
@@ -170,7 +197,7 @@ def _write_generated_dual_direction_artifacts(tmp_path: Path, monkeypatch) -> tu
         ]
     )
     model_path.write_bytes(
-        pickle.dumps(_PredictableModel({"AAPL": 0.02, "MSFT": -0.05}))
+        pickle.dumps(_PredictableModel({"AAPL": 0.008, "MSFT": -0.009}))
     )
 
     monkeypatch.setattr(
@@ -195,6 +222,15 @@ def _write_generated_dual_direction_artifacts(tmp_path: Path, monkeypatch) -> tu
                     "order_book_imbalance": 0.35,
                     "liquidity_sweep_detected": False,
                     "volatility_regime": "normal",
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bullish",
+                        "long_allowed": True,
+                        "short_allowed": False,
+                        "reason": "close_above_vwap_and_fast_above_slow",
+                    },
                     "timestamp": generated_at.isoformat(),
                 },
                 {
@@ -208,6 +244,15 @@ def _write_generated_dual_direction_artifacts(tmp_path: Path, monkeypatch) -> tu
                     "order_book_imbalance": -0.35,
                     "liquidity_sweep_detected": False,
                     "volatility_regime": "normal",
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bearish",
+                        "long_allowed": False,
+                        "short_allowed": True,
+                        "reason": "close_below_vwap_and_fast_below_slow",
+                    },
                     "timestamp": generated_at.isoformat(),
                 },
             ]
@@ -224,7 +269,7 @@ def _set_mtime(path: Path, *, minutes_ago: int) -> None:
 
 def test_run_session_writes_decision_audit_even_when_no_trade(tmp_path) -> None:
     settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
-    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.001)
+    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.0004)
     service = TradingPlatformService(
         settings=settings,
         qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
@@ -240,7 +285,7 @@ def test_run_session_writes_decision_audit_even_when_no_trade(tmp_path) -> None:
     assert audit_path.exists()
     assert session_path.exists()
     audit_payload = json.loads(audit_path.read_text(encoding="utf-8"))
-    assert audit_payload[0]["signal_source"] == "qlib_candidate_only"
+    assert audit_payload[0]["signal_source"] == "qlib_plus_rules"
     assert audit_payload[0]["final_decision_status"] == "rejected"
 
 
@@ -361,13 +406,22 @@ def test_run_session_auto_refreshes_inputs_and_restores_readiness(tmp_path) -> N
                         "volume": 1500000,
                         "liquidity_score": 0.88,
                         "liquidity_stress": 0.2,
-                        "order_book_imbalance": 0.35,
-                        "liquidity_sweep_detected": False,
-                        "volatility_regime": "normal",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                ]
-            ),
+                            "order_book_imbalance": 0.35,
+                            "liquidity_sweep_detected": False,
+                            "volatility_regime": "normal",
+                            "higher_timeframe_trend": {
+                                "source_timeframe": "15m",
+                                "fast_ma_length": 5,
+                                "slow_ma_length": 10,
+                                "state": "bullish",
+                                "long_allowed": True,
+                                "short_allowed": False,
+                                "reason": "close_above_vwap_and_fast_above_slow",
+                            },
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    ]
+                ),
             encoding="utf-8",
         )
         return MarketDataPipelineResult(ok=True, message="market data refreshed")
@@ -507,3 +561,159 @@ def test_run_session_candidate_count_prefers_stronger_short_signal_by_absolute_s
     assert result.trade_attempts[0].strategy_outcome is not None
     assert result.trade_attempts[0].strategy_outcome.intent is not None
     assert result.trade_attempts[0].strategy_outcome.intent.side == "sell"
+
+
+def test_run_session_applies_top_n_selection_after_hard_filters(tmp_path) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    predictions_path = tmp_path / "predictions_top_n.json"
+    market_path = tmp_path / "market_top_n.json"
+    generated_at = datetime(2026, 3, 28, 1, 0, tzinfo=timezone.utc)
+    predictions_path.write_text(
+        json.dumps(
+            [
+                {
+                    "symbol": "AAPL",
+                    "score": 0.009,
+                    "predicted_return": 0.009,
+                    "confidence": 0.9,
+                    "rank": 1,
+                    "direction": "long",
+                    "horizon": "intraday",
+                    "generated_at": generated_at.isoformat(),
+                },
+                {
+                    "symbol": "MSFT",
+                    "score": 0.008,
+                    "predicted_return": 0.008,
+                    "confidence": 0.85,
+                    "rank": 2,
+                    "direction": "long",
+                    "horizon": "intraday",
+                    "generated_at": generated_at.isoformat(),
+                },
+                {
+                    "symbol": "NVDA",
+                    "score": 0.0075,
+                    "predicted_return": 0.0075,
+                    "confidence": 0.88,
+                    "rank": 3,
+                    "direction": "long",
+                    "horizon": "intraday",
+                    "generated_at": generated_at.isoformat(),
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    market_path.write_text(
+        json.dumps(
+            [
+                {
+                    "symbol": "AAPL",
+                    "last_price": 100.0,
+                    "vwap": 99.4,
+                    "spread_bps": 1.0,
+                    "volume": 1500000,
+                    "liquidity_score": 0.95,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": 0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bullish",
+                        "long_allowed": True,
+                        "short_allowed": False,
+                        "reason": "close_above_vwap_and_fast_above_slow"
+                    },
+                    "timestamp": generated_at.isoformat(),
+                },
+                {
+                    "symbol": "MSFT",
+                    "last_price": 100.0,
+                    "vwap": 99.5,
+                    "spread_bps": 1.1,
+                    "volume": 1400000,
+                    "liquidity_score": 0.82,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": 0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bullish",
+                        "long_allowed": True,
+                        "short_allowed": False,
+                        "reason": "close_above_vwap_and_fast_above_slow"
+                    },
+                    "timestamp": generated_at.isoformat(),
+                },
+                {
+                    "symbol": "NVDA",
+                    "last_price": 100.0,
+                    "vwap": 99.8,
+                    "spread_bps": 1.0,
+                    "volume": 1500000,
+                    "liquidity_score": 0.95,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": 0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bearish",
+                        "long_allowed": False,
+                        "short_allowed": True,
+                        "reason": "close_below_vwap_and_fast_below_slow"
+                    },
+                    "timestamp": generated_at.isoformat(),
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    runtime_service = RuntimeStateService(settings=settings)
+    wizard_service = SetupWizardService(settings=settings)
+    state = wizard_service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
+    state.alpha.side_mode = "both"
+    state.alpha.candidate_count = 3
+    state.alpha.top_n_per_cycle = 1
+    state.alpha.predicted_return_threshold = 0.0
+    state.alpha.confidence_threshold = 0.0
+    state.risk.higher_timeframe_filter_enabled = True
+    resolved_config = wizard_service.finalize_setup(state, generated_symbols=["AAPL", "MSFT", "NVDA"])
+
+    service = TradingPlatformService(
+        settings=settings,
+        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
+        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
+        runtime_state_service=runtime_service,
+    )
+
+    result = service.run_session(
+        strategy_name="scalping",
+        mode=RuntimeMode.PAPER,
+        session_config=resolved_config,
+        symbols_file=Path(resolved_config.active_symbols_path),
+    )
+
+    assert result.session_summary.trade_count == 1
+    audit_path = settings.paths.reports_signals_dir / f"{result.session_summary.session_id}_decision_audit.json"
+    audit_payload = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert any(
+        row["symbol"] == "MSFT"
+        and row["final_rejection_reason_detail"] == "top_n_selection_cutoff"
+        for row in audit_payload
+    )
+    assert any(
+        row["symbol"] == "NVDA"
+        and row["final_rejection_reason_detail"] == "higher_timeframe_trend_alignment"
+        for row in audit_payload
+    )

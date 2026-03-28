@@ -88,7 +88,7 @@ class RefreshPolicyProfile(BaseModel):
     loop_interval_seconds: int = 300
     stale_input_behavior: StaleInputBehavior = "block_trading"
     market_refresh_interval_seconds: int = 300
-    prediction_refresh_interval_seconds: int = 1800
+    prediction_refresh_interval_seconds: int = 600
     dataset_refresh_interval_seconds: int = 1800
     training_remains_separate: bool = True
     market_snapshot_max_age_minutes: int = 15
@@ -100,11 +100,13 @@ class AlphaModelProfile(BaseModel):
     side_mode: TradeSideMode = "both"
     refresh_predictions_before_run: bool = True
     candidate_count: int = 20
+    top_n_per_cycle: int = 3
     model_artifact_path: str | None = None
     long_threshold: float = 0.0
     short_threshold: float = 0.0
-    predicted_return_threshold: float = 0.005
+    predicted_return_threshold: float = 0.0008
     confidence_threshold: float = 0.6
+    edge_after_cost_min_buffer: float = 0.0005
 
 
 class RiskProfile(BaseModel):
@@ -114,11 +116,16 @@ class RiskProfile(BaseModel):
     same_symbol_protection: bool = True
     max_positions_long: int = 3
     max_positions_short: int = 2
-    cooldown_minutes: int = 15
+    cooldown_minutes: int = 10
     block_foreign_manual_exposure: bool = True
     shortability_gate_policy: Literal["required", "warn", "off"] = "required"
     reversal_policy: Literal["block", "allow_after_flatten", "allow_immediate"] = "block"
     regime_gating_enabled: bool = True
+    higher_timeframe_filter_enabled: bool = True
+    higher_timeframe_source_timeframe: str = "15m"
+    higher_timeframe_fast_ma_length: int = 5
+    higher_timeframe_slow_ma_length: int = 10
+    disable_pseudo_order_book_gate: bool = True
 
 
 class ExecutionProfile(BaseModel):

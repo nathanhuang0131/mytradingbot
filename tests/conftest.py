@@ -13,7 +13,13 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from mytradingbot.core.models import MarketSnapshot, QlibPrediction, SignalBundle, TradeIntent
+from mytradingbot.core.models import (
+    HigherTimeframeTrend,
+    MarketSnapshot,
+    QlibPrediction,
+    SignalBundle,
+    TradeIntent,
+)
 from mytradingbot.core.enums import RuntimeMode
 from mytradingbot.core.models import (
     ArtifactStatus,
@@ -48,6 +54,27 @@ def signal_bundle_factory():
             order_book_imbalance=overrides.get("order_book_imbalance", 0.35),
             liquidity_sweep_detected=overrides.get("liquidity_sweep_detected", False),
             volatility_regime=overrides.get("volatility_regime", "normal"),
+            higher_timeframe_trend=overrides.get(
+                "higher_timeframe_trend",
+                HigherTimeframeTrend(
+                    source_timeframe="15m",
+                    fast_ma_length=5,
+                    slow_ma_length=10,
+                    state="bullish" if overrides.get("direction", "long") == "long" else "bearish",
+                    long_allowed=overrides.get("direction", "long") == "long",
+                    short_allowed=overrides.get("direction", "long") == "short",
+                    reason=(
+                        "close_above_vwap_and_fast_above_slow"
+                        if overrides.get("direction", "long") == "long"
+                        else "close_below_vwap_and_fast_below_slow"
+                    ),
+                    latest_close=overrides.get("last_price", 100.0),
+                    latest_vwap=overrides.get("vwap", 99.4),
+                    fast_ma=overrides.get("last_price", 100.0),
+                    slow_ma=overrides.get("vwap", 99.4),
+                    slow_ma_slope_bps=5.0 if overrides.get("direction", "long") == "long" else -5.0,
+                ),
+            ),
         )
         metadata = {
             "cooldown_active": overrides.get("cooldown_active", False),

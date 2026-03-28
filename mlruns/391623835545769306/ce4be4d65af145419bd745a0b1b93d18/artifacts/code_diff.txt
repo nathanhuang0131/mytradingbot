@@ -1,0 +1,839 @@
+diff --git a/README.md b/README.md
+index e65fa04..9ee0f59 100644
+--- a/README.md
++++ b/README.md
+@@ -12,18 +12,18 @@ MyTradingBot Next is a qlib-first, dashboard-first quant trading platform with a
+ ## Works Without `pyqlib`
+ 
+ - `app/app.py`
+-- `app/pages/01_Dashboard.py`
++- `app/pages/00_Setup_Wizard.py`
+ - `app/pages/02_Strategy_Control.py`
+-- `app/pages/04_Paper_Trading.py` when explicit prediction and market snapshot artifacts are provided
++- `app/pages/08_Status_Reference.py`
+ - `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
+ - `scripts/run_daily_maintenance.py --action download` and `scripts/run_daily_maintenance.py --action update` only if Alpaca credentials and `alpaca-py` are available
+ 
+ ## Works Without Alpaca Credentials
+ 
+ - `app/app.py`
+-- `app/pages/01_Dashboard.py`
++- `app/pages/00_Setup_Wizard.py`
+ - `app/pages/02_Strategy_Control.py`
+-- `app/pages/04_Paper_Trading.py` with explicit artifacts
++- `app/pages/08_Status_Reference.py`
+ - `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
+ - `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, and `scripts/refresh_predictions.py` only if repo-local normalized data and `pyqlib` are already available
+ 
+diff --git a/app/app.py b/app/app.py
+index 13c3008..a66a12d 100644
+--- a/app/app.py
++++ b/app/app.py
+@@ -9,16 +9,17 @@ APP_DIR = Path(__file__).resolve().parent
+ if str(APP_DIR) not in sys.path:
+     sys.path.insert(0, str(APP_DIR))
+ 
++from components.descriptive_sections import render_descriptive_section
+ from components.runtime import get_platform_service
+ from mytradingbot.ui_services.dashboard import DashboardService
+ 
+-st.set_page_config(page_title="Dashboard", layout="wide")
++st.set_page_config(page_title="Dashboard Summary", layout="wide")
+ 
+ platform_service = get_platform_service()
+ payload = DashboardService(platform_service).get_dashboard_payload()
+ 
+-st.title("Dashboard")
+-st.caption("Qlib-first control surface for system health, trading readiness, and operator actions.")
++st.title("Dashboard Summary")
++st.caption("Readable overview of system readiness, qlib capability status, and the next operator actions to take.")
+ 
+ left, right = st.columns(2)
+ left.metric("Prediction Ready", "Yes" if payload.prediction_status.is_ready else "No")
+@@ -28,14 +29,14 @@ right.metric("Default Mode", platform_service.settings.runtime.default_mode.valu
+ 
+ st.subheader("Operator Notes")
+ st.write(
+-    "Use the pages in the sidebar to control strategies, run paper sessions, inspect diagnostics, and review advisory summaries."
++    "Use the Setup Wizard to launch trading sessions, then use the sidebar pages to inspect profile status, diagnostics, training readiness, and advisory summaries."
+ )
+ if hasattr(st, "page_link"):
+     st.page_link("pages/00_Setup_Wizard.py", label="Start New Trading Session (Wizard)")
+ else:
+     st.info("Open `00_Setup_Wizard` from the sidebar to use the guided setup flow.")
+-st.subheader("Phase Capability Snapshot")
+-st.json(payload.capabilities.model_dump(mode="json"))
++for section in payload.summary_sections:
++    render_descriptive_section(section)
+ if not payload.prediction_status.is_ready:
+     st.warning(
+         "Predictions are not currently ready. Qlib-dependent actions fail clearly, but the dashboard remains available."
+diff --git a/app/components/runtime.py b/app/components/runtime.py
+index 977cea5..ec48f39 100644
+--- a/app/components/runtime.py
++++ b/app/components/runtime.py
+@@ -29,3 +29,14 @@ def get_selected_mode() -> str:
+ 
+ def set_selected_mode(mode: str) -> None:
+     st.session_state["selected_mode"] = mode
++
++
++def get_selected_profile_name() -> str | None:
++    return st.session_state.get("selected_profile_name")
++
++
++def set_selected_profile_name(profile_name: str | None) -> None:
++    if profile_name is None:
++        st.session_state.pop("selected_profile_name", None)
++        return
++    st.session_state["selected_profile_name"] = profile_name
+diff --git a/app/pages/00_Setup_Wizard.py b/app/pages/00_Setup_Wizard.py
+index b21bc6a..526d08e 100644
+--- a/app/pages/00_Setup_Wizard.py
++++ b/app/pages/00_Setup_Wizard.py
+@@ -9,7 +9,9 @@ APP_DIR = Path(__file__).resolve().parents[1]
+ if str(APP_DIR) not in sys.path:
+     sys.path.insert(0, str(APP_DIR))
+ 
++from components.descriptive_sections import render_descriptive_section
+ from components.runtime import get_platform_service
++from components.runtime import set_selected_profile_name
+ from mytradingbot.core.enums import RuntimeMode
+ from mytradingbot.session_setup.models import SetupWizardState
+ from mytradingbot.ui_services.setup_wizard import SetupWizardUIService
+@@ -82,6 +84,36 @@ def _profile_card(payload, selected_name: str | None) -> None:
+     )
+ 
+ 
++def _render_action_result(result_payload: dict) -> None:
++    st.markdown("### Latest Wizard Action")
++    st.caption("This is the most recent save, smoke, or session-launch result produced by the wizard.")
++    st.markdown(f"**Message:** {result_payload.get('message', 'No message')}")
++    st.markdown(
++        f"**Profile config path:** {result_payload.get('profile_path', 'Not available')}"
++    )
++    st.markdown(
++        f"**Latest session config path:** {result_payload.get('session_config_path', 'Not available')}"
++    )
++    st.markdown(
++        f"**Active universe path:** {result_payload.get('active_symbols_path', 'Not available')}"
++    )
++    if result_payload.get("process_id") is not None:
++        st.markdown(f"**Background process ID:** {result_payload['process_id']}")
++    launched_command = result_payload.get("launched_command") or []
++    if launched_command:
++        st.markdown(f"**Launched command:** {' '.join(str(part) for part in launched_command)}")
++    session_summary = result_payload.get("session_summary")
++    if session_summary:
++        st.markdown("#### Session Summary")
++        st.caption("High-level result returned by the wizard-triggered session run.")
++        st.markdown(f"**Session ID:** {session_summary.get('session_id', 'Unknown')}")
++        st.markdown(f"**Status:** {session_summary.get('status', 'Unknown')}")
++        st.markdown(f"**Trades placed:** {session_summary.get('trade_count', 0)}")
++        st.markdown(
++            f"**Rejected trade attempts:** {session_summary.get('rejected_trade_count', 0)}"
++        )
++
++
+ def _render_profile_step(service: SetupWizardUIService, payload) -> None:
+     st.subheader("Choose a profile")
+     st.caption("Profiles are auto-saved. You do not need a separate manual save step.")
+@@ -602,97 +634,30 @@ def _render_execution_step(state: SetupWizardState) -> None:
+ 
+ def _render_review_step(service: SetupWizardUIService, state: SetupWizardState) -> None:
+     st.subheader("Review and start")
+-    review_flags = service.review_flags(state)
+     generated_symbols = st.session_state.get("wizard_generated_symbols")
+-    preview_symbols = service.wizard_service.preview_active_symbols(
+-        state.model_copy(deep=True),
++    review_payload = service.build_review_payload(
++        state,
+         generated_symbols=generated_symbols,
+     )
+     if state.universe.selection_mode != "keep_old" and not generated_symbols:
+         st.warning(
+             "No previewed liquidity universe is cached yet. Start, smoke, or save will run the liquidity flow automatically before persisting the active symbol manifest."
+         )
+-    expected_actions = service.wizard_service.build_expected_actions(
+-        state,
+-        active_symbols=preview_symbols,
+-    )
+-    profile_col, strategy_col = st.columns(2)
+-    with profile_col:
+-        st.info(
+-            "\n".join(
+-                [
+-                    f"Profile: `{state.profile.profile_name}`",
+-                    f"Profile config: `{service.wizard_service.storage.profile_path(state.profile.profile_slug)}`",
+-                    f"Latest session config: `{service.wizard_service.storage.session_config_path(state.profile.profile_slug)}`",
+-                ]
+-            )
+-        )
+-    with strategy_col:
+-        st.info(
+-            "\n".join(
+-                [
+-                    f"Strategy: `{state.strategy.strategy_name}`",
+-                    f"Broker mode: `{state.strategy.broker_mode}`",
+-                    f"Session mode: `{state.strategy.session_mode}`",
+-                    f"Side mode: `{state.alpha.side_mode}`",
+-                    f"Predicted return gate: `{state.alpha.predicted_return_threshold * 100:.2f}%`",
+-                    f"Confidence gate: `{state.alpha.confidence_threshold:.2f}`",
+-                ]
+-            )
+-        )
+-
+-    universe_col, refresh_col = st.columns(2)
+-    with universe_col:
+-        st.success(
+-            "\n".join(
+-                [
+-                    f"Universe mode: `{state.universe.selection_mode}`",
+-                    f"Active symbols: `{len(preview_symbols)}`",
+-                    f"Active manifest: `{service.wizard_service.storage.active_symbols_path(state.profile.profile_slug)}`",
+-                    "Historical parquet retention: `enabled`",
+-                ]
+-            )
+-        )
+-    with refresh_col:
+-        st.success(
+-            "\n".join(
+-                [
+-                    f"Loop interval: `{state.refresh.loop_interval_seconds}` seconds",
+-                    f"Snapshot refresh: `{state.refresh.auto_refresh_market_snapshot}`",
+-                    f"Prediction refresh: `{state.refresh.auto_refresh_predictions}`",
+-                    f"Dataset refresh: `{state.refresh.auto_refresh_dataset}`",
+-                ]
+-            )
+-        )
+-
+-    risk_col, exec_col = st.columns(2)
+-    with risk_col:
+-        st.write(
+-            {
+-                "max_positions": state.risk.max_positions,
+-                "max_dollars_per_trade": state.risk.max_dollars_per_trade,
+-                "max_daily_loss_percent": state.risk.max_daily_loss_percent,
+-                "same_symbol_protection": state.risk.same_symbol_protection,
+-            }
+-        )
+-    with exec_col:
+-        st.write(
+-            {
+-                "order_type": state.execution.order_type,
+-                "bracket_enabled": state.execution.bracket_enabled,
+-                "take_profit_percent": state.execution.take_profit_percent,
+-                "stop_loss_percent": state.execution.stop_loss_percent,
+-                "sizing_mode": state.execution.sizing_mode,
+-                "quantity": state.execution.quantity,
+-            }
+-        )
++    first_col, second_col = st.columns(2)
++    for index, section in enumerate(review_payload.sections):
++        with first_col if index % 2 == 0 else second_col:
++            render_descriptive_section(section)
+ 
+     st.markdown("#### Expected backend actions")
+-    for action in expected_actions:
++    st.caption("This explains what the platform will do after the profile is saved and the session starts.")
++    for action in review_payload.expected_actions:
+         st.write(f"- {action}")
+ 
+-    st.markdown("#### Defaults vs customized")
+-    st.write({"defaults_applied": review_flags["defaults"], "customized": review_flags["customized"]})
++    defaults_col, customized_col = st.columns(2)
++    with defaults_col:
++        render_descriptive_section(review_payload.defaults_section)
++    with customized_col:
++        render_descriptive_section(review_payload.customized_section)
+     st.caption("Auto-save happens for profile and latest resolved session config before any launch action.")
+ 
+     back_col, start_col, smoke_col, save_col = st.columns(4)
+@@ -703,17 +668,17 @@ def _render_review_step(service: SetupWizardUIService, state: SetupWizardState)
+         result = service.start_session(state, generated_symbols=generated_symbols, smoke_only=False)
+         st.session_state["wizard_last_action_result"] = result.model_dump(mode="json")
+         st.success(result.message)
+-        st.json(st.session_state["wizard_last_action_result"])
++        _render_action_result(st.session_state["wizard_last_action_result"])
+     if smoke_col.button("Run smoke only", key=_wizard_state_key("review_smoke")):
+         result = service.start_session(state, generated_symbols=generated_symbols, smoke_only=True)
+         st.session_state["wizard_last_action_result"] = result.model_dump(mode="json")
+         st.success(result.message)
+-        st.json(st.session_state["wizard_last_action_result"])
++        _render_action_result(st.session_state["wizard_last_action_result"])
+     if save_col.button("Save and exit", key=_wizard_state_key("review_save_exit")):
+         result = service.save_and_exit(state, generated_symbols=generated_symbols)
+         st.session_state["wizard_last_action_result"] = result.model_dump(mode="json")
+         st.success(result.message)
+-        st.json(st.session_state["wizard_last_action_result"])
++        _render_action_result(st.session_state["wizard_last_action_result"])
+ 
+ 
+ def _handle_next(service: SetupWizardUIService) -> None:
+@@ -739,6 +704,7 @@ def _handle_next(service: SetupWizardUIService) -> None:
+             st.error(str(exc))
+             return
+         _set_wizard_state(state)
++        set_selected_profile_name(state.profile.profile_name)
+         st.session_state["wizard_visibility_mode"] = state.visibility_mode
+         _bump_form_version()
+         st.session_state["wizard_step"] = step + 1
+@@ -791,6 +757,7 @@ elif state is None:
+     st.stop()
+ else:
+     state.visibility_mode = visibility_mode
++    set_selected_profile_name(state.profile.profile_name)
+     if current_step == 1:
+         _render_strategy_step(wizard_service, payload, state)
+     elif current_step == 2:
+@@ -821,5 +788,4 @@ if current_step < len(STEPS) - 1:
+     )
+ 
+ if "wizard_last_action_result" in st.session_state and current_step != 7:
+-    st.subheader("Latest wizard action")
+-    st.json(st.session_state["wizard_last_action_result"])
++    _render_action_result(st.session_state["wizard_last_action_result"])
+diff --git a/app/pages/02_Strategy_Control.py b/app/pages/02_Strategy_Control.py
+index 0103256..e6b7661 100644
+--- a/app/pages/02_Strategy_Control.py
++++ b/app/pages/02_Strategy_Control.py
+@@ -39,10 +39,9 @@ set_selected_strategy(strategy)
+ set_selected_mode(mode)
+ 
+ st.write("Current selection")
+-st.json(
+-    {
+-        "strategy": strategy,
+-        "mode": mode,
+-        "live_trading_enabled": payload.live_trading_enabled,
+-    }
+-)
++st.markdown(f"**Strategy:** {strategy}")
++st.caption("This selects which strategy logic and thresholds the app treats as active on pages that follow the shared strategy state.")
++st.markdown(f"**Mode:** {mode}")
++st.caption("This is the currently selected runtime mode for UI pages that respect the shared execution mode.")
++st.markdown(f"**Live trading enabled in config:** {'Yes' if payload.live_trading_enabled else 'No'}")
++st.caption("This shows whether the repo configuration currently allows the live-trading path to be enabled at all.")
+diff --git a/app/pages/04_Paper_Trading.py b/app/pages/04_Paper_Trading.py
+deleted file mode 100644
+index 5935a59..0000000
+--- a/app/pages/04_Paper_Trading.py
++++ /dev/null
+@@ -1,36 +0,0 @@
+-from __future__ import annotations
+-
+-import sys
+-from pathlib import Path
+-
+-import streamlit as st
+-
+-APP_DIR = Path(__file__).resolve().parents[1]
+-if str(APP_DIR) not in sys.path:
+-    sys.path.insert(0, str(APP_DIR))
+-
+-from components.runtime import get_platform_service, get_selected_mode, get_selected_strategy
+-from mytradingbot.ui_services.paper_trading import PaperTradingService
+-
+-platform_service = get_platform_service()
+-service = PaperTradingService(platform_service)
+-
+-st.title("Paper Trading")
+-st.caption("Run dry-run or paper sessions and inspect resulting artifacts.")
+-
+-strategy = get_selected_strategy()
+-mode = get_selected_mode()
+-if mode == "live":
+-    st.warning("Live mode is not allowed from the Paper Trading page. Switch to dry_run or paper.")
+-else:
+-    st.write({"strategy": strategy, "mode": mode})
+-    if st.button("Run Session"):
+-        result = service.run_session(strategy_name=strategy, mode=mode)
+-        st.subheader("Session Summary")
+-        st.json(result.session_summary.model_dump(mode="json"))
+-        st.subheader("Orders")
+-        st.json([order.model_dump(mode="json") for order in result.orders])
+-        st.subheader("Positions")
+-        st.json([position.model_dump(mode="json") for position in result.positions])
+-        st.subheader("Trade Attempts")
+-        st.json([attempt.model_dump(mode="json") for attempt in result.trade_attempts])
+diff --git a/app/pages/08_Settings.py b/app/pages/08_Settings.py
+deleted file mode 100644
+index d315cff..0000000
+--- a/app/pages/08_Settings.py
++++ /dev/null
+@@ -1,19 +0,0 @@
+-from __future__ import annotations
+-
+-import sys
+-from pathlib import Path
+-
+-import streamlit as st
+-
+-APP_DIR = Path(__file__).resolve().parents[1]
+-if str(APP_DIR) not in sys.path:
+-    sys.path.insert(0, str(APP_DIR))
+-
+-from components.runtime import get_platform_service
+-from mytradingbot.ui_services.settings import SettingsService
+-
+-payload = SettingsService(get_platform_service().settings).get_settings_payload()
+-
+-st.title("Settings")
+-st.caption("Current application settings and resolved repository paths.")
+-st.json(payload)
+diff --git a/app/pages/09_Trading_Universe.py b/app/pages/09_Trading_Universe.py
+index 325a20e..49b89c2 100644
+--- a/app/pages/09_Trading_Universe.py
++++ b/app/pages/09_Trading_Universe.py
+@@ -9,7 +9,12 @@ APP_DIR = Path(__file__).resolve().parents[1]
+ if str(APP_DIR) not in sys.path:
+     sys.path.insert(0, str(APP_DIR))
+ 
+-from components.runtime import get_platform_service, get_selected_strategy
++from components.runtime import (
++    get_platform_service,
++    get_selected_profile_name,
++    get_selected_strategy,
++    set_selected_profile_name,
++)
+ from mytradingbot.ui_services.trading_universe import TradingUniverseUIService
+ 
+ 
+@@ -40,8 +45,13 @@ if not payload.profile_names:
+ profile_name = st.selectbox(
+     "Profile",
+     options=payload.profile_names,
+-    index=payload.profile_names.index(payload.default_profile_name or payload.profile_names[0]),
++    index=payload.profile_names.index(
++        get_selected_profile_name()
++        if get_selected_profile_name() in payload.profile_names
++        else (payload.default_profile_name or payload.profile_names[0])
++    ),
+ )
++set_selected_profile_name(profile_name)
+ selection_mode = st.radio(
+     "Final trading universe mode",
+     options=payload.selection_modes,
+@@ -157,4 +167,11 @@ if preview_payload:
+             include_etfs=include_etfs,
+         )
+         st.success(f"Saved {len(result.final_symbols)} symbols to the active trading universe.")
+-        st.json(result.model_dump(mode="json"))
++        st.markdown(f"**Active universe file:** {result.active_symbols_path}")
++        if result.latest_session_config_path:
++            st.markdown(
++                f"**Latest session config updated:** {result.latest_session_config_path}"
++            )
++        st.caption(
++            "The saved final universe becomes the profile-scoped active symbol manifest for future session runs."
++        )
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index d192cc8..09b643c 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -184,8 +184,9 @@ Inspect:
+ 2. Check the phase capability snapshot and prediction freshness.
+ 3. Use `app/pages/03_Data_Management.py` for phase-2 and phase-3 actions.
+ 4. Use `app/pages/09_Trading_Universe.py` to review and save the final active universe for the selected profile.
+-5. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
+-6. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
++5. Use `app/pages/00_Setup_Wizard.py` to save the selected profile and launch sessions.
++6. Use `app/pages/08_Status_Reference.py` to review the saved profile state, artifact readiness, and recent Trading Track activity.
++7. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
+ 
+ ## If Phase 2 Fails
+ 
+diff --git a/src/mytradingbot/ui_services/__init__.py b/src/mytradingbot/ui_services/__init__.py
+index 844c10a..39fd184 100644
+--- a/src/mytradingbot/ui_services/__init__.py
++++ b/src/mytradingbot/ui_services/__init__.py
+@@ -7,6 +7,7 @@ from mytradingbot.ui_services.live_trading import LiveTradingPayload, LiveTradin
+ from mytradingbot.ui_services.llm_copilot import LLMCopilotService
+ from mytradingbot.ui_services.paper_trading import PaperTradingService
+ from mytradingbot.ui_services.settings import SettingsService
++from mytradingbot.ui_services.status_reference import StatusReferenceService
+ from mytradingbot.ui_services.strategy_control import (
+     StrategyControlPayload,
+     StrategyControlService,
+@@ -23,6 +24,7 @@ __all__ = [
+     "LiveTradingService",
+     "PaperTradingService",
+     "SettingsService",
++    "StatusReferenceService",
+     "StrategyControlPayload",
+     "StrategyControlService",
+ ]
+diff --git a/src/mytradingbot/ui_services/dashboard.py b/src/mytradingbot/ui_services/dashboard.py
+index 34f6eb8..c5d36f9 100644
+--- a/src/mytradingbot/ui_services/dashboard.py
++++ b/src/mytradingbot/ui_services/dashboard.py
+@@ -9,6 +9,7 @@ from pydantic import BaseModel
+ from mytradingbot.core.capabilities import CapabilitySnapshot
+ from mytradingbot.core.models import ArtifactStatus, HealthStatus, SessionSummary
+ from mytradingbot.orchestration.service import TradingPlatformService
++from mytradingbot.ui_services.descriptive_sections import DescriptiveSection, describe_item
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -21,6 +22,7 @@ class DashboardPayload(BaseModel):
+     available_strategies: list[str]
+     capabilities: CapabilitySnapshot
+     last_session: SessionSummary | None = None
++    summary_sections: list[DescriptiveSection] = []
+ 
+ 
+ class DashboardService:
+@@ -30,14 +32,87 @@ class DashboardService:
+         self.platform_service = platform_service
+ 
+     def get_dashboard_payload(self) -> DashboardPayload:
++        health = self.platform_service.get_health_status()
++        prediction_status = self.platform_service.get_prediction_status()
++        capabilities = self.platform_service.get_capabilities()
+         return DashboardPayload(
+-            health=self.platform_service.get_health_status(),
+-            prediction_status=self.platform_service.get_prediction_status(),
++            health=health,
++            prediction_status=prediction_status,
+             available_strategies=self.platform_service.get_strategy_names(),
+-            capabilities=self.platform_service.get_capabilities(),
++            capabilities=capabilities,
+             last_session=(
+                 self.platform_service.last_session_result.session_summary
+                 if self.platform_service.last_session_result
+                 else None
+             ),
++            summary_sections=[
++                DescriptiveSection(
++                    title="Runtime Readiness",
++                    description="A concise summary of whether the platform is ready for a session and what the operator should watch first.",
++                    items=[
++                        describe_item(
++                            "dashboard.health_summary",
++                            health.summary,
++                            label="Health summary",
++                            description="The top-level health summary produced by the platform.",
++                            effect="Tells the operator whether the environment looks ready or needs attention.",
++                        ),
++                        describe_item(
++                            "dashboard.predictions_ready",
++                            "Ready" if prediction_status.is_ready else f"{prediction_status.reason or 'Unavailable'}",
++                            label="Prediction readiness",
++                            description="Whether the runtime prediction artifact is currently usable.",
++                            effect="Determines whether qlib-driven session flows can proceed without a freshness warning.",
++                        ),
++                        describe_item(
++                            "dashboard.default_mode",
++                            self.platform_service.settings.runtime.default_mode.value,
++                            label="Default runtime mode",
++                            description="The repo's default runtime mode when a session does not explicitly override it.",
++                            effect="Sets the baseline execution mode the operator starts from in the UI.",
++                        ),
++                        describe_item(
++                            "dashboard.strategy_count",
++                            len(self.platform_service.get_strategy_names()),
++                            label="Available strategies",
++                            description="How many strategy choices are currently exposed by the registry.",
++                            effect="Shows the breadth of strategy workflows available from the UI.",
++                        ),
++                    ],
++                ),
++                DescriptiveSection(
++                    title="Phase Capability Snapshot",
++                    description="The current readiness of each rollout phase and what each phase means operationally.",
++                    items=[
++                        describe_item(
++                            "dashboard.phase_1",
++                            capabilities.phase_1.status,
++                            label=capabilities.phase_1.name,
++                            description=capabilities.phase_1.summary,
++                            effect="Summarizes whether paper-trading artifacts and basic runtime flows are ready.",
++                        ),
++                        describe_item(
++                            "dashboard.phase_2",
++                            capabilities.phase_2.status,
++                            label=capabilities.phase_2.name,
++                            description=capabilities.phase_2.summary,
++                            effect="Summarizes whether the market-data download and normalization pipeline is operational.",
++                        ),
++                        describe_item(
++                            "dashboard.phase_3",
++                            capabilities.phase_3.status,
++                            label=capabilities.phase_3.name,
++                            description=capabilities.phase_3.summary,
++                            effect="Summarizes whether qlib dataset, training, and prediction-refresh workflows are ready.",
++                        ),
++                        describe_item(
++                            "dashboard.phase_4",
++                            capabilities.phase_4.status,
++                            label=capabilities.phase_4.name,
++                            description=capabilities.phase_4.summary,
++                            effect="Summarizes whether live-trading scaffolding is available or still guarded.",
++                        ),
++                    ],
++                ),
++            ],
+         )
+diff --git a/src/mytradingbot/ui_services/setup_wizard.py b/src/mytradingbot/ui_services/setup_wizard.py
+index c320d4d..3c4e51d 100644
+--- a/src/mytradingbot/ui_services/setup_wizard.py
++++ b/src/mytradingbot/ui_services/setup_wizard.py
+@@ -13,6 +13,7 @@ from mytradingbot.orchestration.service import TradingPlatformService
+ from mytradingbot.session_setup.models import ResolvedSessionConfig, SetupWizardState, UserProfile
+ from mytradingbot.session_setup.runtime import apply_resolved_config_to_settings
+ from mytradingbot.session_setup.service import SetupWizardService
++from mytradingbot.ui_services.descriptive_sections import DescriptiveSection, describe_item
+ 
+ 
+ class SetupWizardProfileCard(BaseModel):
+@@ -47,6 +48,15 @@ class SetupWizardActionResult(BaseModel):
+     session_summary: dict | None = None
+ 
+ 
++class SetupWizardReviewPayload(BaseModel):
++    """Readable review payload for the wizard review step."""
++
++    sections: list[DescriptiveSection] = Field(default_factory=list)
++    defaults_section: DescriptiveSection
++    customized_section: DescriptiveSection
++    expected_actions: list[str] = Field(default_factory=list)
++
++
+ class SetupWizardUIService:
+     def __init__(
+         self,
+@@ -146,6 +156,123 @@ class SetupWizardUIService:
+     def review_flags(self, state: SetupWizardState) -> dict[str, list[str]]:
+         return self.wizard_service.build_review_flags(state)
+ 
++    def build_review_payload(
++        self,
++        state: SetupWizardState,
++        *,
++        generated_symbols: list[str] | None = None,
++    ) -> SetupWizardReviewPayload:
++        preview_symbols = self.wizard_service.preview_active_symbols(
++            state.model_copy(deep=True),
++            generated_symbols=generated_symbols,
++        )
++        flags = self.review_flags(state)
++        sections = [
++            DescriptiveSection(
++                title="Profile & Session",
++                description="The identity of the saved profile and the high-level session choices that will be persisted and launched.",
++                items=[
++                    describe_item("profile.profile_name", state.profile.profile_name),
++                    describe_item("strategy.preset_name", state.strategy.preset_name),
++                    describe_item("strategy.strategy_name", state.strategy.strategy_name),
++                    describe_item("strategy.broker_mode", state.strategy.broker_mode),
++                    describe_item("strategy.session_mode", state.strategy.session_mode),
++                ],
++            ),
++            DescriptiveSection(
++                title="Universe",
++                description="How the active symbol universe will be resolved for this run and what files it will update.",
++                items=[
++                    describe_item("universe.selection_mode", state.universe.selection_mode),
++                    describe_item("universe.target_symbol_count", state.universe.target_symbol_count),
++                    describe_item("universe.min_price", state.universe.min_price),
++                    describe_item("universe.min_average_volume", state.universe.min_average_volume),
++                    describe_item("universe.include_etfs", state.universe.include_etfs),
++                    describe_item("universe.active_symbol_count", len(preview_symbols)),
++                    describe_item(
++                        "universe.active_symbols_path",
++                        self.wizard_service.storage.active_symbols_path(state.profile.profile_slug),
++                    ),
++                ],
++            ),
++            DescriptiveSection(
++                title="Refresh Policy",
++                description="The refresh behavior that keeps snapshots, datasets, and predictions up to date while the session runs.",
++                items=[
++                    describe_item("refresh.auto_refresh_market_snapshot", state.refresh.auto_refresh_market_snapshot),
++                    describe_item("refresh.auto_refresh_predictions", state.refresh.auto_refresh_predictions),
++                    describe_item("refresh.auto_refresh_dataset", state.refresh.auto_refresh_dataset),
++                    describe_item("refresh.loop_interval_seconds", state.refresh.loop_interval_seconds),
++                    describe_item("refresh.stale_input_behavior", state.refresh.stale_input_behavior),
++                ],
++            ),
++            DescriptiveSection(
++                title="Alpha & Model",
++                description="The qlib ranking and gate settings that control how many symbols are considered and what strength they must show.",
++                items=[
++                    describe_item("alpha.side_mode", state.alpha.side_mode),
++                    describe_item("alpha.candidate_count", state.alpha.candidate_count),
++                    describe_item("alpha.long_threshold", state.alpha.long_threshold),
++                    describe_item("alpha.short_threshold", state.alpha.short_threshold),
++                    describe_item("alpha.predicted_return_threshold", state.alpha.predicted_return_threshold),
++                    describe_item("alpha.confidence_threshold", state.alpha.confidence_threshold),
++                ],
++            ),
++            DescriptiveSection(
++                title="Risk Controls",
++                description="The position limits and protections that constrain how much the profile can put at risk.",
++                items=[
++                    describe_item("risk.max_positions", state.risk.max_positions),
++                    describe_item("risk.max_dollars_per_trade", state.risk.max_dollars_per_trade),
++                    describe_item("risk.max_daily_loss_percent", state.risk.max_daily_loss_percent),
++                    describe_item("risk.same_symbol_protection", state.risk.same_symbol_protection),
++                ],
++            ),
++            DescriptiveSection(
++                title="Execution & Brackets",
++                description="The order and bracket settings that shape how approved trades are submitted and protected.",
++                items=[
++                    describe_item("execution.order_type", state.execution.order_type),
++                    describe_item("execution.bracket_enabled", state.execution.bracket_enabled),
++                    describe_item("execution.take_profit_percent", state.execution.take_profit_percent),
++                    describe_item("execution.stop_loss_percent", state.execution.stop_loss_percent),
++                    describe_item("execution.sizing_mode", state.execution.sizing_mode),
++                    describe_item("execution.quantity", state.execution.quantity),
++                ],
++            ),
++        ]
++        return SetupWizardReviewPayload(
++            sections=sections,
++            defaults_section=DescriptiveSection(
++                title="Recommended Defaults Currently Kept",
++                description="These settings still match the recommended starting defaults for the guided workflow.",
++                items=[
++                    describe_item(
++                        dotted_key,
++                        self._resolve_dotted_value(state, dotted_key),
++                        badge="Recommended default",
++                    )
++                    for dotted_key in flags["defaults"]
++                ],
++            ),
++            customized_section=DescriptiveSection(
++                title="Customized Settings",
++                description="These settings differ from the recommended starting defaults and will directly change how the session behaves.",
++                items=[
++                    describe_item(
++                        dotted_key,
++                        self._resolve_dotted_value(state, dotted_key),
++                        badge="Customized",
++                    )
++                    for dotted_key in flags["customized"]
++                ],
++            ),
++            expected_actions=self.wizard_service.build_expected_actions(
++                state,
++                active_symbols=preview_symbols,
++            ),
++        )
++
+     def _build_runtime_service(self, config: ResolvedSessionConfig) -> TradingPlatformService:
+         settings = apply_resolved_config_to_settings(
+             self.platform_service.settings,
+@@ -200,3 +327,10 @@ class SetupWizardUIService:
+             stderr_log_path=str(stderr_log),
+             process_id=process.pid,
+         )
++
++    @staticmethod
++    def _resolve_dotted_value(state: SetupWizardState, dotted_key: str):
++        current = state
++        for part in dotted_key.split("."):
++            current = getattr(current, part)
++        return current
+diff --git a/tests/smoke/test_streamlit_structure.py b/tests/smoke/test_streamlit_structure.py
+index ee13a71..bb6fb2e 100644
+--- a/tests/smoke/test_streamlit_structure.py
++++ b/tests/smoke/test_streamlit_structure.py
+@@ -8,11 +8,10 @@ def test_streamlit_page_files_exist() -> None:
+         "app/pages/00_Setup_Wizard.py",
+         "app/pages/02_Strategy_Control.py",
+         "app/pages/03_Data_Management.py",
+-        "app/pages/04_Paper_Trading.py",
+         "app/pages/05_Live_Trading.py",
+         "app/pages/06_LLM_Copilot.py",
+         "app/pages/07_Diagnostics.py",
+-        "app/pages/08_Settings.py",
++        "app/pages/08_Status_Reference.py",
+         "app/pages/09_Trading_Universe.py",
+     ]
+ 
+@@ -29,11 +28,10 @@ def test_streamlit_entrypoints_do_not_use_package_shadowed_runtime_imports() ->
+         "app/pages/00_Setup_Wizard.py",
+         "app/pages/02_Strategy_Control.py",
+         "app/pages/03_Data_Management.py",
+-        "app/pages/04_Paper_Trading.py",
+         "app/pages/05_Live_Trading.py",
+         "app/pages/06_LLM_Copilot.py",
+         "app/pages/07_Diagnostics.py",
+-        "app/pages/08_Settings.py",
++        "app/pages/08_Status_Reference.py",
+         "app/pages/09_Trading_Universe.py",
+     ]
+ 
+@@ -46,8 +44,8 @@ def test_streamlit_app_landing_page_is_dashboard() -> None:
+     project_root = Path(__file__).resolve().parents[2]
+     source = (project_root / "app/app.py").read_text(encoding="utf-8")
+ 
+-    assert 'st.set_page_config(page_title="Dashboard"' in source
+-    assert 'st.title("Dashboard")' in source
++    assert 'st.set_page_config(page_title="Dashboard Summary"' in source
++    assert 'st.title("Dashboard Summary")' in source
+ 
+ 
+ def test_data_management_page_uses_real_operation_tabs() -> None:
+diff --git a/tests/unit/ui_services/test_dashboard.py b/tests/unit/ui_services/test_dashboard.py
+index a10d5cf..840fa12 100644
+--- a/tests/unit/ui_services/test_dashboard.py
++++ b/tests/unit/ui_services/test_dashboard.py
+@@ -8,3 +8,14 @@ def test_dashboard_service_surfaces_prediction_health() -> None:
+     assert payload.health is not None
+     assert payload.prediction_status is not None
+     assert payload.available_strategies
++
++
++def test_dashboard_service_builds_readable_summary_sections() -> None:
++    payload = DashboardService(TradingPlatformService.bootstrap_default()).get_dashboard_payload()
++
++    section_titles = [section.title for section in payload.summary_sections]
++
++    assert "Runtime Readiness" in section_titles
++    assert "Phase Capability Snapshot" in section_titles
++    assert all(section.description for section in payload.summary_sections)
++    assert all(item.description and item.effect for section in payload.summary_sections for item in section.items)
+diff --git a/tests/unit/ui_services/test_setup_wizard.py b/tests/unit/ui_services/test_setup_wizard.py
+index 5544db9..5c632fb 100644
+--- a/tests/unit/ui_services/test_setup_wizard.py
++++ b/tests/unit/ui_services/test_setup_wizard.py
+@@ -1,3 +1,5 @@
++from mytradingbot.core.paths import RepoPaths
++from mytradingbot.core.settings import AppSettings
+ from mytradingbot.orchestration.service import TradingPlatformService
+ from mytradingbot.ui_services.setup_wizard import SetupWizardUIService
+ 
+@@ -12,3 +14,29 @@ def test_setup_wizard_ui_service_exposes_profiles_presets_and_recommended_defaul
+     assert payload.recommended_defaults["strategy.strategy_name"] == "scalping"
+     assert payload.recommended_defaults["strategy.broker_mode"] == "local_paper"
+     assert payload.recommended_defaults["refresh.loop_interval_seconds"] == 300
++
++
++def test_setup_wizard_ui_service_builds_readable_review_payload(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    platform_service = TradingPlatformService(settings=settings)
++    service = SetupWizardUIService(platform_service)
++    state = service.initialize_wizard(
++        profile_name="Alice Trader",
++        source_mode="create_new",
++    )
++    state.alpha.confidence_threshold = 0.72
++    state.risk.max_positions = 8
++
++    review = service.build_review_payload(
++        state,
++        generated_symbols=["AAPL", "MSFT", "NVDA"],
++    )
++
++    assert review.sections
++    assert any(section.title == "Risk Controls" for section in review.sections)
++    assert any(section.title == "Execution & Brackets" for section in review.sections)
++    assert review.defaults_section.items
++    assert review.customized_section.items
++    assert all("." not in item.label for item in review.defaults_section.items)
++    assert all(item.description and item.effect for item in review.defaults_section.items)
++    assert all(item.description and item.effect for item in review.customized_section.items)

@@ -13,6 +13,7 @@ from mytradingbot.orchestration.service import TradingPlatformService
 from mytradingbot.session_setup.models import ResolvedSessionConfig, SetupWizardState, UserProfile
 from mytradingbot.session_setup.runtime import apply_resolved_config_to_settings
 from mytradingbot.session_setup.service import SetupWizardService
+from mytradingbot.ui_services.descriptive_sections import DescriptiveSection, describe_item
 
 
 class SetupWizardProfileCard(BaseModel):
@@ -45,6 +46,15 @@ class SetupWizardActionResult(BaseModel):
     stderr_log_path: str | None = None
     process_id: int | None = None
     session_summary: dict | None = None
+
+
+class SetupWizardReviewPayload(BaseModel):
+    """Readable review payload for the wizard review step."""
+
+    sections: list[DescriptiveSection] = Field(default_factory=list)
+    defaults_section: DescriptiveSection
+    customized_section: DescriptiveSection
+    expected_actions: list[str] = Field(default_factory=list)
 
 
 class SetupWizardUIService:
@@ -146,6 +156,148 @@ class SetupWizardUIService:
     def review_flags(self, state: SetupWizardState) -> dict[str, list[str]]:
         return self.wizard_service.build_review_flags(state)
 
+    def build_review_payload(
+        self,
+        state: SetupWizardState,
+        *,
+        generated_symbols: list[str] | None = None,
+    ) -> SetupWizardReviewPayload:
+        preview_symbols = self.wizard_service.preview_active_symbols(
+            state.model_copy(deep=True),
+            generated_symbols=generated_symbols,
+        )
+        flags = self.review_flags(state)
+        sections = [
+            DescriptiveSection(
+                title="Profile & Session",
+                description="The identity of the saved profile and the high-level session choices that will be persisted and launched.",
+                items=[
+                    describe_item("profile.profile_name", state.profile.profile_name),
+                    describe_item("strategy.preset_name", state.strategy.preset_name),
+                    describe_item("strategy.strategy_name", state.strategy.strategy_name),
+                    describe_item("strategy.broker_mode", state.strategy.broker_mode),
+                    describe_item("strategy.session_mode", state.strategy.session_mode),
+                ],
+            ),
+            DescriptiveSection(
+                title="Universe",
+                description="How the active symbol universe will be resolved for this run and what files it will update.",
+                items=[
+                    describe_item("universe.selection_mode", state.universe.selection_mode),
+                    describe_item("universe.target_symbol_count", state.universe.target_symbol_count),
+                    describe_item("universe.min_price", state.universe.min_price),
+                    describe_item("universe.min_average_volume", state.universe.min_average_volume),
+                    describe_item("universe.include_etfs", state.universe.include_etfs),
+                    describe_item("universe.active_symbol_count", len(preview_symbols)),
+                    describe_item(
+                        "universe.active_symbols_path",
+                        self.wizard_service.storage.active_symbols_path(state.profile.profile_slug),
+                    ),
+                ],
+            ),
+            DescriptiveSection(
+                title="Refresh Policy",
+                description="The refresh behavior that keeps snapshots, datasets, and predictions up to date while the session runs.",
+                items=[
+                    describe_item("refresh.auto_refresh_market_snapshot", state.refresh.auto_refresh_market_snapshot),
+                    describe_item("refresh.auto_refresh_predictions", state.refresh.auto_refresh_predictions),
+                    describe_item("refresh.auto_refresh_dataset", state.refresh.auto_refresh_dataset),
+                    describe_item("refresh.loop_interval_seconds", state.refresh.loop_interval_seconds),
+                    describe_item("refresh.stale_input_behavior", state.refresh.stale_input_behavior),
+                ],
+            ),
+            DescriptiveSection(
+                title="Alpha & Model",
+                description="The qlib ranking and gate settings that control how many symbols are considered and what strength they must show.",
+                items=[
+                    describe_item("alpha.side_mode", state.alpha.side_mode),
+                    describe_item("alpha.candidate_count", state.alpha.candidate_count),
+                    describe_item("alpha.top_n_per_cycle", state.alpha.top_n_per_cycle),
+                    describe_item("alpha.long_threshold", state.alpha.long_threshold),
+                    describe_item("alpha.short_threshold", state.alpha.short_threshold),
+                    describe_item("alpha.predicted_return_threshold", state.alpha.predicted_return_threshold),
+                    describe_item("alpha.confidence_threshold", state.alpha.confidence_threshold),
+                    describe_item(
+                        "alpha.edge_after_cost_min_buffer",
+                        state.alpha.edge_after_cost_min_buffer,
+                    ),
+                ],
+            ),
+            DescriptiveSection(
+                title="Risk Controls",
+                description="The position limits and protections that constrain how much the profile can put at risk.",
+                items=[
+                    describe_item("risk.max_positions", state.risk.max_positions),
+                    describe_item("risk.max_dollars_per_trade", state.risk.max_dollars_per_trade),
+                    describe_item("risk.max_daily_loss_percent", state.risk.max_daily_loss_percent),
+                    describe_item("risk.same_symbol_protection", state.risk.same_symbol_protection),
+                    describe_item(
+                        "risk.higher_timeframe_filter_enabled",
+                        state.risk.higher_timeframe_filter_enabled,
+                    ),
+                    describe_item(
+                        "risk.higher_timeframe_source_timeframe",
+                        state.risk.higher_timeframe_source_timeframe,
+                    ),
+                    describe_item(
+                        "risk.higher_timeframe_fast_ma_length",
+                        state.risk.higher_timeframe_fast_ma_length,
+                    ),
+                    describe_item(
+                        "risk.higher_timeframe_slow_ma_length",
+                        state.risk.higher_timeframe_slow_ma_length,
+                    ),
+                    describe_item(
+                        "risk.disable_pseudo_order_book_gate",
+                        state.risk.disable_pseudo_order_book_gate,
+                    ),
+                ],
+            ),
+            DescriptiveSection(
+                title="Execution & Brackets",
+                description="The order and bracket settings that shape how approved trades are submitted and protected.",
+                items=[
+                    describe_item("execution.order_type", state.execution.order_type),
+                    describe_item("execution.bracket_enabled", state.execution.bracket_enabled),
+                    describe_item("execution.take_profit_percent", state.execution.take_profit_percent),
+                    describe_item("execution.stop_loss_percent", state.execution.stop_loss_percent),
+                    describe_item("execution.sizing_mode", state.execution.sizing_mode),
+                    describe_item("execution.quantity", state.execution.quantity),
+                ],
+            ),
+        ]
+        return SetupWizardReviewPayload(
+            sections=sections,
+            defaults_section=DescriptiveSection(
+                title="Recommended Defaults Currently Kept",
+                description="These settings still match the recommended starting defaults for the guided workflow.",
+                items=[
+                    describe_item(
+                        dotted_key,
+                        self._resolve_dotted_value(state, dotted_key),
+                        badge="Recommended default",
+                    )
+                    for dotted_key in flags["defaults"]
+                ],
+            ),
+            customized_section=DescriptiveSection(
+                title="Customized Settings",
+                description="These settings differ from the recommended starting defaults and will directly change how the session behaves.",
+                items=[
+                    describe_item(
+                        dotted_key,
+                        self._resolve_dotted_value(state, dotted_key),
+                        badge="Customized",
+                    )
+                    for dotted_key in flags["customized"]
+                ],
+            ),
+            expected_actions=self.wizard_service.build_expected_actions(
+                state,
+                active_symbols=preview_symbols,
+            ),
+        )
+
     def _build_runtime_service(self, config: ResolvedSessionConfig) -> TradingPlatformService:
         settings = apply_resolved_config_to_settings(
             self.platform_service.settings,
@@ -200,3 +352,10 @@ class SetupWizardUIService:
             stderr_log_path=str(stderr_log),
             process_id=process.pid,
         )
+
+    @staticmethod
+    def _resolve_dotted_value(state: SetupWizardState, dotted_key: str):
+        current = state
+        for part in dotted_key.split("."):
+            current = getattr(current, part)
+        return current

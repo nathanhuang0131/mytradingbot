@@ -36,6 +36,7 @@ from mytradingbot.session_setup.runtime import (
     filter_predictions_for_config,
 )
 from mytradingbot.strategies.registry import StrategyRegistry
+from mytradingbot.strategies.selection import apply_top_n_selection
 from mytradingbot.universe.storage import UniverseStorage
 
 logger = logging.getLogger(__name__)
@@ -220,6 +221,14 @@ class TradingPlatformService:
             refresh_actions=refresh_actions or [],
         )
 
+    def _effective_settings(
+        self,
+        session_config: ResolvedSessionConfig | None,
+    ) -> AppSettings:
+        if session_config is None:
+            return self.settings
+        return apply_resolved_config_to_settings(self.settings, session_config)
+
     def _resolve_runtime_refresh_symbols(
         self,
         *,
@@ -247,10 +256,12 @@ class TradingPlatformService:
         *,
         strategy_name: str,
         auto_refresh_inputs: bool,
+        effective_settings: AppSettings | None = None,
         symbols: list[str] | None = None,
         symbols_file: Path | None = None,
         refresh_timeframes: list[str] | None = None,
     ) -> DecisionPipelineReadiness:
+        runtime_settings = effective_settings or self.settings
         refresh_actions: list[str] = []
         readiness = self._decision_pipeline_readiness()
         if not auto_refresh_inputs:
@@ -261,7 +272,7 @@ class TradingPlatformService:
             or (
                 readiness.market_snapshot_age_seconds is not None
                 and readiness.market_snapshot_age_seconds
-                >= self.settings.runtime_safety.market_refresh_interval_seconds
+                >= runtime_settings.runtime_safety.market_refresh_interval_seconds
             )
         )
         prediction_refresh_due = (
@@ -269,10 +280,10 @@ class TradingPlatformService:
             or (
                 readiness.predictions_age_seconds is not None
                 and readiness.predictions_age_seconds
-                >= self.settings.runtime_safety.prediction_refresh_interval_seconds
+                >= runtime_settings.runtime_safety.prediction_refresh_interval_seconds
             )
         )
-        dataset_path = self.settings.qlib_dataset_artifact_path()
+        dataset_path = runtime_settings.qlib_dataset_artifact_path()
         dataset_age_seconds = self._path_age_seconds(dataset_path)
         dataset_refresh_due = False
 
@@ -311,7 +322,7 @@ class TradingPlatformService:
                 or (
                     dataset_age_seconds is not None
                     and dataset_age_seconds
-                    >= self.settings.runtime_safety.dataset_refresh_interval_seconds
+                    >= runtime_settings.runtime_safety.dataset_refresh_interval_seconds
                 )
                 or (
                     dataset_path.exists()
@@ -393,6 +404,7 @@ class TradingPlatformService:
         session_config: ResolvedSessionConfig | None = None,
     ) -> SessionResult:
         normalized_mode = mode if isinstance(mode, RuntimeMode) else RuntimeMode(mode)
+        effective_settings = self._effective_settings(session_config)
         context = self.runtime_state_service.create_session_context(
             strategy=strategy_name,
             mode=normalized_mode,
@@ -453,6 +465,7 @@ class TradingPlatformService:
 
         try:
             reconciliation = self.broker.reconcile_runtime_state(strategy_name=strategy_name)
+            self.runtime_state_service.refresh_completed_session_artifacts()
         except Exception as exc:
             summary.status = "failed"
             summary.completed_at = utc_now()
@@ -500,6 +513,7 @@ class TradingPlatformService:
         readiness = self.ensure_decision_pipeline_ready(
             strategy_name=strategy_name,
             auto_refresh_inputs=auto_refresh_inputs,
+            effective_settings=effective_settings,
             symbols=symbols,
             symbols_file=symbols_file,
             refresh_timeframes=refresh_timeframes,
@@ -709,6 +723,7 @@ class TradingPlatformService:
                     context=context,
                     strategy_name=strategy_name,
                     result=exit_result,
+                    cooldown_minutes=effective_settings.scalping.cooldown_minutes,
                 )
                 exit_results.append(exit_result)
                 if exit_result.order is not None:
@@ -717,7 +732,7 @@ class TradingPlatformService:
 
         if signals and any(
             self.runtime_state_service.minutes_to_close(signal.market.timestamp)
-            <= self.settings.scalping.max_holding_seconds // 60
+            <= effective_settings.scalping.flatten_near_close_minutes
             for signal in signals
         ):
             for flatten_result in self.broker.flatten_open_brackets(reason="near_close_flatten"):
@@ -725,6 +740,7 @@ class TradingPlatformService:
                     context=context,
                     strategy_name=strategy_name,
                     result=flatten_result,
+                    cooldown_minutes=effective_settings.scalping.cooldown_minutes,
                 )
                 exit_results.append(flatten_result)
                 if flatten_result.order is not None:
@@ -742,6 +758,10 @@ class TradingPlatformService:
         attempts: list[TradeAttemptTrace] = []
         audits = []
         rejection_reasons: list[str] = []
+        eligible_candidates: list[tuple] = []
+        available_position_slots = self._available_position_slots(
+            session_config=session_config,
+        )
 
         for signal in signals:
             trace = TradeAttemptTrace.for_symbol(signal.symbol, strategy_name)
@@ -801,59 +821,7 @@ class TradingPlatformService:
                         f"slippage={plan.estimated_slippage:.4f}, "
                         f"net_rr={plan.reward_risk_ratio:.4f}"
                     )
-
-                risk_decision = self.risk_engine.evaluate(
-                    intent=strategy_decision.intent,
-                    mode=normalized_mode if normalized_mode is not RuntimeMode.DRY_RUN else RuntimeMode.PAPER,
-                )
-                trace.risk_outcome = risk_decision
-                if not risk_decision.approved:
-                    rejection_reasons.append(risk_decision.reason or "risk_rejected")
-                    attempts.append(trace)
-                    audits.append(
-                        self.runtime_state_service.build_decision_audit(
-                            context=context,
-                            signal=signal,
-                            trace=trace,
-                            prediction_status=prediction_result.status,
-                            market_status=market_status,
-                        )
-                    )
-                    continue
-
-                execution_result = self.execution_engine.execute(
-                    risk_decision,
-                    mode=normalized_mode,
-                )
-                trace.execution_request = execution_result.request
-                trace.execution_outcome = execution_result
-                if execution_result.reason and execution_result.execution_skipped:
-                    rejection_reasons.append(execution_result.reason)
-                if execution_result.bracket_state is not None:
-                    trace.notes.append(
-                        "Bracket state: "
-                        f"status={execution_result.bracket_state.status}, "
-                        f"exit_reason={execution_result.bracket_state.exit_reason}, "
-                        f"realized_pnl={execution_result.bracket_state.realized_pnl}"
-                    )
-                self.runtime_state_service.record_execution_result(
-                    context=context,
-                    strategy_name=strategy_name,
-                    result=execution_result,
-                )
-                if execution_result.order is not None:
-                    session_orders.append(execution_result.order)
-                session_fills.extend(execution_result.fills)
-                attempts.append(trace)
-                audits.append(
-                    self.runtime_state_service.build_decision_audit(
-                        context=context,
-                        signal=signal,
-                        trace=trace,
-                        prediction_status=prediction_result.status,
-                        market_status=market_status,
-                    )
-                )
+                eligible_candidates.append((signal, trace, strategy_decision))
             except Exception as exc:  # pragma: no cover - defensive session isolation
                 trace.notes.append(str(exc))
                 attempts.append(trace)
@@ -876,6 +844,95 @@ class TradingPlatformService:
                         market_status=market_status,
                     )
                 )
+
+        selected_by_symbol: dict[str, object] = {}
+        if eligible_candidates:
+            selection_result = apply_top_n_selection(
+                [decision for _, _, decision in eligible_candidates],
+                top_n_per_cycle=effective_settings.scalping.top_n_per_cycle,
+                available_position_slots=available_position_slots,
+            )
+            for decision in [*selection_result.selected, *selection_result.rejected]:
+                selected_by_symbol[decision.symbol] = decision
+
+        for signal, trace, strategy_decision in eligible_candidates:
+            resolved_decision = selected_by_symbol.get(signal.symbol, strategy_decision)
+            trace.strategy_outcome = resolved_decision
+            if resolved_decision.quality is not None:
+                trace.notes.append(
+                    "Selection quality: "
+                    f"score={resolved_decision.quality.quality_score:.4f}, "
+                    f"edge_after_cost={resolved_decision.quality.expected_edge_after_cost:.4f}, "
+                    f"selection_rank={resolved_decision.quality.selection_rank}, "
+                    f"selected_in_top_n={resolved_decision.quality.selected_in_top_n}"
+                )
+            if not resolved_decision.should_trade or resolved_decision.intent is None:
+                rejection_reasons.append(resolved_decision.reason or "strategy_rejected")
+                attempts.append(trace)
+                audits.append(
+                    self.runtime_state_service.build_decision_audit(
+                        context=context,
+                        signal=signal,
+                        trace=trace,
+                        prediction_status=prediction_result.status,
+                        market_status=market_status,
+                    )
+                )
+                continue
+
+            risk_decision = self.risk_engine.evaluate(
+                intent=resolved_decision.intent,
+                mode=normalized_mode if normalized_mode is not RuntimeMode.DRY_RUN else RuntimeMode.PAPER,
+            )
+            trace.risk_outcome = risk_decision
+            if not risk_decision.approved:
+                rejection_reasons.append(risk_decision.reason or "risk_rejected")
+                attempts.append(trace)
+                audits.append(
+                    self.runtime_state_service.build_decision_audit(
+                        context=context,
+                        signal=signal,
+                        trace=trace,
+                        prediction_status=prediction_result.status,
+                        market_status=market_status,
+                    )
+                )
+                continue
+
+            execution_result = self.execution_engine.execute(
+                risk_decision,
+                mode=normalized_mode,
+            )
+            trace.execution_request = execution_result.request
+            trace.execution_outcome = execution_result
+            if execution_result.reason and execution_result.execution_skipped:
+                rejection_reasons.append(execution_result.reason)
+            if execution_result.bracket_state is not None:
+                trace.notes.append(
+                    "Bracket state: "
+                    f"status={execution_result.bracket_state.status}, "
+                    f"exit_reason={execution_result.bracket_state.exit_reason}, "
+                    f"realized_pnl={execution_result.bracket_state.realized_pnl}"
+                )
+            self.runtime_state_service.record_execution_result(
+                context=context,
+                strategy_name=strategy_name,
+                result=execution_result,
+                cooldown_minutes=effective_settings.scalping.cooldown_minutes,
+            )
+            if execution_result.order is not None:
+                session_orders.append(execution_result.order)
+            session_fills.extend(execution_result.fills)
+            attempts.append(trace)
+            audits.append(
+                self.runtime_state_service.build_decision_audit(
+                    context=context,
+                    signal=signal,
+                    trace=trace,
+                    prediction_status=prediction_result.status,
+                    market_status=market_status,
+                )
+            )
 
         orders = [] if normalized_mode is RuntimeMode.DRY_RUN else session_orders
         fills = [] if normalized_mode is RuntimeMode.DRY_RUN else session_fills
@@ -939,3 +996,20 @@ class TradingPlatformService:
             session_config,
         )
         return StrategyRegistry.build_default(session_settings).get(strategy_name)
+
+    def _available_position_slots(
+        self,
+        *,
+        session_config: ResolvedSessionConfig | None,
+    ) -> int | None:
+        if session_config is None:
+            return None
+        max_positions = max(0, int(session_config.risk.max_positions))
+        open_positions = len(
+            [
+                position
+                for position in self.broker.list_positions()
+                if abs(position.quantity) > 0
+            ]
+        )
+        return max(0, max_positions - open_positions)

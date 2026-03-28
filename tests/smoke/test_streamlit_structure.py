@@ -8,11 +8,10 @@ def test_streamlit_page_files_exist() -> None:
         "app/pages/00_Setup_Wizard.py",
         "app/pages/02_Strategy_Control.py",
         "app/pages/03_Data_Management.py",
-        "app/pages/04_Paper_Trading.py",
         "app/pages/05_Live_Trading.py",
         "app/pages/06_LLM_Copilot.py",
         "app/pages/07_Diagnostics.py",
-        "app/pages/08_Settings.py",
+        "app/pages/08_Status_Reference.py",
         "app/pages/09_Trading_Universe.py",
     ]
 
@@ -29,11 +28,10 @@ def test_streamlit_entrypoints_do_not_use_package_shadowed_runtime_imports() -> 
         "app/pages/00_Setup_Wizard.py",
         "app/pages/02_Strategy_Control.py",
         "app/pages/03_Data_Management.py",
-        "app/pages/04_Paper_Trading.py",
         "app/pages/05_Live_Trading.py",
         "app/pages/06_LLM_Copilot.py",
         "app/pages/07_Diagnostics.py",
-        "app/pages/08_Settings.py",
+        "app/pages/08_Status_Reference.py",
         "app/pages/09_Trading_Universe.py",
     ]
 
@@ -46,8 +44,8 @@ def test_streamlit_app_landing_page_is_dashboard() -> None:
     project_root = Path(__file__).resolve().parents[2]
     source = (project_root / "app/app.py").read_text(encoding="utf-8")
 
-    assert 'st.set_page_config(page_title="Dashboard"' in source
-    assert 'st.title("Dashboard")' in source
+    assert 'st.set_page_config(page_title="Dashboard Summary"' in source
+    assert 'st.title("Dashboard Summary")' in source
 
 
 def test_data_management_page_uses_real_operation_tabs() -> None:

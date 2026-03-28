@@ -70,6 +70,56 @@ class ArtifactStatus(BaseModel):
         )
 
 
+class HigherTimeframeTrend(BaseModel):
+    """Directional higher-timeframe state shared by strategy and audit layers."""
+
+    source_timeframe: str
+    fast_ma_length: int
+    slow_ma_length: int
+    state: Literal["bullish", "bearish", "neutral", "unavailable"]
+    long_allowed: bool
+    short_allowed: bool
+    reason: str
+    latest_close: float | None = None
+    latest_vwap: float | None = None
+    fast_ma: float | None = None
+    slow_ma: float | None = None
+    slow_ma_slope_bps: float | None = None
+
+
+class CandidateCostEstimate(BaseModel):
+    """Per-candidate edge-versus-cost breakdown expressed in return units."""
+
+    gross_predicted_return: float
+    estimated_spread_cost: float
+    estimated_slippage_cost: float
+    estimated_fee_cost: float
+    estimated_regulatory_fee_cost: float
+    estimated_total_cost: float
+    expected_edge_after_cost: float
+
+
+class CandidateQualitySnapshot(BaseModel):
+    """Composite quality context used for ranking and auditability."""
+
+    quality_score: float = 0.0
+    expected_edge_after_cost: float = 0.0
+    cost_estimate: CandidateCostEstimate
+    trend: HigherTimeframeTrend
+    predicted_return_component: float = 0.0
+    confidence_component: float = 0.0
+    edge_component: float = 0.0
+    spread_quality_component: float = 0.0
+    liquidity_component: float = 0.0
+    trend_component: float = 0.0
+    reward_risk_component: float = 0.0
+    reward_risk_ratio: float | None = None
+    expected_net_profit: float | None = None
+    selection_rank: int | None = None
+    selected_in_top_n: bool | None = None
+    top_n_eligible: bool = False
+
+
 class MarketSnapshot(BaseModel):
     """Market state used by signal and strategy evaluation."""
 
@@ -83,6 +133,7 @@ class MarketSnapshot(BaseModel):
     order_book_imbalance: float
     liquidity_sweep_detected: bool
     volatility_regime: Literal["low", "normal", "high"]
+    higher_timeframe_trend: HigherTimeframeTrend | None = None
     timestamp: datetime = Field(default_factory=utc_now)
 
 
@@ -202,6 +253,7 @@ class StrategyDecision(BaseModel):
     reason: str | None = None
     passed_filters: list[str] = Field(default_factory=list)
     failed_filters: list[str] = Field(default_factory=list)
+    quality: CandidateQualitySnapshot | None = None
 
     @classmethod
     def approve(
@@ -211,6 +263,7 @@ class StrategyDecision(BaseModel):
         symbol: str,
         intent: TradeIntent,
         passed_filters: list[str],
+        quality: CandidateQualitySnapshot | None = None,
     ) -> "StrategyDecision":
         return cls(
             strategy_name=strategy_name,
@@ -218,6 +271,7 @@ class StrategyDecision(BaseModel):
             should_trade=True,
             intent=intent,
             passed_filters=passed_filters,
+            quality=quality,
         )
 
     @classmethod
@@ -229,6 +283,7 @@ class StrategyDecision(BaseModel):
         reason: str,
         failed_filters: list[str],
         passed_filters: list[str] | None = None,
+        quality: CandidateQualitySnapshot | None = None,
     ) -> "StrategyDecision":
         return cls(
             strategy_name=strategy_name,
@@ -237,6 +292,7 @@ class StrategyDecision(BaseModel):
             reason=reason,
             failed_filters=failed_filters,
             passed_filters=passed_filters or [],
+            quality=quality,
         )
 
 

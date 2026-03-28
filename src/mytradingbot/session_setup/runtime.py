@@ -36,6 +36,20 @@ def apply_resolved_config_to_settings(
     resolved.scalping.max_position_notional = config.risk.max_dollars_per_trade
     resolved.scalping.predicted_return_threshold = config.alpha.predicted_return_threshold
     resolved.scalping.confidence_threshold = config.alpha.confidence_threshold
+    resolved.scalping.top_n_per_cycle = config.alpha.top_n_per_cycle
+    resolved.scalping.edge_after_cost_min_buffer = config.alpha.edge_after_cost_min_buffer
+    resolved.scalping.cooldown_minutes = config.risk.cooldown_minutes
+    resolved.scalping.higher_timeframe_filter_enabled = config.risk.higher_timeframe_filter_enabled
+    resolved.scalping.higher_timeframe_source_timeframe = (
+        config.risk.higher_timeframe_source_timeframe
+    )
+    resolved.scalping.higher_timeframe_fast_ma_length = (
+        config.risk.higher_timeframe_fast_ma_length
+    )
+    resolved.scalping.higher_timeframe_slow_ma_length = (
+        config.risk.higher_timeframe_slow_ma_length
+    )
+    resolved.scalping.enable_pseudo_order_book_gate = not config.risk.disable_pseudo_order_book_gate
     resolved.scalping.stop_loss_buffer_bps = config.execution.stop_loss_percent * 100
     return resolved
 

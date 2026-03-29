@@ -62,8 +62,13 @@ class AlphaRobustTrainingService:
         *,
         symbols: list[str],
         timeframes: list[str],
+        minimum_eligible_symbols: int | None = None,
     ) -> TrainingDataQualityReport:
-        report = self.quality_checker.evaluate(symbols=symbols, timeframes=timeframes)
+        report = self.quality_checker.evaluate(
+            symbols=symbols,
+            timeframes=timeframes,
+            minimum_eligible_symbols=minimum_eligible_symbols,
+        )
         report.artifacts = self.artifact_store.write_quality_report(report)
         return report
 
@@ -117,6 +122,7 @@ class AlphaRobustTrainingService:
         quality_report = self.run_quality_check(
             symbols=resolved_symbols,
             timeframes=timeframes,
+            minimum_eligible_symbols=min_eligible_symbols,
         )
         reports.extend(quality_report.artifacts)
         eligible_symbols = quality_report.eligible_symbols

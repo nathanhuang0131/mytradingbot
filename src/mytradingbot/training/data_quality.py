@@ -26,7 +26,14 @@ class TrainingDataQualityChecker:
         self.settings = settings or AppSettings()
         self.store = store or ParquetBarStore(settings=self.settings)
 
-    def evaluate(self, *, symbols: list[str], timeframes: list[str]) -> TrainingDataQualityReport:
+    def evaluate(
+        self,
+        *,
+        symbols: list[str],
+        timeframes: list[str],
+        minimum_eligible_symbols: int | None = None,
+    ) -> TrainingDataQualityReport:
+        minimum_symbols = minimum_eligible_symbols or self.settings.training.minimum_eligible_symbols
         timeframe_summaries: list[TimeframeQualitySummary] = []
         eligible_by_timeframe: list[set[str]] = []
         for timeframe in timeframes:
@@ -56,14 +63,14 @@ class TrainingDataQualityChecker:
                 median_coverage_ratio=float(pd.Series([detail.coverage_ratio for detail in details]).median() or 0.0),
                 lookback_window_days_achieved=lookback_achieved,
                 sufficiency_pass=lookback_achieved >= self.settings.training.timeframe_minimum_trading_days[timeframe]
-                and len(passing) >= self.settings.training.minimum_eligible_symbols,
+                and len(passing) >= minimum_symbols,
                 symbol_details=details,
             )
             timeframe_summaries.append(summary)
             eligible_by_timeframe.append({detail.symbol for detail in passing})
 
         eligible_symbols = sorted(set.intersection(*eligible_by_timeframe)) if eligible_by_timeframe else []
-        ok = all(summary.sufficiency_pass for summary in timeframe_summaries) and len(eligible_symbols) >= self.settings.training.minimum_eligible_symbols
+        ok = all(summary.sufficiency_pass for summary in timeframe_summaries) and len(eligible_symbols) >= minimum_symbols
         message = (
             "Training data passed multi-timeframe sufficiency checks."
             if ok

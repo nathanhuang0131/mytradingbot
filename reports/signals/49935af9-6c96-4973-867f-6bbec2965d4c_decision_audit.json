@@ -1,0 +1,3122 @@
+[
+  {
+    "event_id": "5b60b274-e44b-4779-890d-c54e8a993934",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "9640cfd3-956f-4ce8-aa31-f55d86c8916a",
+    "timestamp": "2026-03-23T20:39:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "NFLX",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.002166131947381391,
+    "predicted_return": 0.002166131947381391,
+    "target_return": 0.002166131947381391,
+    "candidate_rank": 1,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T20:39:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "7abac9e5-f0fe-4d93-8083-d70e49a47019",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "1b37424e-8688-4890-8975-0169258e63ae",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "QBTS",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.002016462325409594,
+    "predicted_return": 0.002016462325409594,
+    "target_return": 0.002016462325409594,
+    "candidate_rank": 2,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "b94d6cf7-27a8-4e7e-88f3-5abc7994bd5b",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "0dcf3840-df53-4cf0-b224-00228f0d81ef",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "CRGY",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.001204714168005238,
+    "predicted_return": 0.001204714168005238,
+    "target_return": 0.001204714168005238,
+    "candidate_rank": 3,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "c6a00c62-20a3-40b3-91e1-b6acccc69f4b",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "0d628a57-954e-45d6-96e6-43e1754a0a05",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "XP",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.0005170294231273818,
+    "predicted_return": 0.0005170294231273818,
+    "target_return": 0.0005170294231273818,
+    "candidate_rank": 4,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": true,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "e8e978f8-f4ce-4f23-88f0-62f48c56aec5",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "f4fbee01-4b10-41df-ace6-3c78a96f58c2",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "INFY",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.0004737092479869199,
+    "predicted_return": 0.0004737092479869199,
+    "target_return": 0.0004737092479869199,
+    "candidate_rank": 5,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": true,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "5b8e2302-2b5a-49a9-9f67-2623dbe192f6",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "7c5f2e81-62d4-4802-b979-fbd7d34d66a7",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "SAN",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.0004212788493466776,
+    "predicted_return": 0.0004212788493466776,
+    "target_return": 0.0004212788493466776,
+    "candidate_rank": 6,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "ff3a8209-8588-43c1-983c-fa75dbaa301a",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "9e726165-bf03-4899-8525-9dda3fdc32eb",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "SMR",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00031197624926612033,
+    "predicted_return": 0.00031197624926612033,
+    "target_return": 0.00031197624926612033,
+    "candidate_rank": 7,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "d6109d52-8ff8-4e5e-aa4c-b69279a33c88",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "b55c6318-5f7e-40e4-a309-5cb635a061bd",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "VTRS",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00027674155746258727,
+    "predicted_return": 0.00027674155746258727,
+    "target_return": 0.00027674155746258727,
+    "candidate_rank": 8,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "b417a3a5-d128-40f6-ac4c-c4de9bca19a7",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "cddd64db-8e60-40e0-8938-cf2c89445591",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "PATH",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00026771513298575985,
+    "predicted_return": 0.00026771513298575985,
+    "target_return": 0.00026771513298575985,
+    "candidate_rank": 9,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": true,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "72f39e54-e9bf-421d-8d78-e1f3c6e64432",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "da754da2-4ded-4761-a932-fd3d269aceb3",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "DKNG",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00026428963875322026,
+    "predicted_return": 0.00026428963875322026,
+    "target_return": 0.00026428963875322026,
+    "candidate_rank": 10,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "b7e8ff2d-29b7-4681-8643-ce59a5e709d5",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "528ef698-1854-4ccb-8f4c-3df36a9260b9",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "BAC",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00022933777165574663,
+    "predicted_return": 0.00022933777165574663,
+    "target_return": 0.00022933777165574663,
+    "candidate_rank": 11,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": true,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "fb84ba2b-1e87-44be-91a1-0e9b9eefc850",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "54d005d5-39c9-4f4c-bf9f-b6e689a32a08",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "SMCI",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.0002255830974823449,
+    "predicted_return": 0.0002255830974823449,
+    "target_return": 0.0002255830974823449,
+    "candidate_rank": 12,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "cb54b211-c1cb-4ed8-a04b-afa8334489ba",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "9ef7e39d-849f-4e9c-82b4-b138f9daf294",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "FIG",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00022380846409068896,
+    "predicted_return": 0.00022380846409068896,
+    "target_return": 0.00022380846409068896,
+    "candidate_rank": 13,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "1067f261-4102-49b1-925e-3ea52c3914bf",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "b50bc2c8-e51c-4312-9816-2adb307c692a",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "BAX",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00022342920201843435,
+    "predicted_return": 0.00022342920201843435,
+    "target_return": 0.00022342920201843435,
+    "candidate_rank": 14,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "32be7711-2ed2-4e10-8983-8e2107289024",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "33959318-7037-4306-a5a7-952801ec557c",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "USB",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00022255439932498144,
+    "predicted_return": 0.00022255439932498144,
+    "target_return": 0.00022255439932498144,
+    "candidate_rank": 15,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": true,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "224dc7f7-56af-4d2c-8a90-820382b7e9b5",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "78db5c4d-0e14-4c0b-b62e-4f608d512840",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "NKE",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00021478548898536232,
+    "predicted_return": 0.00021478548898536232,
+    "target_return": 0.00021478548898536232,
+    "candidate_rank": 16,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": true,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "8eaaffb2-398e-4cc6-8283-ee86c53a687c",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "9290dc16-6330-492f-b4ae-445cf3ddca0d",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "PINS",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00020600240427168286,
+    "predicted_return": 0.00020600240427168286,
+    "target_return": 0.00020600240427168286,
+    "candidate_rank": 17,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "c4b8d10b-ff45-45be-a46a-8a77fdc51e61",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "443a3faa-2abe-4180-a81d-427b54a95438",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "BMNR",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00020566846215637236,
+    "predicted_return": 0.00020566846215637236,
+    "target_return": 0.00020566846215637236,
+    "candidate_rank": 18,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "dd9c8ec7-c26b-4a90-8c29-6b78c448ba44",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "7c3e1056-c9e3-4ad8-bfa7-091c50df7173",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "EQT",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00019783517139396558,
+    "predicted_return": 0.00019783517139396558,
+    "target_return": 0.00019783517139396558,
+    "candidate_rank": 19,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  },
+  {
+    "event_id": "1aa0a0ca-e284-43e7-a18e-cf6243d1a7c5",
+    "session_id": "49935af9-6c96-4973-867f-6bbec2965d4c",
+    "run_id": "51401c2c-68f0-46be-97ca-2c4f78152d02",
+    "correlation_id": "cfb68b3c-5a92-405b-968d-f5fe37d30d28",
+    "timestamp": "2026-03-23T19:59:00Z",
+    "strategy": "scalping",
+    "strategy_version": "v2",
+    "mode": "paper",
+    "broker_mode": "alpaca_paper_api",
+    "symbol": "HOOD",
+    "side_considered": "buy",
+    "bracket_considered": false,
+    "signal_source": "qlib_candidate_only",
+    "qlib_raw_score": 0.00018961129791874592,
+    "predicted_return": 0.00018961129791874592,
+    "target_return": 0.00018961129791874592,
+    "candidate_rank": 20,
+    "prediction_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\predictions\\latest.json",
+    "model_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\models\\qlib\\model.pkl",
+    "dataset_artifact_path": "C:\\Users\\User\\Documents\\MyTradingBot_Next\\data\\qlib\\dataset.parquet",
+    "source_data_timestamp": "2026-03-23T19:59:00Z",
+    "source_data_freshness_minutes": 0,
+    "rule_checks": [
+      {
+        "stage": "freshness",
+        "name": "predictions_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "freshness",
+        "name": "market_snapshot_fresh",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "foreign_position_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_check",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "confidence_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "cooldown_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "duplicate_position",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "flatten_near_close_logic",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "intraday_volatility_regime",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_stress_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "liquidity_sweep_detection",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "order_book_imbalance",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "predicted_return_threshold",
+        "passed": false,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "qlib_signal_gating",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "spread_filter",
+        "passed": true,
+        "detail": null,
+        "value": null
+      },
+      {
+        "stage": "strategy",
+        "name": "vwap_relationship",
+        "passed": false,
+        "detail": null,
+        "value": null
+      }
+    ],
+    "final_decision_status": "rejected",
+    "final_rejection_reason_code": "target_return_below_threshold",
+    "final_rejection_reason_detail": "predicted_return_threshold",
+    "notes": []
+  }
+]

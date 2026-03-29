@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -8,6 +9,7 @@ import pandas as pd
 
 from mytradingbot.core.paths import RepoPaths
 from mytradingbot.core.settings import AppSettings
+from mytradingbot.qlib_engine.adapter import FEATURE_COLUMNS, PyQlibWorkflowAdapter
 from mytradingbot.qlib_engine.service import QlibWorkflowService
 
 
@@ -87,6 +89,78 @@ def test_prediction_artifact_loads_typed_predictions(tmp_path) -> None:
     assert result.predictions[0].symbol == "AAPL"
 
 
+def test_prediction_artifact_loads_predictions_from_wrapped_dict_payload(tmp_path) -> None:
+    artifact_path = tmp_path / "latest.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-03-20T00:00:00Z",
+                "predictions": [
+                    {
+                        "symbol": "MSFT",
+                        "score": 0.76,
+                        "predicted_return": 0.011,
+                        "confidence": 0.8,
+                        "rank": 2,
+                        "direction": "long",
+                        "horizon": "intraday",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    service = QlibWorkflowService(
+        pyqlib_available=True,
+        predictions_path=artifact_path,
+    )
+
+    result = service.load_predictions()
+
+    assert result.ok
+    assert result.predictions[0].symbol == "MSFT"
+
+
+def test_prediction_artifact_rejects_malformed_dict_payload(tmp_path) -> None:
+    artifact_path = tmp_path / "latest.json"
+    artifact_path.write_text(
+        json.dumps({"rank": 1, "score": 0.5}),
+        encoding="utf-8",
+    )
+
+    service = QlibWorkflowService(
+        pyqlib_available=True,
+        predictions_path=artifact_path,
+    )
+
+    result = service.load_predictions()
+
+    assert not result.ok
+    assert str(artifact_path) in result.message
+    assert "dict" in result.message.lower()
+    assert "predictions" in result.message.lower()
+
+
+def test_prediction_artifact_rejects_scalar_payload(tmp_path) -> None:
+    artifact_path = tmp_path / "latest.json"
+    artifact_path.write_text(
+        json.dumps("not-a-prediction-list"),
+        encoding="utf-8",
+    )
+
+    service = QlibWorkflowService(
+        pyqlib_available=True,
+        predictions_path=artifact_path,
+    )
+
+    result = service.load_predictions()
+
+    assert not result.ok
+    assert str(artifact_path) in result.message
+    assert "str" in result.message.lower()
+
+
 class _FakeQlibAdapter:
     def build_dataset(self, frame: pd.DataFrame, artifact_path: Path) -> Path:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,6 +199,23 @@ class _FakeQlibAdapter:
             )
         output_path.write_text(json.dumps(payload), encoding="utf-8")
         return output_path
+
+
+class _PredictableModel:
+    def __init__(self, scores: dict[str, float]) -> None:
+        self.scores = scores
+
+    def predict(self, dataset, segment: str = "predict"):
+        latest_rows = dataset.sort_values("datetime").groupby("instrument").tail(1)
+        index = []
+        values = []
+        for row in latest_rows.itertuples(index=False):
+            index.append((row.datetime, row.instrument))
+            values.append(float(self.scores[row.instrument]))
+        return pd.Series(
+            values,
+            index=pd.MultiIndex.from_tuples(index, names=["datetime", "instrument"]),
+        )
 
 
 def _write_normalized_bars(root: Path, timeframe: str = "1m") -> None:
@@ -296,3 +387,46 @@ def test_prediction_artifact_with_utf8_bom_loads_cleanly(tmp_path) -> None:
 
     assert result.ok
     assert result.predictions[0].symbol == "AAPL"
+
+
+def test_pyqlib_adapter_ranks_predictions_by_absolute_score_and_preserves_sign(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "datetime": pd.Timestamp("2026-03-18T15:00:00Z"),
+                "instrument": "AAPL",
+                **{column: 0.1 for column in FEATURE_COLUMNS},
+            },
+            {
+                "datetime": pd.Timestamp("2026-03-18T15:00:00Z"),
+                "instrument": "MSFT",
+                **{column: 0.2 for column in FEATURE_COLUMNS},
+            },
+        ]
+    )
+    model_path = tmp_path / "model.pkl"
+    output_path = tmp_path / "latest.json"
+    model_path.write_bytes(
+        pickle.dumps(_PredictableModel({"AAPL": 0.02, "MSFT": -0.05}))
+    )
+
+    monkeypatch.setattr(
+        PyQlibWorkflowAdapter,
+        "_build_dataset_object",
+        lambda self, frame, include_label=False, segment_name="predict": frame,
+    )
+
+    adapter = PyQlibWorkflowAdapter()
+    adapter.generate_predictions(frame, model_path, output_path, "scalping")
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert [row["symbol"] for row in payload] == ["MSFT", "AAPL"]
+    assert payload[0]["rank"] == 1
+    assert payload[0]["direction"] == "short"
+    assert payload[0]["score"] == -0.05
+    assert payload[0]["predicted_return"] == -0.05
+    assert payload[0]["confidence"] > payload[1]["confidence"]

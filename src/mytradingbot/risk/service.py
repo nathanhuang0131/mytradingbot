@@ -31,11 +31,15 @@ class RiskEngine:
             checks.append("position_exists")
             return RiskDecision.reject(reason="position_exists", checks=checks)
 
+        if intent.metadata.get("foreign_position_exists", False):
+            checks.append("foreign_position_exists")
+            return RiskDecision.reject(reason="foreign_position_exists", checks=checks)
+
         if intent.quantity <= 0:
             checks.append("positive_quantity_required")
             return RiskDecision.reject(reason="invalid_quantity", checks=checks)
 
-        if intent.strategy_name == "scalping" and intent.side == "buy" and intent.bracket_plan is None:
+        if intent.strategy_name == "scalping" and intent.bracket_plan is None:
             checks.append("bracket_plan_required")
             return RiskDecision.reject(reason="missing_bracket_plan", checks=checks)
 

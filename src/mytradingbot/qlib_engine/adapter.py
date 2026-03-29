@@ -82,10 +82,14 @@ class PyQlibWorkflowAdapter:
         latest_scores = prediction_df.sort_values("datetime").groupby("instrument").tail(1)
         latest_features = prediction_frame.sort_values("datetime").groupby("instrument").tail(1)
         merged = latest_scores.merge(latest_features, on=["instrument", "datetime"], how="left")
-        merged["confidence"] = merged["score"].rank(pct=True, ascending=False).fillna(0.5)
+        merged["absolute_score"] = merged["score"].abs()
+        merged["confidence"] = (
+            merged["absolute_score"].rank(pct=True, ascending=True).fillna(0.5)
+        )
         payload = []
         for rank, row in enumerate(
-            merged.sort_values("score", ascending=False).itertuples(index=False), start=1
+            merged.sort_values("absolute_score", ascending=False).itertuples(index=False),
+            start=1,
         ):
             payload.append(
                 {

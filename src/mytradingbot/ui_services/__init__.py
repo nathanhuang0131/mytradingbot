@@ -7,6 +7,7 @@ from mytradingbot.ui_services.live_trading import LiveTradingPayload, LiveTradin
 from mytradingbot.ui_services.llm_copilot import LLMCopilotService
 from mytradingbot.ui_services.paper_trading import PaperTradingService
 from mytradingbot.ui_services.settings import SettingsService
+from mytradingbot.ui_services.status_reference import StatusReferenceService
 from mytradingbot.ui_services.strategy_control import (
     StrategyControlPayload,
     StrategyControlService,
@@ -23,6 +24,7 @@ __all__ = [
     "LiveTradingService",
     "PaperTradingService",
     "SettingsService",
+    "StatusReferenceService",
     "StrategyControlPayload",
     "StrategyControlService",
 ]

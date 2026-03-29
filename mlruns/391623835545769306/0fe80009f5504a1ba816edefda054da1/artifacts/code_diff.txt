@@ -1,0 +1,1840 @@
+diff --git a/README.md b/README.md
+index f6a3610..3ca3077 100644
+--- a/README.md
++++ b/README.md
+@@ -106,16 +106,31 @@ python scripts\run_institutional_pipeline.py --strategy scalping --use-top-liqui
+ 
+ ## Overnight Paper Runner
+ 
+-The canonical overnight paper runner is the loop mode in `scripts/run_paper_trading.py`. It is restart-safe because each cycle rehydrates broker state from `data/state/institutional_runtime.sqlite3`, reuses persisted brackets and positions, writes a rolling log to `logs/paper_trading_loop.log`, and refreshes closed-trade analytics after every cycle.
++The canonical overnight runner is the loop mode in `scripts/run_paper_trading.py` with an explicit symbol scope. It is restart-safe because each cycle rehydrates broker state from `data/state/institutional_runtime.sqlite3`, reuses persisted brackets and positions, refreshes closed-trade analytics, refreshes the market snapshot on the fast cadence, refreshes predictions on the configured inference cadence, and only incrementally rebuilds the dataset when required. It does not retrain the model on every cycle.
++
++Canonical local-paper overnight command:
++
++```powershell
++python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --symbols-file data\universe\latest_top_liquidity_universe.json --loop --interval-seconds 300 --verbose
++```
++
++Canonical Alpaca paper overnight command:
+ 
+ ```powershell
+-python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --verbose
++python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --symbols-file data\universe\latest_top_liquidity_universe.json --loop --interval-seconds 300 --verbose
+ ```
+ 
+ Optional bounded run:
+ 
+ ```powershell
+-python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --max-cycles 12 --verbose
++python scripts\run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --symbols-file data\universe\latest_top_liquidity_universe.json --loop --interval-seconds 300 --max-cycles 12 --verbose
++```
++
++Deterministic bounded smoke commands:
++
++```powershell
++python -m pytest -q tests/integration/test_paper_session.py -k traceability
++python -m pytest -q tests/integration/test_paper_session.py -k short
+ ```
+ 
+ ## Morning Analytics Workflow
+@@ -132,13 +147,14 @@ After an overnight run, inspect:
+ 
+ ## Local Paper Broker Vs Alpaca Paper Account
+ 
+-The canonical overnight paper runner uses the repo-local `local_paper` broker mode. Orders, fills, positions, brackets, incidents, and realized analytics come from the SQLite runtime store at `data/state/institutional_runtime.sqlite3` plus the repo-local report and ledger artifacts.
++The overnight runner supports both `local_paper` and `alpaca_paper_api`. `local_paper` remains the default. In either mode, the loop writes structured readiness state so it will not silently spin for hours on stale snapshot or prediction artifacts.
+ 
+ In `local_paper` mode:
+ 
+ - `reports/paper_trading/`, `reports/signals/`, `reports/analytics/`, and `data/ledger/` reflect repo-local simulated paper activity
+ - the Alpaca paper account UI remains unchanged because no Alpaca paper API order routing happens
+ - `logs/paper_trading_loop.log` now prints a startup banner showing `broker_mode=local_paper` and `external_broker_submission_enabled=false`
++- the canonical overnight loop is self-sufficient only when you provide a symbol scope such as `--symbols-file data\universe\latest_top_liquidity_universe.json`
+ 
+ In `alpaca_paper_api` mode:
+ 
+@@ -147,6 +163,7 @@ In `alpaca_paper_api` mode:
+ - foreign or unknown Alpaca paper orders and positions remain read-only, appear in repo-local reports and incidents, and count toward risk context
+ - a foreign or unknown same-symbol position blocks a new bot entry by default
+ - strategy profitability and signal-source profitability exclude foreign or unknown account activity by default
++- the same overnight loop command keeps the market snapshot and predictions fresh on cadence; it is no longer execution-only unless you pass `--disable-auto-refresh`
+ 
+ Smoke test the Alpaca paper broker path with:
+ 
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index 647e30a..96d8a67 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -18,21 +18,33 @@
+ 
+ ## Overnight Paper Trading
+ 
+-Use the canonical overnight runner:
++Use the canonical overnight runner with an explicit symbol scope so the loop can keep market snapshot and prediction inputs fresh by itself:
+ 
+-`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --verbose`
++`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --symbols-file data/universe/latest_top_liquidity_universe.json --loop --interval-seconds 300 --verbose`
++
++Canonical Alpaca paper overnight run:
++
++`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --symbols-file data/universe/latest_top_liquidity_universe.json --loop --interval-seconds 300 --verbose`
+ 
+ Optional bounded overnight run:
+ 
+-`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode local_paper --loop --interval-seconds 300 --max-cycles 12 --verbose`
++`python scripts/run_paper_trading.py --strategy scalping --mode paper --broker-mode alpaca_paper_api --symbols-file data/universe/latest_top_liquidity_universe.json --loop --interval-seconds 300 --max-cycles 12 --verbose`
+ 
+ Operational notes:
+ 
+ - the loop writes a rolling log to `logs/paper_trading_loop.log`
+ - each cycle rehydrates state from `data/state/institutional_runtime.sqlite3`
+ - open positions and active brackets are reconciled at cycle startup
++- each cycle refreshes the market snapshot when due, refreshes predictions when due, and only rebuilds the dataset incrementally when needed for inference freshness
+ - per-cycle failures are logged and persisted, then the loop continues to the next cycle
+ - closed-trade analytics are refreshed after every cycle
++- pass `--disable-auto-refresh` only for debugging, because the loop will then block explicitly instead of trading on stale inputs
++
++Deterministic bounded smoke commands:
++
++`python -m pytest -q tests/integration/test_paper_session.py -k traceability`
++
++`python -m pytest -q tests/integration/test_paper_session.py -k short`
+ 
+ ## Morning Analysis Workflow
+ 
+@@ -49,7 +61,9 @@ The analytics exports are realized-only. They are built from persisted entry and
+ 
+ ## Local Paper Broker Vs Alpaca Paper Account
+ 
+-The overnight paper loop currently runs in `local_paper` mode. That means:
++The overnight paper loop supports both `local_paper` and `alpaca_paper_api`. `local_paper` remains the default.
++
++In `local_paper` mode:
+ 
+ - fills, positions, brackets, cooldowns, incidents, and closed-trade analytics come from `data/state/institutional_runtime.sqlite3`
+ - `reports/paper_trading/`, `reports/signals/`, `reports/analytics/`, and `data/ledger/` reflect repo-local simulated paper broker activity
+@@ -76,6 +90,7 @@ In `alpaca_paper_api` mode:
+ - foreign or unknown same-symbol exposure blocks new bot entries
+ - repo-local analytics continue to live under `reports/analytics/`, but strategy profitability excludes foreign activity by default
+ - the Alpaca paper dashboard will show the submitted orders because `external_broker_submission_enabled=true`
++- the same supervised loop keeps runtime inputs fresh on cadence, so healthy broker connectivity no longer masks stale decision artifacts
+ 
+ If you need a clean repo-local paper slate before the next overnight run:
+ 
+diff --git a/scripts/run_paper_trading.py b/scripts/run_paper_trading.py
+index 47e1eea..c7fc17f 100644
+--- a/scripts/run_paper_trading.py
++++ b/scripts/run_paper_trading.py
+@@ -14,15 +14,28 @@ from mytradingbot.qlib_engine.service import QlibWorkflowService
+ 
+ 
+ def build_parser() -> argparse.ArgumentParser:
+-    parser = argparse.ArgumentParser(description="Run a dry-run or paper trading session.")
++    parser = argparse.ArgumentParser(
++        description="Run a dry-run or paper trading session, or a supervised overnight paper loop."
++    )
+     parser.add_argument("--strategy", default="scalping")
+     parser.add_argument("--mode", choices=["dry_run", "paper"], default="paper")
+-    parser.add_argument("--broker-mode", choices=["local_paper", "alpaca_paper_api"], default="local_paper")
++    parser.add_argument(
++        "--broker-mode",
++        choices=["local_paper", "alpaca_paper_api"],
++        default="local_paper",
++    )
++    parser.add_argument("--symbols", nargs="*", default=None)
++    parser.add_argument("--symbols-file", type=Path, default=None)
+     parser.add_argument("--predictions-file", type=Path, default=None)
+     parser.add_argument("--market-data-file", type=Path, default=None)
+     parser.add_argument("--loop", action="store_true")
+     parser.add_argument("--interval-seconds", type=int, default=300)
+     parser.add_argument("--max-cycles", type=int, default=None)
++    parser.add_argument(
++        "--disable-auto-refresh",
++        action="store_true",
++        help="Disable loop/session input refresh and fail instead when the market snapshot or predictions go stale.",
++    )
+     parser.add_argument("--verbose", action="store_true")
+     return parser
+ 
+@@ -71,6 +84,9 @@ def main() -> int:
+             settings=settings,
+             predictions_path=args.predictions_file,
+             market_snapshot_path=args.market_data_file,
++            symbols=args.symbols,
++            symbols_file=args.symbols_file,
++            auto_refresh_inputs=not args.disable_auto_refresh,
+         ).run(
+             strategy_name=args.strategy,
+             mode=RuntimeMode(args.mode),
+@@ -97,6 +113,10 @@ def main() -> int:
+     result = service.run_session(
+         strategy_name=args.strategy,
+         mode=RuntimeMode(args.mode),
++        auto_refresh_inputs=not args.disable_auto_refresh,
++        symbols=args.symbols,
++        symbols_file=args.symbols_file,
++        refresh_timeframes=[settings.data.snapshot_timeframe],
+     )
+     print(result.model_dump_json(indent=2))
+     return 0
+diff --git a/src/mytradingbot/brokers/alpaca_paper.py b/src/mytradingbot/brokers/alpaca_paper.py
+index 7a2c959..b7c44f0 100644
+--- a/src/mytradingbot/brokers/alpaca_paper.py
++++ b/src/mytradingbot/brokers/alpaca_paper.py
+@@ -92,7 +92,10 @@ class AlpacaPaperBroker(BaseBroker):
+         return ExecutionConstraints(whole_shares_only_for_brackets=True, minimum_quantity=1.0)
+ 
+     def submit_order(self, request: ExecutionRequest) -> ExecutionResult:
+-        order_request = self._build_order_request(request)
++        try:
++            order_request = self._build_order_request(request)
++        except ValueError as exc:
++            return ExecutionResult.skipped(request=request, reason=str(exc))
+         broker_order = self.client.submit_order(order_request)
+         order_record = self._record_from_alpaca_order(broker_order, request=request)
+         self.runtime_store.record_order(order_record)
+@@ -173,7 +176,7 @@ class AlpacaPaperBroker(BaseBroker):
+             if (
+                 order.broker_mode != "alpaca_paper_api"
+                 or order.ownership_class != "bot_owned"
+-                or order.side != "buy"
++                or order.side not in {"buy", "sell"}
+                 or order.metadata.get("broker_order_class") != "bracket"
+                 or order.symbol not in active_positions
+             ):
+@@ -186,9 +189,10 @@ class AlpacaPaperBroker(BaseBroker):
+                     BrokerBracketState(
+                         symbol=order.symbol,
+                         entry_order_id=order.order_id,
++                        entry_side=order.side,  # type: ignore[arg-type]
+                         bracket_plan=ExecutionRequest(
+                             symbol=order.symbol,
+-                            side="buy",
++                            side=order.side,
+                             quantity=order.quantity,
+                             strategy_name=order.strategy,
+                             mode=order.mode,
+@@ -357,11 +361,20 @@ class AlpacaPaperBroker(BaseBroker):
+         from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
+         from alpaca.trading.requests import MarketOrderRequest, StopLossRequest, TakeProfitRequest
+ 
++        if request.side == "sell":
++            self._validate_shortability(request.symbol)
++
+         if request.bracket_plan is not None:
+-            if request.bracket_plan.planned_stop_loss_price >= request.bracket_plan.planned_entry_price:
+-                raise ValueError("Invalid long bracket: stop loss must be below entry for Alpaca paper bracket orders.")
+-            if request.bracket_plan.planned_take_profit_price <= request.bracket_plan.planned_entry_price:
+-                raise ValueError("Invalid long bracket: take profit must be above entry for Alpaca paper bracket orders.")
++            if request.side == "buy":
++                if request.bracket_plan.planned_stop_loss_price >= request.bracket_plan.planned_entry_price:
++                    raise ValueError("Invalid long bracket: stop loss must be below entry for Alpaca paper bracket orders.")
++                if request.bracket_plan.planned_take_profit_price <= request.bracket_plan.planned_entry_price:
++                    raise ValueError("Invalid long bracket: take profit must be above entry for Alpaca paper bracket orders.")
++            else:
++                if request.bracket_plan.planned_stop_loss_price <= request.bracket_plan.planned_entry_price:
++                    raise ValueError("Invalid short bracket: stop loss must be above entry for Alpaca paper bracket orders.")
++                if request.bracket_plan.planned_take_profit_price >= request.bracket_plan.planned_entry_price:
++                    raise ValueError("Invalid short bracket: take profit must be below entry for Alpaca paper bracket orders.")
+             take_profit_price = _normalize_price_for_alpaca(request.bracket_plan.planned_take_profit_price)
+             stop_loss_price = _normalize_price_for_alpaca(request.bracket_plan.planned_stop_loss_price)
+         else:
+@@ -386,6 +399,16 @@ class AlpacaPaperBroker(BaseBroker):
+             ),
+         )
+ 
++    def _validate_shortability(self, symbol: str) -> None:
++        get_asset = getattr(self.client, "get_asset", None)
++        if not callable(get_asset):
++            return
++        asset = get_asset(symbol)
++        tradable = bool(getattr(asset, "tradable", True))
++        shortable = bool(getattr(asset, "shortable", False))
++        if not tradable or not shortable:
++            raise ValueError(f"Short entry rejected for {symbol}: asset is not shortable in the Alpaca paper account.")
++
+     def _record_from_alpaca_order(
+         self,
+         order,
+diff --git a/src/mytradingbot/brokers/paper.py b/src/mytradingbot/brokers/paper.py
+index 0a4bb84..64c3268 100644
+--- a/src/mytradingbot/brokers/paper.py
++++ b/src/mytradingbot/brokers/paper.py
+@@ -66,10 +66,11 @@ class PaperBroker(BaseBroker):
+         )
+         position = self._update_position(request, fill_price)
+         bracket_state = None
+-        if request.bracket_plan is not None and request.side == "buy":
++        if request.bracket_plan is not None:
+             bracket_state = BrokerBracketState(
+                 symbol=request.symbol,
+                 entry_order_id=order.order_id,
++                entry_side=request.side,
+                 bracket_plan=request.bracket_plan.with_quantity(request.quantity),
+             )
+             self._brackets[request.symbol] = bracket_state
+@@ -104,10 +105,16 @@ class PaperBroker(BaseBroker):
+             return []
+ 
+         plan = bracket.bracket_plan
+-        if snapshot.last_price >= plan.planned_take_profit_price:
+-            return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="take_profit")]
+-        if snapshot.last_price <= plan.planned_stop_loss_price:
+-            return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="stop_loss")]
++        if bracket.entry_side == "buy":
++            if snapshot.last_price >= plan.planned_take_profit_price:
++                return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="take_profit")]
++            if snapshot.last_price <= plan.planned_stop_loss_price:
++                return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="stop_loss")]
++        else:
++            if snapshot.last_price <= plan.planned_take_profit_price:
++                return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="take_profit")]
++            if snapshot.last_price >= plan.planned_stop_loss_price:
++                return [self._close_bracket(snapshot.symbol, price=snapshot.last_price, reason="stop_loss")]
+         return []
+ 
+     def flatten_open_brackets(self, *, reason: str) -> list[ExecutionResult]:
+@@ -179,9 +186,10 @@ class PaperBroker(BaseBroker):
+             "strategy_name": strategy_name,
+             "broker_mode": "local_paper",
+         }
++        exit_side = "sell" if bracket.entry_side == "buy" else "buy"
+         request = ExecutionRequest(
+             symbol=symbol,
+-            side="sell",
++            side=exit_side,
+             quantity=quantity,
+             strategy_name=strategy_name,
+             mode=mode,
+@@ -190,7 +198,7 @@ class PaperBroker(BaseBroker):
+         )
+         order = BrokerOrder(
+             symbol=symbol,
+-            side="sell",
++            side=exit_side,
+             quantity=quantity,
+             mode=mode,
+             status="filled",
+@@ -205,7 +213,11 @@ class PaperBroker(BaseBroker):
+             metadata=exit_metadata,
+         )
+         updated_position = self._update_position(request, price)
+-        realized_pnl = (price - bracket.bracket_plan.planned_entry_price) * quantity
++        realized_pnl = (
++            (price - bracket.bracket_plan.planned_entry_price) * quantity
++            if bracket.entry_side == "buy"
++            else (bracket.bracket_plan.planned_entry_price - price) * quantity
++        )
+         bracket.status = "closed"
+         bracket.closed_at = fill.filled_at
+         bracket.exit_reason = reason
+diff --git a/src/mytradingbot/core/models.py b/src/mytradingbot/core/models.py
+index 77f69a7..2f733ce 100644
+--- a/src/mytradingbot/core/models.py
++++ b/src/mytradingbot/core/models.py
+@@ -10,6 +10,7 @@ from uuid import uuid4
+ from pydantic import BaseModel, ConfigDict, Field
+ 
+ from mytradingbot.core.enums import RuntimeMode
++from mytradingbot.runtime.models import DecisionPipelineReadiness
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -337,6 +338,7 @@ class BrokerBracketState(BaseModel):
+ 
+     symbol: str
+     entry_order_id: str
++    entry_side: Literal["buy", "sell"] = "buy"
+     status: Literal["armed", "closed", "cancelled"] = "armed"
+     bracket_plan: BracketPlan
+     opened_at: datetime = Field(default_factory=utc_now)
+@@ -442,6 +444,7 @@ class SessionResult(BaseModel):
+     rejection_reasons: list[str] = Field(default_factory=list)
+     diagnostics: NoTradeDiagnostics | None = None
+     post_session_report: PostSessionReport | None = None
++    decision_pipeline_readiness: "DecisionPipelineReadiness | None" = None
+ 
+     @property
+     def traceability(self) -> list[TradeAttemptTrace]:
+diff --git a/src/mytradingbot/core/settings.py b/src/mytradingbot/core/settings.py
+index 50f1c9f..378f993 100644
+--- a/src/mytradingbot/core/settings.py
++++ b/src/mytradingbot/core/settings.py
+@@ -180,6 +180,10 @@ class RuntimeSafetySettings(BaseModel):
+     max_consecutive_execution_failures: int = 3
+     max_consecutive_replace_stop_failures: int = 3
+     supervised_loop_interval_seconds: int = 60
++    auto_refresh_inputs_in_loop: bool = True
++    market_refresh_interval_seconds: int = 300
++    dataset_refresh_interval_seconds: int = 1800
++    prediction_refresh_interval_seconds: int = 1800
+ 
+ 
+ class TrainingSettings(BaseModel):
+diff --git a/src/mytradingbot/orchestration/paper_loop.py b/src/mytradingbot/orchestration/paper_loop.py
+index 2685849..3067e74 100644
+--- a/src/mytradingbot/orchestration/paper_loop.py
++++ b/src/mytradingbot/orchestration/paper_loop.py
+@@ -33,6 +33,12 @@ class PaperTradingLoopCycleResult(BaseModel):
+     ending_open_brackets: int = 0
+     analytics_paths: list[str] = Field(default_factory=list)
+     broker_mode: BrokerMode = "local_paper"
++    market_snapshot_ready: bool = False
++    market_snapshot_age_seconds: int | None = None
++    predictions_ready: bool = False
++    predictions_age_seconds: int | None = None
++    decision_pipeline_ready: bool = False
++    decision_block_reason: str | None = None
+ 
+ 
+ class PaperTradingLoopResult(BaseModel):
+@@ -54,12 +60,22 @@ class PaperTradingLoopService:
+         *,
+         predictions_path: Path | None = None,
+         market_snapshot_path: Path | None = None,
++        symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
++        auto_refresh_inputs: bool | None = None,
+         platform_factory: Callable[[], TradingPlatformService] | None = None,
+         runtime_state_service: RuntimeStateService | None = None,
+     ) -> None:
+         self.settings = settings or AppSettings()
+         self.predictions_path = predictions_path
+         self.market_snapshot_path = market_snapshot_path
++        self.symbols = symbols
++        self.symbols_file = symbols_file
++        self.auto_refresh_inputs = (
++            self.settings.runtime_safety.auto_refresh_inputs_in_loop
++            if auto_refresh_inputs is None
++            else auto_refresh_inputs
++        )
+         self.platform_factory = platform_factory
+         self.runtime_state_service = runtime_state_service or RuntimeStateService(settings=self.settings)
+         self.log_path = self.settings.paths.logs_dir / "paper_trading_loop.log"
+@@ -78,12 +94,16 @@ class PaperTradingLoopService:
+         broker_mode = self.runtime_state_service.resolve_broker_mode(mode=mode)
+ 
+         logger.info(
+-            "paper_loop_startup broker_mode=%s api_base_url=%s runtime_state_db=%s external_broker_submission_enabled=%s ownership_mode=%s",
++            "paper_loop_startup broker_mode=%s api_base_url=%s runtime_state_db=%s external_broker_submission_enabled=%s ownership_mode=%s auto_refresh_inputs=%s market_refresh_interval_seconds=%s prediction_refresh_interval_seconds=%s dataset_refresh_interval_seconds=%s",
+             broker_mode,
+             self.settings.broker.alpaca_base_url,
+             self.runtime_state_service.store.database_path,
+             self.settings.broker.resolved_external_submission_enabled(),
+             self.settings.broker.ownership_policy,
++            self.auto_refresh_inputs,
++            self.settings.runtime_safety.market_refresh_interval_seconds,
++            self.settings.runtime_safety.prediction_refresh_interval_seconds,
++            self.settings.runtime_safety.dataset_refresh_interval_seconds,
+         )
+ 
+         while max_cycles is None or cycle_number < max_cycles:
+@@ -102,6 +122,10 @@ class PaperTradingLoopService:
+                 session_result = service.run_session(
+                     strategy_name=strategy_name,
+                     mode=mode,
++                    auto_refresh_inputs=self.auto_refresh_inputs,
++                    symbols=self.symbols,
++                    symbols_file=self.symbols_file,
++                    refresh_timeframes=[self.settings.data.snapshot_timeframe],
+                 )
+                 lifecycle_state = self._lifecycle_reconcile(service, strategy_name=strategy_name)
+                 cycle_ok = session_result.session_summary.status == "completed"
+@@ -120,12 +144,41 @@ class PaperTradingLoopService:
+                     ending_open_brackets=lifecycle_state["open_brackets"],
+                     analytics_paths=lifecycle_state["analytics_paths"],
+                     broker_mode=broker_mode,
++                    market_snapshot_ready=bool(
++                        session_result.decision_pipeline_readiness
++                        and session_result.decision_pipeline_readiness.market_snapshot_ready
++                    ),
++                    market_snapshot_age_seconds=(
++                        session_result.decision_pipeline_readiness.market_snapshot_age_seconds
++                        if session_result.decision_pipeline_readiness is not None
++                        else None
++                    ),
++                    predictions_ready=bool(
++                        session_result.decision_pipeline_readiness
++                        and session_result.decision_pipeline_readiness.predictions_ready
++                    ),
++                    predictions_age_seconds=(
++                        session_result.decision_pipeline_readiness.predictions_age_seconds
++                        if session_result.decision_pipeline_readiness is not None
++                        else None
++                    ),
++                    decision_pipeline_ready=bool(
++                        session_result.decision_pipeline_readiness
++                        and session_result.decision_pipeline_readiness.decision_pipeline_ready
++                    ),
++                    decision_block_reason=(
++                        session_result.decision_pipeline_readiness.decision_block_reason
++                        if session_result.decision_pipeline_readiness is not None
++                        else None
++                    ),
+                 )
+                 logger.info(
+-                    "Paper loop cycle %s completed: ok=%s trade_count=%s ending_open_positions=%s ending_open_brackets=%s",
++                    "Paper loop cycle %s completed: ok=%s trade_count=%s decision_pipeline_ready=%s decision_block_reason=%s ending_open_positions=%s ending_open_brackets=%s",
+                     cycle_number,
+                     cycle_ok,
+                     cycle_result.trade_count,
++                    cycle_result.decision_pipeline_ready,
++                    cycle_result.decision_block_reason,
+                     cycle_result.ending_open_positions,
+                     cycle_result.ending_open_brackets,
+                 )
+diff --git a/src/mytradingbot/orchestration/service.py b/src/mytradingbot/orchestration/service.py
+index f19ed59..f20adf8 100644
+--- a/src/mytradingbot/orchestration/service.py
++++ b/src/mytradingbot/orchestration/service.py
+@@ -28,6 +28,7 @@ from mytradingbot.qlib_engine.service import QlibWorkflowService
+ from mytradingbot.risk.service import RiskEngine
+ from mytradingbot.reporting.service import ReportingService
+ from mytradingbot.runtime.models import BrokerMode, BrokerReconciliationSnapshot
++from mytradingbot.runtime.models import DecisionPipelineReadiness
+ from mytradingbot.runtime.service import RuntimeStateService
+ from mytradingbot.strategies.registry import StrategyRegistry
+ from mytradingbot.universe.storage import UniverseStorage
+@@ -168,6 +169,173 @@ class TradingPlatformService:
+             return None
+         return self.universe_storage.load_symbols(symbols_file)
+ 
++    @staticmethod
++    def _path_age_seconds(path: Path) -> int | None:
++        if not path.exists():
++            return None
++        return max(0, int(utc_now().timestamp() - path.stat().st_mtime))
++
++    def _decision_pipeline_readiness(
++        self,
++        *,
++        decision_block_reason: str | None = None,
++        refresh_actions: list[str] | None = None,
++    ) -> DecisionPipelineReadiness:
++        market_status = self.runtime_state_service.market_snapshot_status(
++            market_snapshot_path=self.market_data_service.market_snapshot_path
++        )
++        prediction_status = self.qlib_service.get_runtime_prediction_status()
++        reason = decision_block_reason
++        if reason is None:
++            if not market_status.is_ready:
++                if market_status.reason == "stale":
++                    reason = "stale_market_snapshot"
++                elif market_status.reason == "missing":
++                    reason = "missing_market_snapshot"
++                else:
++                    reason = market_status.reason or "market_snapshot_unavailable"
++            elif not prediction_status.is_ready:
++                if prediction_status.reason == "stale":
++                    reason = "stale_predictions"
++                elif prediction_status.reason == "missing":
++                    reason = "missing_predictions"
++                else:
++                    reason = prediction_status.reason or "predictions_unavailable"
++        return DecisionPipelineReadiness(
++            market_snapshot_ready=market_status.is_ready,
++            market_snapshot_age_seconds=self.runtime_state_service.market_snapshot_age_seconds(
++                market_snapshot_path=self.market_data_service.market_snapshot_path
++            ),
++            predictions_ready=prediction_status.is_ready,
++            predictions_age_seconds=self.qlib_service.prediction_age_seconds(),
++            decision_pipeline_ready=market_status.is_ready and prediction_status.is_ready and reason is None,
++            decision_block_reason=reason,
++            refresh_actions=refresh_actions or [],
++        )
++
++    def _resolve_runtime_refresh_symbols(
++        self,
++        *,
++        symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
++    ) -> list[str] | None:
++        resolved_symbols = self.resolve_symbols(symbols=symbols, symbols_file=symbols_file)
++        if resolved_symbols:
++            return resolved_symbols
++        inferred_symbols = self.qlib_service.extract_prediction_symbols()
++        if inferred_symbols:
++            return inferred_symbols
++        return None
++
++    def _sync_runtime_market_snapshot(self) -> None:
++        source_path = self.settings.market_snapshot_artifact_path()
++        target_path = self.market_data_service.market_snapshot_path
++        if target_path == source_path or not source_path.exists():
++            return
++        target_path.parent.mkdir(parents=True, exist_ok=True)
++        target_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
++
++    def ensure_decision_pipeline_ready(
++        self,
++        *,
++        strategy_name: str,
++        auto_refresh_inputs: bool,
++        symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
++        refresh_timeframes: list[str] | None = None,
++    ) -> DecisionPipelineReadiness:
++        refresh_actions: list[str] = []
++        readiness = self._decision_pipeline_readiness()
++        if not auto_refresh_inputs:
++            return readiness
++
++        market_refresh_due = (
++            not readiness.market_snapshot_ready
++            or (
++                readiness.market_snapshot_age_seconds is not None
++                and readiness.market_snapshot_age_seconds
++                >= self.settings.runtime_safety.market_refresh_interval_seconds
++            )
++        )
++        prediction_refresh_due = (
++            not readiness.predictions_ready
++            or (
++                readiness.predictions_age_seconds is not None
++                and readiness.predictions_age_seconds
++                >= self.settings.runtime_safety.prediction_refresh_interval_seconds
++            )
++        )
++        dataset_path = self.settings.qlib_dataset_artifact_path()
++        dataset_age_seconds = self._path_age_seconds(dataset_path)
++        dataset_refresh_due = False
++
++        if market_refresh_due or prediction_refresh_due:
++            resolved_symbols = self._resolve_runtime_refresh_symbols(
++                symbols=symbols,
++                symbols_file=symbols_file,
++            )
++            if not resolved_symbols:
++                return self._decision_pipeline_readiness(
++                    decision_block_reason="symbol_scope_unresolved_for_auto_refresh",
++                    refresh_actions=refresh_actions,
++                )
++        else:
++            resolved_symbols = None
++
++        if market_refresh_due and resolved_symbols is not None:
++            market_result = self.download_market_data(
++                symbols=resolved_symbols,
++                timeframes=refresh_timeframes or [self.settings.data.snapshot_timeframe],
++                full_refresh=False,
++            )
++            refresh_actions.append(f"market_refresh:{market_result.message}")
++            if not market_result.ok:
++                return self._decision_pipeline_readiness(
++                    decision_block_reason=f"market_refresh_failed:{market_result.message}",
++                    refresh_actions=refresh_actions,
++                )
++            self._sync_runtime_market_snapshot()
++            readiness = self._decision_pipeline_readiness(refresh_actions=refresh_actions)
++
++        if prediction_refresh_due:
++            market_snapshot_path = self.market_data_service.market_snapshot_path
++            dataset_refresh_due = (
++                not dataset_path.exists()
++                or (
++                    dataset_age_seconds is not None
++                    and dataset_age_seconds
++                    >= self.settings.runtime_safety.dataset_refresh_interval_seconds
++                )
++                or (
++                    dataset_path.exists()
++                    and market_snapshot_path.exists()
++                    and dataset_path.stat().st_mtime < market_snapshot_path.stat().st_mtime
++                )
++            )
++
++        if dataset_refresh_due and resolved_symbols is not None:
++            dataset_result = self.build_dataset(
++                strategy_name=strategy_name,
++                symbols=resolved_symbols,
++            )
++            refresh_actions.append(f"dataset_refresh:{dataset_result.message}")
++            if not dataset_result.ok:
++                return self._decision_pipeline_readiness(
++                    decision_block_reason=f"dataset_refresh_failed:{dataset_result.message}",
++                    refresh_actions=refresh_actions,
++                )
++
++        if prediction_refresh_due:
++            prediction_result = self.refresh_predictions(strategy_name=strategy_name)
++            refresh_actions.append(f"prediction_refresh:{prediction_result.message}")
++            if not prediction_result.ok:
++                return self._decision_pipeline_readiness(
++                    decision_block_reason=f"prediction_refresh_failed:{prediction_result.message}",
++                    refresh_actions=refresh_actions,
++                )
++
++        return self._decision_pipeline_readiness(refresh_actions=refresh_actions)
++
+     def _apply_reconciliation_notes(
+         self,
+         *,
+@@ -210,6 +378,10 @@ class TradingPlatformService:
+         *,
+         strategy_name: str,
+         mode: RuntimeMode | str,
++        auto_refresh_inputs: bool = False,
++        symbols: list[str] | None = None,
++        symbols_file: Path | None = None,
++        refresh_timeframes: list[str] | None = None,
+     ) -> SessionResult:
+         normalized_mode = mode if isinstance(mode, RuntimeMode) else RuntimeMode(mode)
+         context = self.runtime_state_service.create_session_context(
+@@ -229,6 +401,7 @@ class TradingPlatformService:
+             f"{str(self.settings.broker.resolved_external_submission_enabled()).lower()}",
+             f"ownership_mode={self.settings.broker.ownership_policy}",
+         ]
++        readiness = self._decision_pipeline_readiness()
+ 
+         preflight = self.broker.preflight()
+         if not preflight.ok:
+@@ -253,10 +426,12 @@ class TradingPlatformService:
+                     issues=[preflight.message],
+                 ),
+                 rejection_reasons=[preflight.message],
++                decision_pipeline_readiness=readiness,
+             )
+             result.post_session_report = self.reporting_service.build_post_session_review(result)
+             self.runtime_state_service.write_session_artifacts(
+                 context=context,
++                readiness=readiness,
+                 audits=[],
+                 orders=[],
+                 fills=[],
+@@ -290,10 +465,12 @@ class TradingPlatformService:
+                     issues=[str(exc)],
+                 ),
+                 rejection_reasons=["broker_state_unreconciled"],
++                decision_pipeline_readiness=readiness,
+             )
+             result.post_session_report = self.reporting_service.build_post_session_review(result)
+             self.runtime_state_service.write_session_artifacts(
+                 context=context,
++                readiness=readiness,
+                 audits=[],
+                 orders=[],
+                 fills=[],
+@@ -311,6 +488,24 @@ class TradingPlatformService:
+             session_notes=session_notes,
+         )
+ 
++        readiness = self.ensure_decision_pipeline_ready(
++            strategy_name=strategy_name,
++            auto_refresh_inputs=auto_refresh_inputs,
++            symbols=symbols,
++            symbols_file=symbols_file,
++            refresh_timeframes=refresh_timeframes,
++        )
++        session_notes.extend(
++            [
++                f"market_snapshot_ready={readiness.market_snapshot_ready}",
++                f"market_snapshot_age_seconds={readiness.market_snapshot_age_seconds}",
++                f"predictions_ready={readiness.predictions_ready}",
++                f"predictions_age_seconds={readiness.predictions_age_seconds}",
++                f"decision_pipeline_ready={readiness.decision_pipeline_ready}",
++                f"decision_block_reason={readiness.decision_block_reason}",
++                *readiness.refresh_actions,
++            ]
++        )
+         prediction_result = self.qlib_service.load_predictions()
+         market_status = self.runtime_state_service.market_snapshot_status(
+             market_snapshot_path=self.market_data_service.market_snapshot_path
+@@ -335,10 +530,12 @@ class TradingPlatformService:
+                     issues=["execution_guard_blocked"],
+                 ),
+                 rejection_reasons=["execution_guard_blocked"],
++                decision_pipeline_readiness=readiness,
+             )
+             result.post_session_report = self.reporting_service.build_post_session_review(result)
+             self.runtime_state_service.write_session_artifacts(
+                 context=context,
++                readiness=readiness,
+                 audits=[],
+                 orders=[],
+                 fills=[],
+@@ -359,6 +556,14 @@ class TradingPlatformService:
+                     summary="Market snapshot artifact is unavailable for trading.",
+                     detail=market_status.reason,
+                     severity="error",
++                    metadata={
++                        "market_snapshot_ready": readiness.market_snapshot_ready,
++                        "market_snapshot_age_seconds": readiness.market_snapshot_age_seconds,
++                        "predictions_ready": readiness.predictions_ready,
++                        "predictions_age_seconds": readiness.predictions_age_seconds,
++                        "decision_pipeline_ready": readiness.decision_pipeline_ready,
++                        "decision_block_reason": readiness.decision_block_reason,
++                    },
+                 )
+             )
+             result = SessionResult(
+@@ -370,10 +575,12 @@ class TradingPlatformService:
+                     issues=market_status.guidance,
+                 ),
+                 rejection_reasons=[market_status.reason or "market_snapshot_unavailable"],
++                decision_pipeline_readiness=readiness,
+             )
+             result.post_session_report = self.reporting_service.build_post_session_review(result)
+             self.runtime_state_service.write_session_artifacts(
+                 context=context,
++                readiness=readiness,
+                 audits=[],
+                 orders=[],
+                 fills=[],
+@@ -394,6 +601,14 @@ class TradingPlatformService:
+                     summary="Prediction artifact unavailable for trading.",
+                     detail=prediction_result.message,
+                     severity="error",
++                    metadata={
++                        "market_snapshot_ready": readiness.market_snapshot_ready,
++                        "market_snapshot_age_seconds": readiness.market_snapshot_age_seconds,
++                        "predictions_ready": readiness.predictions_ready,
++                        "predictions_age_seconds": readiness.predictions_age_seconds,
++                        "decision_pipeline_ready": readiness.decision_pipeline_ready,
++                        "decision_block_reason": readiness.decision_block_reason,
++                    },
+                 )
+             )
+             result = SessionResult(
+@@ -405,10 +620,12 @@ class TradingPlatformService:
+                     issues=[prediction_result.message],
+                 ),
+                 rejection_reasons=[prediction_result.message],
++                decision_pipeline_readiness=readiness,
+             )
+             result.post_session_report = self.reporting_service.build_post_session_review(result)
+             self.runtime_state_service.write_session_artifacts(
+                 context=context,
++                readiness=readiness,
+                 audits=[],
+                 orders=[],
+                 fills=[],
+@@ -433,6 +650,14 @@ class TradingPlatformService:
+                     summary="Market data unavailable.",
+                     detail=str(exc),
+                     severity="error",
++                    metadata={
++                        "market_snapshot_ready": readiness.market_snapshot_ready,
++                        "market_snapshot_age_seconds": readiness.market_snapshot_age_seconds,
++                        "predictions_ready": readiness.predictions_ready,
++                        "predictions_age_seconds": readiness.predictions_age_seconds,
++                        "decision_pipeline_ready": readiness.decision_pipeline_ready,
++                        "decision_block_reason": readiness.decision_block_reason,
++                    },
+                 )
+             )
+             result = SessionResult(
+@@ -444,10 +669,12 @@ class TradingPlatformService:
+                     issues=[str(exc)],
+                 ),
+                 rejection_reasons=[str(exc)],
++                decision_pipeline_readiness=readiness,
+             )
+             result.post_session_report = self.reporting_service.build_post_session_review(result)
+             self.runtime_state_service.write_session_artifacts(
+                 context=context,
++                readiness=readiness,
+                 audits=[],
+                 orders=[],
+                 fills=[],
+@@ -653,12 +880,14 @@ class TradingPlatformService:
+             fills=fills,
+             positions=positions,
+             rejection_reasons=rejection_reasons,
++            decision_pipeline_readiness=readiness,
+         )
+         if summary.trade_count == 0 and summary.status == "completed":
+             result.diagnostics = self.diagnostics_service.build_no_trade_report(result)
+         result.post_session_report = self.reporting_service.build_post_session_review(result)
+         self.runtime_state_service.write_session_artifacts(
+             context=context,
++            readiness=readiness,
+             audits=audits,
+             orders=orders,
+             fills=fills,
+diff --git a/src/mytradingbot/qlib_engine/service.py b/src/mytradingbot/qlib_engine/service.py
+index ad6aca5..2b936bc 100644
+--- a/src/mytradingbot/qlib_engine/service.py
++++ b/src/mytradingbot/qlib_engine/service.py
+@@ -204,6 +204,11 @@ class QlibWorkflowService:
+ 
+         return ArtifactStatus.ready("predictions", freshness_minutes=freshness_minutes)
+ 
++    def prediction_age_seconds(self) -> int | None:
++        if not self.predictions_path.exists():
++            return None
++        return max(0, int(self._now_timestamp() - self.predictions_path.stat().st_mtime))
++
+     def load_predictions(self) -> PredictionLoadResult:
+         status = self.get_runtime_prediction_status()
+         if not status.is_ready:
+@@ -278,6 +283,22 @@ class QlibWorkflowService:
+             predictions=predictions,
+         )
+ 
++    def extract_prediction_symbols(self) -> list[str]:
++        if not self.predictions_path.exists():
++            return []
++        raw_payload = json.loads(
++            self.predictions_path.read_text(encoding="utf-8-sig")
++        )
++        prediction_records = self._normalize_prediction_payload(raw_payload)
++        symbols: list[str] = []
++        for item in prediction_records:
++            if not isinstance(item, dict):
++                continue
++            symbol = item.get("symbol")
++            if isinstance(symbol, str) and symbol.strip():
++                symbols.append(symbol.strip().upper())
++        return sorted(set(symbols))
++
+     def _normalize_prediction_payload(self, raw_payload: object) -> list[object]:
+         payload_type = type(raw_payload).__name__
+         expected_message = (
+diff --git a/src/mytradingbot/reporting/analytics.py b/src/mytradingbot/reporting/analytics.py
+index 64271ba..f1a7553 100644
+--- a/src/mytradingbot/reporting/analytics.py
++++ b/src/mytradingbot/reporting/analytics.py
+@@ -89,6 +89,7 @@ class _OpenLot:
+     entry_order_id: str
+     entry_ts: datetime
+     entry_price: float
++    entry_side: str
+     remaining_qty: float
+ 
+ 
+@@ -139,38 +140,22 @@ class RealizedAnalyticsExporter:
+                 continue
+ 
+             key = (order.symbol, order.strategy)
+-            if order.side == "buy":
+-                open_lots[key].append(
+-                    _OpenLot(
+-                        symbol=order.symbol,
+-                        strategy=order.strategy,
+-                        broker_mode=order.broker_mode,
+-                        ownership_class=order.ownership_class,
+-                        signal_source=self._resolve_signal_source(order, decisions_by_session_symbol),
+-                        session_id=order.session_id,
+-                        run_id=order.run_id,
+-                        entry_order_id=order.order_id,
+-                        entry_ts=aggregate.filled_at,
+-                        entry_price=aggregate.price,
+-                        remaining_qty=aggregate.quantity,
+-                    )
+-                )
+-                continue
+-
+-            if order.side != "sell":
+-                continue
+-
+             remaining_quantity = aggregate.quantity
+-            while remaining_quantity > 0 and open_lots[key]:
++            while (
++                remaining_quantity > 0
++                and open_lots[key]
++                and open_lots[key][0].entry_side != order.side
++            ):
+                 lot = open_lots[key][0]
+                 matched_quantity = min(remaining_quantity, lot.remaining_qty)
++                is_short = lot.entry_side == "sell"
+                 fee_breakdown = calculate_trade_fees(
+                     FeeCalculationInput(
+                         quantity=matched_quantity,
+                         entry_price=lot.entry_price,
+                         exit_price=aggregate.price,
+                         holding_days=max(0, (aggregate.filled_at.date() - lot.entry_ts.date()).days),
+-                        is_short=False,
++                        is_short=is_short,
+                     ),
+                     schedule=self._fee_schedule(),
+                     allocation_mode=self.settings.broker_fees.fee_allocation_mode,
+@@ -178,7 +163,9 @@ class RealizedAnalyticsExporter:
+                 )
+                 realized_pnl = fee_breakdown.gross_pnl
+                 realized_return_pct = (
+-                    ((aggregate.price - lot.entry_price) / lot.entry_price) * 100
++                    ((lot.entry_price - aggregate.price) / lot.entry_price) * 100
++                    if is_short and lot.entry_price
++                    else ((aggregate.price - lot.entry_price) / lot.entry_price) * 100
+                     if lot.entry_price
+                     else 0.0
+                 )
+@@ -228,6 +215,24 @@ class RealizedAnalyticsExporter:
+                 if lot.remaining_qty <= 0:
+                     open_lots[key].popleft()
+ 
++            if remaining_quantity > 0:
++                open_lots[key].append(
++                    _OpenLot(
++                        symbol=order.symbol,
++                        strategy=order.strategy,
++                        broker_mode=order.broker_mode,
++                        ownership_class=order.ownership_class,
++                        signal_source=self._resolve_signal_source(order, decisions_by_session_symbol),
++                        session_id=order.session_id,
++                        run_id=order.run_id,
++                        entry_order_id=order.order_id,
++                        entry_ts=aggregate.filled_at,
++                        entry_price=aggregate.price,
++                        entry_side=order.side,
++                        remaining_qty=remaining_quantity,
++                    )
++                )
++
+         return closed_trades
+ 
+     def build_attribution_rows(self, closed_trades: list[ClosedTradeRow]) -> list[PnLAttributionRow]:
+diff --git a/src/mytradingbot/reporting/service.py b/src/mytradingbot/reporting/service.py
+index cbaf55d..28ff64c 100644
+--- a/src/mytradingbot/reporting/service.py
++++ b/src/mytradingbot/reporting/service.py
+@@ -43,6 +43,19 @@ class ReportingService:
+             notes=[
+                 f"Health summary: {result.health_status.summary}",
+                 f"Prediction status ready: {result.prediction_status.is_ready}",
++                (
++                    "Decision pipeline ready: "
++                    f"{result.decision_pipeline_readiness.decision_pipeline_ready}"
++                    if result.decision_pipeline_readiness is not None
++                    else "Decision pipeline ready: unknown"
++                ),
++                (
++                    "Decision block reason: "
++                    f"{result.decision_pipeline_readiness.decision_block_reason}"
++                    if result.decision_pipeline_readiness is not None
++                    and result.decision_pipeline_readiness.decision_block_reason is not None
++                    else "Decision block reason: none"
++                ),
+                 *bracket_notes,
+             ],
+         )
+diff --git a/src/mytradingbot/risk/service.py b/src/mytradingbot/risk/service.py
+index c5ddf08..5d2979b 100644
+--- a/src/mytradingbot/risk/service.py
++++ b/src/mytradingbot/risk/service.py
+@@ -39,7 +39,7 @@ class RiskEngine:
+             checks.append("positive_quantity_required")
+             return RiskDecision.reject(reason="invalid_quantity", checks=checks)
+ 
+-        if intent.strategy_name == "scalping" and intent.side == "buy" and intent.bracket_plan is None:
++        if intent.strategy_name == "scalping" and intent.bracket_plan is None:
+             checks.append("bracket_plan_required")
+             return RiskDecision.reject(reason="missing_bracket_plan", checks=checks)
+ 
+diff --git a/src/mytradingbot/runtime/models.py b/src/mytradingbot/runtime/models.py
+index 717863a..de3d643 100644
+--- a/src/mytradingbot/runtime/models.py
++++ b/src/mytradingbot/runtime/models.py
+@@ -91,6 +91,18 @@ class RuntimeSessionContext(BaseModel):
+     market_snapshot_artifact_path: str
+ 
+ 
++class DecisionPipelineReadiness(BaseModel):
++    """Freshness/readiness state for trading inputs at session or loop cycle time."""
++
++    market_snapshot_ready: bool = False
++    market_snapshot_age_seconds: int | None = None
++    predictions_ready: bool = False
++    predictions_age_seconds: int | None = None
++    decision_pipeline_ready: bool = False
++    decision_block_reason: str | None = None
++    refresh_actions: list[str] = Field(default_factory=list)
++
++
+ class RuleCheckRecord(BaseModel):
+     """Single rule/check outcome recorded in the audit trail."""
+ 
+@@ -251,6 +263,12 @@ class PaperTradingSessionReport(BaseModel):
+     incident_count: int = 0
+     foreign_order_count: int = 0
+     foreign_position_count: int = 0
++    market_snapshot_ready: bool | None = None
++    market_snapshot_age_seconds: int | None = None
++    predictions_ready: bool | None = None
++    predictions_age_seconds: int | None = None
++    decision_pipeline_ready: bool | None = None
++    decision_block_reason: str | None = None
+     notes: list[str] = Field(default_factory=list)
+ 
+ 
+diff --git a/src/mytradingbot/runtime/service.py b/src/mytradingbot/runtime/service.py
+index f4280db..58887f4 100644
+--- a/src/mytradingbot/runtime/service.py
++++ b/src/mytradingbot/runtime/service.py
+@@ -21,6 +21,7 @@ from mytradingbot.core.settings import AppSettings
+ from mytradingbot.reporting.analytics import RealizedAnalyticsExporter
+ from mytradingbot.runtime.models import (
+     BrokerMode,
++    DecisionPipelineReadiness,
+     DecisionAuditRecord,
+     FillLifecycleRecord,
+     OrderLifecycleRecord,
+@@ -114,6 +115,12 @@ class RuntimeStateService:
+             )
+         return ArtifactStatus.ready("market_snapshot", freshness_minutes=freshness_minutes)
+ 
++    def market_snapshot_age_seconds(self, *, market_snapshot_path: Path | None = None) -> int | None:
++        path = market_snapshot_path or self.settings.market_snapshot_artifact_path()
++        if not path.exists():
++            return None
++        return max(0, int(utc_now().timestamp() - path.stat().st_mtime))
++
+     def enrich_signal_metadata(self, *, strategy_name: str, signals: list) -> list:
+         cooldowns = self.store.active_cooldowns(strategy=strategy_name, now=utc_now())
+         open_positions = self.store.active_position_symbols()
+@@ -314,6 +321,7 @@ class RuntimeStateService:
+         self,
+         *,
+         context: RuntimeSessionContext,
++        readiness: DecisionPipelineReadiness | None,
+         audits: list[DecisionAuditRecord],
+         orders: list[BrokerOrder],
+         fills: list[FillEvent],
+@@ -383,6 +391,12 @@ class RuntimeStateService:
+             incident_count=len(incidents),
+             foreign_order_count=len(foreign_orders),
+             foreign_position_count=len(foreign_positions),
++            market_snapshot_ready=(readiness.market_snapshot_ready if readiness is not None else None),
++            market_snapshot_age_seconds=(readiness.market_snapshot_age_seconds if readiness is not None else None),
++            predictions_ready=(readiness.predictions_ready if readiness is not None else None),
++            predictions_age_seconds=(readiness.predictions_age_seconds if readiness is not None else None),
++            decision_pipeline_ready=(readiness.decision_pipeline_ready if readiness is not None else None),
++            decision_block_reason=(readiness.decision_block_reason if readiness is not None else None),
+             notes=notes,
+         )
+         report.report_paths.extend(analytics_paths)
+@@ -545,6 +559,12 @@ class RuntimeStateService:
+             f"- open positions: `{len([position for position in positions if abs(position.quantity) > 0])}`",
+             f"- foreign_open_orders: `{report.foreign_order_count}`",
+             f"- foreign_open_positions: `{report.foreign_position_count}`",
++            f"- market_snapshot_ready: `{report.market_snapshot_ready}`",
++            f"- market_snapshot_age_seconds: `{report.market_snapshot_age_seconds}`",
++            f"- predictions_ready: `{report.predictions_ready}`",
++            f"- predictions_age_seconds: `{report.predictions_age_seconds}`",
++            f"- decision_pipeline_ready: `{report.decision_pipeline_ready}`",
++            f"- decision_block_reason: `{report.decision_block_reason}`",
+             f"- incidents: `{len(incidents)}`",
+             f"- no_trade_success: `{report.no_trade_success}`",
+             "",
+diff --git a/tests/integration/test_paper_session.py b/tests/integration/test_paper_session.py
+index 9882c8e..fa88305 100644
+--- a/tests/integration/test_paper_session.py
++++ b/tests/integration/test_paper_session.py
+@@ -67,3 +67,63 @@ def test_paper_session_runs_end_to_end_with_traceability(tmp_path) -> None:
+     assert result.traceability[0].signal is not None
+     assert result.traceability[0].signal.symbol == "AAPL"
+     assert result.orders
++
++
++def test_paper_session_runs_end_to_end_for_short_scalping(tmp_path) -> None:
++    predictions_path = tmp_path / "predictions.json"
++    market_path = tmp_path / "market.json"
++    predictions_path.write_text(
++        json.dumps(
++            [
++                {
++                    "symbol": "TSLA",
++                    "score": 0.95,
++                    "predicted_return": -0.012,
++                    "confidence": 0.84,
++                    "rank": 1,
++                    "direction": "short",
++                    "horizon": "intraday",
++                }
++            ]
++        ),
++        encoding="utf-8",
++    )
++    market_path.write_text(
++        json.dumps(
++            [
++                {
++                    "symbol": "TSLA",
++                    "last_price": 100.0,
++                    "vwap": 100.8,
++                    "spread_bps": 1.0,
++                    "volume": 1500000,
++                    "liquidity_score": 0.88,
++                    "liquidity_stress": 0.2,
++                    "order_book_imbalance": -0.35,
++                    "liquidity_sweep_detected": False,
++                    "volatility_regime": "normal",
++                }
++            ]
++        ),
++        encoding="utf-8",
++    )
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++
++    service = TradingPlatformService(
++        settings=settings,
++        qlib_service=QlibWorkflowService(
++            settings=settings,
++            pyqlib_available=False,
++            predictions_path=predictions_path,
++        ),
++        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
++    )
++
++    result = service.run_session(strategy_name="scalping", mode=RuntimeMode.PAPER)
++
++    assert result.session_summary.mode == RuntimeMode.PAPER
++    assert result.session_summary.trade_count == 1
++    assert result.orders
++    assert result.orders[0].side == "sell"
++    assert result.positions
++    assert result.positions[0].quantity < 0
+diff --git a/tests/unit/brokers/test_alpaca_paper.py b/tests/unit/brokers/test_alpaca_paper.py
+index bfdcdd3..233c73a 100644
+--- a/tests/unit/brokers/test_alpaca_paper.py
++++ b/tests/unit/brokers/test_alpaca_paper.py
+@@ -14,6 +14,7 @@ class _FakeTradingClient:
+         self.submitted = []
+         self.orders = []
+         self.positions = []
++        self.assets = {}
+         self.account = SimpleNamespace(status="ACTIVE", buying_power="25000")
+ 
+     def get_account(self):
+@@ -49,6 +50,9 @@ class _FakeTradingClient:
+             return []
+         return []
+ 
++    def get_asset(self, symbol: str):
++        return self.assets.get(symbol, SimpleNamespace(tradable=True, shortable=True))
++
+ 
+ def _bracket_request() -> ExecutionRequest:
+     return ExecutionRequest(
+@@ -81,6 +85,37 @@ def _bracket_request() -> ExecutionRequest:
+     )
+ 
+ 
++def _short_bracket_request() -> ExecutionRequest:
++    return ExecutionRequest(
++        symbol="TSLA",
++        side="sell",
++        quantity=5,
++        strategy_name="scalping",
++        mode=RuntimeMode.PAPER,
++        limit_price=100.0,
++        client_order_id="SCALPING-TSLA-SELL-202603201030",
++        bracket_plan=BracketPlan(
++            planned_entry_price=100.0,
++            planned_stop_loss_price=101.0,
++            planned_take_profit_price=98.0,
++            planned_quantity=5.0,
++            risk_per_share=1.0,
++            gross_reward_per_share=2.0,
++            estimated_fees=0.0,
++            estimated_slippage=0.0,
++            estimated_fee_per_share=0.0,
++            estimated_slippage_per_share=0.0,
++            estimated_fixed_fees=0.0,
++            net_reward_per_share=2.0,
++            reward_risk_ratio=2.0,
++            expected_net_profit=10.0,
++            time_in_force="day",
++            exit_reason_metadata={"take_profit": "tp", "stop_loss": "sl"},
++        ),
++        metadata={"signal_source": "qlib_plus_rules"},
++    )
++
++
+ def test_alpaca_paper_broker_preflight_fails_without_credentials(tmp_path) -> None:
+     from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+ 
+@@ -140,6 +175,43 @@ def test_alpaca_paper_broker_rounds_bracket_prices_to_valid_penny_increments(tmp
+     assert submitted.stop_loss.stop_price == 207.89
+ 
+ 
++def test_alpaca_paper_broker_maps_short_bracket_orders_to_alpaca_payload(tmp_path) -> None:
++    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
++
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    settings.broker.alpaca_api_key = "key"
++    settings.broker.alpaca_secret_key = "secret"
++    fake_client = _FakeTradingClient()
++
++    broker = AlpacaPaperBroker(settings=settings, trading_client_factory=lambda _settings: fake_client)
++
++    broker.submit_order(_short_bracket_request())
++
++    submitted = fake_client.submitted[0]
++    assert submitted.client_order_id == "SCALPING-TSLA-SELL-202603201030"
++    assert submitted.side.value == "sell"
++    assert submitted.order_class.value == "bracket"
++    assert submitted.take_profit.limit_price == 98.0
++    assert submitted.stop_loss.stop_price == 101.0
++
++
++def test_alpaca_paper_broker_rejects_unshortable_assets(tmp_path) -> None:
++    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
++
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    settings.broker.alpaca_api_key = "key"
++    settings.broker.alpaca_secret_key = "secret"
++    fake_client = _FakeTradingClient()
++    fake_client.assets["TSLA"] = SimpleNamespace(tradable=True, shortable=False)
++    broker = AlpacaPaperBroker(settings=settings, trading_client_factory=lambda _settings: fake_client)
++
++    result = broker.submit_order(_short_bracket_request())
++
++    assert result.execution_skipped
++    assert result.reason is not None
++    assert "not shortable" in result.reason.lower()
++
++
+ def test_alpaca_paper_broker_reconciliation_keeps_bot_owned_and_foreign_state_separate(tmp_path) -> None:
+     from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+     from mytradingbot.runtime.store import RuntimeStateStore
+@@ -189,3 +261,53 @@ def test_alpaca_paper_broker_reconciliation_keeps_bot_owned_and_foreign_state_se
+     assert snapshot.foreign_position_count == 1
+     assert store.list_order_records()[0].client_order_id == "SCALPING-AAPL-BUY-202603201030"
+     assert store.list_observed_positions()[0].ownership_class == "foreign"
++
++
++def test_alpaca_paper_broker_reconciliation_restores_bot_owned_short_position(tmp_path) -> None:
++    from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
++    from mytradingbot.runtime.store import RuntimeStateStore
++
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    settings.broker.alpaca_api_key = "key"
++    settings.broker.alpaca_secret_key = "secret"
++    fake_client = _FakeTradingClient()
++    fake_client.orders = [
++        SimpleNamespace(
++            id="bot-short-parent",
++            client_order_id="SCALPING-TSLA-SELL-202603201030",
++            symbol="TSLA",
++            side=SimpleNamespace(value="sell"),
++            qty="5",
++            filled_qty="5",
++            filled_avg_price="100.0",
++            status=SimpleNamespace(value="filled"),
++            submitted_at=datetime(2026, 3, 20, 10, 30, tzinfo=timezone.utc),
++            filled_at=datetime(2026, 3, 20, 10, 30, tzinfo=timezone.utc),
++            order_class=SimpleNamespace(value="bracket"),
++            limit_price=None,
++            stop_price=None,
++            legs=[],
++        )
++    ]
++    fake_client.positions = [
++        SimpleNamespace(
++            symbol="TSLA",
++            qty="-5",
++            avg_entry_price="100.0",
++            current_price="99.0",
++            unrealized_pl="5.0",
++        )
++    ]
++
++    store = RuntimeStateStore(settings=settings)
++    broker = AlpacaPaperBroker(
++        settings=settings,
++        runtime_store=store,
++        trading_client_factory=lambda _settings: fake_client,
++    )
++
++    snapshot = broker.reconcile_runtime_state(strategy_name="scalping")
++
++    assert snapshot.bot_owned_position_count == 1
++    assert store.list_positions()[0].symbol == "TSLA"
++    assert store.list_positions()[0].quantity == -5.0
+diff --git a/tests/unit/brokers/test_paper_broker.py b/tests/unit/brokers/test_paper_broker.py
+index 46e332a..7a0cd53 100644
+--- a/tests/unit/brokers/test_paper_broker.py
++++ b/tests/unit/brokers/test_paper_broker.py
+@@ -1,3 +1,5 @@
++import pytest
++
+ from mytradingbot.core.enums import RuntimeMode
+ from mytradingbot.core.models import BracketPlan, ExecutionRequest, MarketSnapshot
+ 
+@@ -125,3 +127,57 @@ def test_paper_broker_flattens_open_brackets_near_close() -> None:
+ 
+     assert len(exits) == 1
+     assert exits[0].reason == "near_close_flatten"
++
++
++def test_paper_broker_triggers_synthetic_short_take_profit_exit() -> None:
++    from mytradingbot.brokers.paper import PaperBroker
++
++    broker = PaperBroker()
++    request = ExecutionRequest(
++        symbol="TSLA",
++        side="sell",
++        quantity=2,
++        strategy_name="scalping",
++        mode=RuntimeMode.PAPER,
++        limit_price=100.0,
++        bracket_plan=BracketPlan(
++            planned_entry_price=100.0,
++            planned_stop_loss_price=101.0,
++            planned_take_profit_price=98.0,
++            planned_quantity=2.0,
++            risk_per_share=1.0,
++            gross_reward_per_share=2.0,
++            estimated_fees=0.0,
++            estimated_slippage=0.0,
++            estimated_fee_per_share=0.0,
++            estimated_slippage_per_share=0.0,
++            estimated_fixed_fees=0.0,
++            net_reward_per_share=2.0,
++            reward_risk_ratio=2.0,
++            expected_net_profit=4.0,
++            time_in_force="day",
++            exit_reason_metadata={"take_profit": "target_exit"},
++        ),
++    )
++
++    broker.submit_order(request)
++    exits = broker.process_market_snapshot(
++        MarketSnapshot(
++            symbol="TSLA",
++            last_price=97.9,
++            vwap=98.2,
++            spread_bps=1.0,
++            volume=1_000_000,
++            liquidity_score=0.8,
++            liquidity_stress=0.2,
++            order_book_imbalance=-0.3,
++            liquidity_sweep_detected=False,
++            volatility_regime="normal",
++        )
++    )
++
++    assert len(exits) == 1
++    assert exits[0].reason == "take_profit"
++    assert exits[0].order is not None
++    assert exits[0].order.side == "buy"
++    assert exits[0].realized_pnl == pytest.approx(4.2)
+diff --git a/tests/unit/orchestration/test_orchestration_service.py b/tests/unit/orchestration/test_orchestration_service.py
+index 0346ccb..9215f74 100644
+--- a/tests/unit/orchestration/test_orchestration_service.py
++++ b/tests/unit/orchestration/test_orchestration_service.py
+@@ -1,14 +1,17 @@
+ from __future__ import annotations
+ 
+ import json
+-from datetime import datetime, timezone
++import os
++from datetime import datetime, timedelta, timezone
+ from pathlib import Path
+ 
+ from mytradingbot.core.enums import RuntimeMode
+ from mytradingbot.core.paths import RepoPaths
+ from mytradingbot.core.settings import AppSettings
++from mytradingbot.data.models import MarketDataPipelineResult
+ from mytradingbot.data.service import MarketDataService
+ from mytradingbot.orchestration.service import TradingPlatformService
++from mytradingbot.qlib_engine.models import QlibOperationResult
+ from mytradingbot.qlib_engine.service import QlibWorkflowService
+ from mytradingbot.runtime.models import OrderLifecycleRecord
+ from mytradingbot.runtime.service import RuntimeStateService
+@@ -58,6 +61,11 @@ def _write_runtime_artifacts(tmp_path, *, predicted_return: float = 0.012) -> tu
+     return predictions_path, market_path
+ 
+ 
++def _set_mtime(path: Path, *, minutes_ago: int) -> None:
++    timestamp = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).timestamp()
++    os.utime(path, (timestamp, timestamp))
++
++
+ def test_run_session_writes_decision_audit_even_when_no_trade(tmp_path) -> None:
+     settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+     predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.001)
+@@ -115,3 +123,140 @@ def test_run_session_blocks_duplicate_client_order_after_restart(tmp_path) -> No
+ 
+     assert result.session_summary.trade_count == 0
+     assert "execution_guard_blocked" in result.rejection_reasons
++
++
++def test_run_session_blocks_stale_snapshot_when_auto_refresh_disabled(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.012)
++    _set_mtime(market_path, minutes_ago=settings.freshness.market_snapshot_max_age_minutes + 5)
++    runtime_service = RuntimeStateService(settings=settings)
++    service = TradingPlatformService(
++        settings=settings,
++        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
++        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
++        runtime_state_service=runtime_service,
++    )
++
++    result = service.run_session(
++        strategy_name="scalping",
++        mode=RuntimeMode.PAPER,
++        auto_refresh_inputs=False,
++    )
++
++    assert result.session_summary.status == "failed"
++    assert result.decision_pipeline_readiness is not None
++    assert result.decision_pipeline_readiness.market_snapshot_ready is False
++    assert result.decision_pipeline_readiness.decision_pipeline_ready is False
++    assert result.decision_pipeline_readiness.decision_block_reason == "stale_market_snapshot"
++    report = runtime_service.store.list_session_reports()[-1]
++    assert report.market_snapshot_ready is False
++    assert report.decision_block_reason == "stale_market_snapshot"
++
++
++def test_run_session_blocks_stale_predictions_when_auto_refresh_disabled(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.012)
++    _set_mtime(predictions_path, minutes_ago=settings.freshness.predictions_max_age_minutes + 5)
++    runtime_service = RuntimeStateService(settings=settings)
++    service = TradingPlatformService(
++        settings=settings,
++        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
++        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
++        runtime_state_service=runtime_service,
++    )
++
++    result = service.run_session(
++        strategy_name="scalping",
++        mode=RuntimeMode.PAPER,
++        auto_refresh_inputs=False,
++    )
++
++    assert result.session_summary.status == "failed"
++    assert result.decision_pipeline_readiness is not None
++    assert result.decision_pipeline_readiness.predictions_ready is False
++    assert result.decision_pipeline_readiness.decision_pipeline_ready is False
++    assert result.decision_pipeline_readiness.decision_block_reason == "stale_predictions"
++
++
++def test_run_session_auto_refreshes_inputs_and_restores_readiness(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.012)
++    _set_mtime(predictions_path, minutes_ago=settings.freshness.predictions_max_age_minutes + 5)
++    _set_mtime(market_path, minutes_ago=settings.freshness.market_snapshot_max_age_minutes + 5)
++    runtime_service = RuntimeStateService(settings=settings)
++    service = TradingPlatformService(
++        settings=settings,
++        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
++        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
++        runtime_state_service=runtime_service,
++    )
++
++    def fake_download_market_data(**kwargs):
++        source_path = settings.market_snapshot_artifact_path()
++        source_path.parent.mkdir(parents=True, exist_ok=True)
++        source_path.write_text(
++            json.dumps(
++                [
++                    {
++                        "symbol": "AAPL",
++                        "last_price": 100.0,
++                        "vwap": 99.4,
++                        "spread_bps": 1.0,
++                        "volume": 1500000,
++                        "liquidity_score": 0.88,
++                        "liquidity_stress": 0.2,
++                        "order_book_imbalance": 0.35,
++                        "liquidity_sweep_detected": False,
++                        "volatility_regime": "normal",
++                        "timestamp": datetime.now(timezone.utc).isoformat(),
++                    }
++                ]
++            ),
++            encoding="utf-8",
++        )
++        return MarketDataPipelineResult(ok=True, message="market data refreshed")
++
++    def fake_build_dataset(**kwargs):
++        dataset_path = settings.qlib_dataset_artifact_path()
++        dataset_path.parent.mkdir(parents=True, exist_ok=True)
++        dataset_path.write_text("dataset_refreshed", encoding="utf-8")
++        return QlibOperationResult(ok=True, message="dataset refreshed")
++
++    def fake_refresh_predictions(**kwargs):
++        predictions_path.write_text(
++            json.dumps(
++                [
++                    {
++                        "symbol": "AAPL",
++                        "score": 0.95,
++                        "predicted_return": 0.012,
++                        "confidence": 0.84,
++                        "rank": 1,
++                        "direction": "long",
++                        "horizon": "intraday",
++                        "generated_at": datetime.now(timezone.utc).isoformat(),
++                    }
++                ]
++            ),
++            encoding="utf-8",
++        )
++        return QlibOperationResult(ok=True, message="predictions refreshed")
++
++    service.download_market_data = fake_download_market_data
++    service.build_dataset = fake_build_dataset
++    service.refresh_predictions = fake_refresh_predictions
++
++    result = service.run_session(
++        strategy_name="scalping",
++        mode=RuntimeMode.PAPER,
++        auto_refresh_inputs=True,
++        symbols=["AAPL"],
++    )
++
++    assert result.session_summary.status == "completed"
++    assert result.session_summary.trade_count == 1
++    assert result.decision_pipeline_readiness is not None
++    assert result.decision_pipeline_readiness.decision_pipeline_ready is True
++    assert result.decision_pipeline_readiness.decision_block_reason is None
++    assert "market_refresh:market data refreshed" in result.decision_pipeline_readiness.refresh_actions
++    assert "prediction_refresh:predictions refreshed" in result.decision_pipeline_readiness.refresh_actions
+diff --git a/tests/unit/orchestration/test_paper_loop_service.py b/tests/unit/orchestration/test_paper_loop_service.py
+index 8634678..52171ff 100644
+--- a/tests/unit/orchestration/test_paper_loop_service.py
++++ b/tests/unit/orchestration/test_paper_loop_service.py
+@@ -1,13 +1,19 @@
+ from __future__ import annotations
+ 
+ import json
+-from datetime import datetime, timezone
++import os
++from datetime import datetime, timedelta, timezone
+ from pathlib import Path
+ 
+ from mytradingbot.core.enums import RuntimeMode
+ from mytradingbot.core.paths import RepoPaths
+ from mytradingbot.core.settings import AppSettings
++from mytradingbot.data.models import MarketDataPipelineResult
++from mytradingbot.data.service import MarketDataService
++from mytradingbot.orchestration.service import TradingPlatformService
+ from mytradingbot.orchestration.paper_loop import PaperTradingLoopService
++from mytradingbot.qlib_engine.models import QlibOperationResult
++from mytradingbot.qlib_engine.service import QlibWorkflowService
+ from mytradingbot.runtime.service import RuntimeStateService
+ 
+ 
+@@ -55,6 +61,11 @@ def _write_runtime_artifacts(tmp_path: Path, *, predicted_return: float = 0.012)
+     return predictions_path, market_path
+ 
+ 
++def _set_mtime(path: Path, *, minutes_ago: int) -> None:
++    timestamp = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).timestamp()
++    os.utime(path, (timestamp, timestamp))
++
++
+ def test_paper_loop_runner_is_restart_safe_and_prevents_duplicate_entries(tmp_path) -> None:
+     settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+     predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.012)
+@@ -95,3 +106,94 @@ def test_paper_loop_runner_is_restart_safe_and_prevents_duplicate_entries(tmp_pa
+     assert restarted.cycles[0].startup_open_positions == 1
+     assert restarted.cycles[0].startup_open_brackets == 1
+     assert len(RuntimeStateService(settings=settings).store.list_orders()) == 1
++
++
++def test_paper_loop_auto_refreshes_inputs_and_reports_ready_state(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.012)
++    _set_mtime(predictions_path, minutes_ago=settings.freshness.predictions_max_age_minutes + 5)
++    _set_mtime(market_path, minutes_ago=settings.freshness.market_snapshot_max_age_minutes + 5)
++    runtime_service = RuntimeStateService(settings=settings)
++    service = TradingPlatformService(
++        settings=settings,
++        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
++        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
++        runtime_state_service=runtime_service,
++    )
++
++    def fake_download_market_data(**kwargs):
++        source_path = settings.market_snapshot_artifact_path()
++        source_path.parent.mkdir(parents=True, exist_ok=True)
++        source_path.write_text(
++            json.dumps(
++                [
++                    {
++                        "symbol": "AAPL",
++                        "last_price": 100.0,
++                        "vwap": 99.4,
++                        "spread_bps": 1.0,
++                        "volume": 1500000,
++                        "liquidity_score": 0.88,
++                        "liquidity_stress": 0.2,
++                        "order_book_imbalance": 0.35,
++                        "liquidity_sweep_detected": False,
++                        "volatility_regime": "normal",
++                        "timestamp": datetime.now(timezone.utc).isoformat(),
++                    }
++                ]
++            ),
++            encoding="utf-8",
++        )
++        return MarketDataPipelineResult(ok=True, message="market data refreshed")
++
++    def fake_build_dataset(**kwargs):
++        dataset_path = settings.qlib_dataset_artifact_path()
++        dataset_path.parent.mkdir(parents=True, exist_ok=True)
++        dataset_path.write_text("dataset_refreshed", encoding="utf-8")
++        return QlibOperationResult(ok=True, message="dataset refreshed")
++
++    def fake_refresh_predictions(**kwargs):
++        predictions_path.write_text(
++            json.dumps(
++                [
++                    {
++                        "symbol": "AAPL",
++                        "score": 0.95,
++                        "predicted_return": 0.012,
++                        "confidence": 0.84,
++                        "rank": 1,
++                        "direction": "long",
++                        "horizon": "intraday",
++                        "generated_at": datetime.now(timezone.utc).isoformat(),
++                    }
++                ]
++            ),
++            encoding="utf-8",
++        )
++        return QlibOperationResult(ok=True, message="predictions refreshed")
++
++    service.download_market_data = fake_download_market_data
++    service.build_dataset = fake_build_dataset
++    service.refresh_predictions = fake_refresh_predictions
++
++    loop_service = PaperTradingLoopService(
++        settings=settings,
++        predictions_path=predictions_path,
++        market_snapshot_path=market_path,
++        symbols=["AAPL"],
++        auto_refresh_inputs=True,
++        platform_factory=lambda: service,
++        runtime_state_service=runtime_service,
++    )
++    result = loop_service.run(
++        strategy_name="scalping",
++        mode=RuntimeMode.PAPER,
++        interval_seconds=0,
++        max_cycles=1,
++    )
++
++    assert result.ok
++    assert result.cycle_count == 1
++    assert result.cycles[0].trade_count == 1
++    assert result.cycles[0].decision_pipeline_ready is True
++    assert result.cycles[0].decision_block_reason is None
+diff --git a/tests/unit/reporting/test_analytics.py b/tests/unit/reporting/test_analytics.py
+index 85a61c7..e96d0b8 100644
+--- a/tests/unit/reporting/test_analytics.py
++++ b/tests/unit/reporting/test_analytics.py
+@@ -256,3 +256,94 @@ def test_realized_analytics_excludes_foreign_closed_trades_from_attribution(tmp_
+     )
+ 
+     assert attribution_rows == []
++
++
++def test_realized_analytics_materializes_short_closed_trades(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    runtime_service = RuntimeStateService(settings=settings)
++    entry_ts = datetime.now(timezone.utc) - timedelta(minutes=10)
++    exit_ts = entry_ts + timedelta(minutes=5)
++
++    runtime_service.store.record_order(
++        OrderLifecycleRecord(
++            order_id="short-entry-order",
++            session_id="short-entry-session",
++            run_id="short-entry-run",
++            strategy="scalping",
++            mode=RuntimeMode.PAPER,
++            broker_mode="alpaca_paper_api",
++            ownership_class="bot_owned",
++            symbol="TSLA",
++            side="sell",
++            quantity=2,
++            client_order_id="SCALPING-TSLA-SELL-1",
++            status="filled",
++            submitted_at=entry_ts,
++            avg_fill_price=100.0,
++            metadata={"signal_source": "qlib_plus_rules"},
++        )
++    )
++    runtime_service.store.record_fill(
++        FillLifecycleRecord(
++            fill_id="short-entry-fill",
++            order_id="short-entry-order",
++            session_id="short-entry-session",
++            run_id="short-entry-run",
++            strategy="scalping",
++            mode=RuntimeMode.PAPER,
++            broker_mode="alpaca_paper_api",
++            ownership_class="bot_owned",
++            symbol="TSLA",
++            quantity=2,
++            price=100.0,
++            filled_at=entry_ts,
++            metadata={"signal_source": "qlib_plus_rules"},
++        )
++    )
++    runtime_service.store.record_order(
++        OrderLifecycleRecord(
++            order_id="short-exit-order",
++            session_id="short-exit-session",
++            run_id="short-exit-run",
++            strategy="scalping",
++            mode=RuntimeMode.PAPER,
++            broker_mode="alpaca_paper_api",
++            ownership_class="bot_owned",
++            symbol="TSLA",
++            side="buy",
++            quantity=2,
++            status="filled",
++            submitted_at=exit_ts,
++            avg_fill_price=95.0,
++            metadata={"exit_reason": "take_profit"},
++        )
++    )
++    runtime_service.store.record_fill(
++        FillLifecycleRecord(
++            fill_id="short-exit-fill",
++            order_id="short-exit-order",
++            session_id="short-exit-session",
++            run_id="short-exit-run",
++            strategy="scalping",
++            mode=RuntimeMode.PAPER,
++            broker_mode="alpaca_paper_api",
++            ownership_class="bot_owned",
++            symbol="TSLA",
++            quantity=2,
++            price=95.0,
++            filled_at=exit_ts,
++            metadata={"exit_reason": "take_profit"},
++        )
++    )
++
++    closed_trades = RealizedAnalyticsExporter(
++        settings=settings,
++        store=runtime_service.store,
++    ).build_closed_trades()
++
++    assert len(closed_trades) == 1
++    assert closed_trades[0].symbol == "TSLA"
++    assert closed_trades[0].gross_pnl == 10.0
++    assert closed_trades[0].realized_pnl == 10.0
++    assert closed_trades[0].realized_return_pct == 5.0
++    assert closed_trades[0].win_loss_flag == "win"
+diff --git a/tests/unit/risk/test_service.py b/tests/unit/risk/test_service.py
+index 56bb914..5fdaeaa 100644
+--- a/tests/unit/risk/test_service.py
++++ b/tests/unit/risk/test_service.py
+@@ -37,6 +37,16 @@ def test_risk_engine_rejects_scalping_buy_without_bracket_plan(approved_trade_in
+     assert decision.reason == "missing_bracket_plan"
+ 
+ 
++def test_risk_engine_rejects_scalping_short_without_bracket_plan(approved_trade_intent) -> None:
++    approved_trade_intent.side = "sell"
++    approved_trade_intent.bracket_plan = None
++
++    decision = RiskEngine().evaluate(intent=approved_trade_intent, mode=RuntimeMode.PAPER)
++
++    assert not decision.approved
++    assert decision.reason == "missing_bracket_plan"
++
++
+ def test_risk_engine_blocks_same_symbol_foreign_exposure(approved_trade_intent) -> None:
+     approved_trade_intent.metadata["foreign_position_exists"] = True
+ 

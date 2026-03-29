@@ -29,3 +29,14 @@ def get_selected_mode() -> str:
 
 def set_selected_mode(mode: str) -> None:
     st.session_state["selected_mode"] = mode
+
+
+def get_selected_profile_name() -> str | None:
+    return st.session_state.get("selected_profile_name")
+
+
+def set_selected_profile_name(profile_name: str | None) -> None:
+    if profile_name is None:
+        st.session_state.pop("selected_profile_name", None)
+        return
+    st.session_state["selected_profile_name"] = profile_name

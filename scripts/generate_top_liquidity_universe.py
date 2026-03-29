@@ -22,6 +22,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+    if args.verbose:
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("alpaca").setLevel(logging.INFO)
     result = TopLiquidityUniverseService().generate_top_liquidity_universe(
         top_n=args.top_n,
         lookback_days=args.lookback_days,

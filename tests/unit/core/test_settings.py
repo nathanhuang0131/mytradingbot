@@ -35,6 +35,24 @@ def test_data_pipeline_defaults_include_minute_timeframes() -> None:
     assert settings.data.processing_workers >= 1
 
 
+def test_scalping_runtime_defaults_align_with_overnight_tuning_pass() -> None:
+    settings = AppSettings()
+
+    assert settings.runtime_safety.prediction_refresh_interval_seconds == 600
+    assert settings.scalping.predicted_return_threshold == 0.0008
+    assert settings.scalping.confidence_threshold == 0.6
+    assert settings.scalping.cooldown_minutes == 10
+    assert settings.scalping.top_n_per_cycle == 3
+    assert settings.scalping.edge_after_cost_min_buffer == 0.0005
+    assert settings.scalping.higher_timeframe_filter_enabled is True
+    assert settings.scalping.higher_timeframe_source_timeframe == "15m"
+    assert settings.scalping.higher_timeframe_fast_ma_length == 5
+    assert settings.scalping.higher_timeframe_slow_ma_length == 10
+    assert settings.scalping.enable_pseudo_order_book_gate is False
+    assert settings.scalping.microstructure_proxy_mode == "soft_rank"
+    assert settings.scalping.microstructure_proxy_min_alignment_score == 0.15
+
+
 def test_flat_env_aliases_load_broker_credentials(monkeypatch) -> None:
     monkeypatch.setenv("ALPACA_API_KEY", "key")
     monkeypatch.setenv("ALPACA_SECRET_KEY", "secret")

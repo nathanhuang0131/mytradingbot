@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
 
-from app.components.runtime import get_platform_service
+APP_DIR = Path(__file__).resolve().parents[1]
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
+from components.runtime import get_platform_service
 from mytradingbot.ui_services.llm_copilot import LLMCopilotService
 
 service = LLMCopilotService(get_platform_service())

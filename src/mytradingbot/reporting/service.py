@@ -43,6 +43,19 @@ class ReportingService:
             notes=[
                 f"Health summary: {result.health_status.summary}",
                 f"Prediction status ready: {result.prediction_status.is_ready}",
+                (
+                    "Decision pipeline ready: "
+                    f"{result.decision_pipeline_readiness.decision_pipeline_ready}"
+                    if result.decision_pipeline_readiness is not None
+                    else "Decision pipeline ready: unknown"
+                ),
+                (
+                    "Decision block reason: "
+                    f"{result.decision_pipeline_readiness.decision_block_reason}"
+                    if result.decision_pipeline_readiness is not None
+                    and result.decision_pipeline_readiness.decision_block_reason is not None
+                    else "Decision block reason: none"
+                ),
                 *bracket_notes,
             ],
         )

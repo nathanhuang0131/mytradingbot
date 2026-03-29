@@ -6,6 +6,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from mytradingbot.brokers.alpaca_paper import AlpacaPaperBroker
+from mytradingbot.brokers.base import BaseBroker
 from mytradingbot.brokers.paper import PaperBroker
 from mytradingbot.core.capabilities import CapabilityService, CapabilitySnapshot
 from mytradingbot.core.enums import RuntimeMode
@@ -25,8 +27,16 @@ from mytradingbot.execution.service import ExecutionEngine
 from mytradingbot.qlib_engine.service import QlibWorkflowService
 from mytradingbot.risk.service import RiskEngine
 from mytradingbot.reporting.service import ReportingService
+from mytradingbot.runtime.models import BrokerMode, BrokerReconciliationSnapshot
+from mytradingbot.runtime.models import DecisionPipelineReadiness
 from mytradingbot.runtime.service import RuntimeStateService
+from mytradingbot.session_setup.models import ResolvedSessionConfig
+from mytradingbot.session_setup.runtime import (
+    apply_resolved_config_to_settings,
+    filter_predictions_for_config,
+)
 from mytradingbot.strategies.registry import StrategyRegistry
+from mytradingbot.strategies.selection import apply_top_n_selection
 from mytradingbot.universe.storage import UniverseStorage
 
 logger = logging.getLogger(__name__)
@@ -48,23 +58,24 @@ class TradingPlatformService:
         runtime_state_service: RuntimeStateService | None = None,
         reporting_service: ReportingService | None = None,
         diagnostics_service: DiagnosticsService | None = None,
-        broker: PaperBroker | None = None,
+        broker: BaseBroker | None = None,
+        broker_mode: BrokerMode | None = None,
     ) -> None:
         self.settings = settings or AppSettings()
+        if broker_mode is not None:
+            self.settings.broker.broker_mode = broker_mode
         self.qlib_service = qlib_service or QlibWorkflowService(settings=self.settings)
         self.data_pipeline = data_pipeline or MarketDataPipeline(settings=self.settings)
         self.market_data_service = market_data_service or MarketDataService(
             settings=self.settings
         )
         self.capability_service = CapabilityService(settings=self.settings)
-        self.strategy_registry = strategy_registry or StrategyRegistry.build_default()
+        self.strategy_registry = strategy_registry or StrategyRegistry.build_default(self.settings)
         self.risk_engine = risk_engine or RiskEngine()
         self.runtime_state_service = runtime_state_service or RuntimeStateService(
             settings=self.settings
         )
-        self.broker = broker or PaperBroker(
-            runtime_store=self.runtime_state_service.store
-        )
+        self.broker = broker or self._build_broker()
         self.execution_engine = execution_engine or ExecutionEngine(broker=self.broker)
         self.universe_storage = UniverseStorage(settings=self.settings)
         self.reporting_service = reporting_service or ReportingService()
@@ -74,6 +85,14 @@ class TradingPlatformService:
     @classmethod
     def bootstrap_default(cls) -> "TradingPlatformService":
         return cls()
+
+    def _build_broker(self) -> BaseBroker:
+        if self.settings.broker.broker_mode == "alpaca_paper_api":
+            return AlpacaPaperBroker(
+                settings=self.settings,
+                runtime_store=self.runtime_state_service.store,
+            )
+        return PaperBroker(runtime_store=self.runtime_state_service.store)
 
     def get_strategy_names(self) -> list[str]:
         return self.strategy_registry.names()
@@ -114,6 +133,7 @@ class TradingPlatformService:
         end_at: datetime | None = None,
         full_refresh: bool = False,
         normalize_only: bool = False,
+        progress_callback=None,
     ):
         resolved_symbols = self.resolve_symbols(symbols=symbols, symbols_file=symbols_file)
         return self.data_pipeline.download_update_normalize_and_snapshot(
@@ -123,6 +143,7 @@ class TradingPlatformService:
             end_at=end_at,
             full_refresh=full_refresh,
             normalize_only=normalize_only,
+            progress_callback=progress_callback,
         )
 
     def refresh_predictions(self, *, strategy_name: str | None = None):
@@ -156,13 +177,234 @@ class TradingPlatformService:
             return None
         return self.universe_storage.load_symbols(symbols_file)
 
+    @staticmethod
+    def _path_age_seconds(path: Path) -> int | None:
+        if not path.exists():
+            return None
+        return max(0, int(utc_now().timestamp() - path.stat().st_mtime))
+
+    def _decision_pipeline_readiness(
+        self,
+        *,
+        decision_block_reason: str | None = None,
+        refresh_actions: list[str] | None = None,
+    ) -> DecisionPipelineReadiness:
+        market_status = self.runtime_state_service.market_snapshot_status(
+            market_snapshot_path=self.market_data_service.market_snapshot_path
+        )
+        prediction_status = self.qlib_service.get_runtime_prediction_status()
+        reason = decision_block_reason
+        if reason is None:
+            if not market_status.is_ready:
+                if market_status.reason == "stale":
+                    reason = "stale_market_snapshot"
+                elif market_status.reason == "missing":
+                    reason = "missing_market_snapshot"
+                else:
+                    reason = market_status.reason or "market_snapshot_unavailable"
+            elif not prediction_status.is_ready:
+                if prediction_status.reason == "stale":
+                    reason = "stale_predictions"
+                elif prediction_status.reason == "missing":
+                    reason = "missing_predictions"
+                else:
+                    reason = prediction_status.reason or "predictions_unavailable"
+        return DecisionPipelineReadiness(
+            market_snapshot_ready=market_status.is_ready,
+            market_snapshot_age_seconds=self.runtime_state_service.market_snapshot_age_seconds(
+                market_snapshot_path=self.market_data_service.market_snapshot_path
+            ),
+            predictions_ready=prediction_status.is_ready,
+            predictions_age_seconds=self.qlib_service.prediction_age_seconds(),
+            decision_pipeline_ready=market_status.is_ready and prediction_status.is_ready and reason is None,
+            decision_block_reason=reason,
+            refresh_actions=refresh_actions or [],
+        )
+
+    def _effective_settings(
+        self,
+        session_config: ResolvedSessionConfig | None,
+    ) -> AppSettings:
+        if session_config is None:
+            return self.settings
+        return apply_resolved_config_to_settings(self.settings, session_config)
+
+    def _resolve_runtime_refresh_symbols(
+        self,
+        *,
+        symbols: list[str] | None = None,
+        symbols_file: Path | None = None,
+    ) -> list[str] | None:
+        resolved_symbols = self.resolve_symbols(symbols=symbols, symbols_file=symbols_file)
+        if resolved_symbols:
+            return resolved_symbols
+        inferred_symbols = self.qlib_service.extract_prediction_symbols()
+        if inferred_symbols:
+            return inferred_symbols
+        return None
+
+    def _sync_runtime_market_snapshot(self) -> None:
+        source_path = self.settings.market_snapshot_artifact_path()
+        target_path = self.market_data_service.market_snapshot_path
+        if target_path == source_path or not source_path.exists():
+            return
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    def ensure_decision_pipeline_ready(
+        self,
+        *,
+        strategy_name: str,
+        auto_refresh_inputs: bool,
+        effective_settings: AppSettings | None = None,
+        symbols: list[str] | None = None,
+        symbols_file: Path | None = None,
+        refresh_timeframes: list[str] | None = None,
+    ) -> DecisionPipelineReadiness:
+        runtime_settings = effective_settings or self.settings
+        refresh_actions: list[str] = []
+        readiness = self._decision_pipeline_readiness()
+        if not auto_refresh_inputs:
+            return readiness
+
+        market_refresh_due = (
+            not readiness.market_snapshot_ready
+            or (
+                readiness.market_snapshot_age_seconds is not None
+                and readiness.market_snapshot_age_seconds
+                >= runtime_settings.runtime_safety.market_refresh_interval_seconds
+            )
+        )
+        prediction_refresh_due = (
+            not readiness.predictions_ready
+            or (
+                readiness.predictions_age_seconds is not None
+                and readiness.predictions_age_seconds
+                >= runtime_settings.runtime_safety.prediction_refresh_interval_seconds
+            )
+        )
+        dataset_path = runtime_settings.qlib_dataset_artifact_path()
+        dataset_age_seconds = self._path_age_seconds(dataset_path)
+        dataset_refresh_due = False
+
+        if market_refresh_due or prediction_refresh_due:
+            resolved_symbols = self._resolve_runtime_refresh_symbols(
+                symbols=symbols,
+                symbols_file=symbols_file,
+            )
+            if not resolved_symbols:
+                return self._decision_pipeline_readiness(
+                    decision_block_reason="symbol_scope_unresolved_for_auto_refresh",
+                    refresh_actions=refresh_actions,
+                )
+        else:
+            resolved_symbols = None
+
+        if market_refresh_due and resolved_symbols is not None:
+            market_result = self.download_market_data(
+                symbols=resolved_symbols,
+                timeframes=refresh_timeframes or [self.settings.data.snapshot_timeframe],
+                full_refresh=False,
+            )
+            refresh_actions.append(f"market_refresh:{market_result.message}")
+            if not market_result.ok:
+                return self._decision_pipeline_readiness(
+                    decision_block_reason=f"market_refresh_failed:{market_result.message}",
+                    refresh_actions=refresh_actions,
+                )
+            self._sync_runtime_market_snapshot()
+            readiness = self._decision_pipeline_readiness(refresh_actions=refresh_actions)
+
+        if prediction_refresh_due:
+            market_snapshot_path = self.market_data_service.market_snapshot_path
+            dataset_refresh_due = (
+                not dataset_path.exists()
+                or (
+                    dataset_age_seconds is not None
+                    and dataset_age_seconds
+                    >= runtime_settings.runtime_safety.dataset_refresh_interval_seconds
+                )
+                or (
+                    dataset_path.exists()
+                    and market_snapshot_path.exists()
+                    and dataset_path.stat().st_mtime < market_snapshot_path.stat().st_mtime
+                )
+            )
+
+        if dataset_refresh_due and resolved_symbols is not None:
+            dataset_result = self.build_dataset(
+                strategy_name=strategy_name,
+                symbols=resolved_symbols,
+            )
+            refresh_actions.append(f"dataset_refresh:{dataset_result.message}")
+            if not dataset_result.ok:
+                return self._decision_pipeline_readiness(
+                    decision_block_reason=f"dataset_refresh_failed:{dataset_result.message}",
+                    refresh_actions=refresh_actions,
+                )
+
+        if prediction_refresh_due:
+            prediction_result = self.refresh_predictions(strategy_name=strategy_name)
+            refresh_actions.append(f"prediction_refresh:{prediction_result.message}")
+            if not prediction_result.ok:
+                return self._decision_pipeline_readiness(
+                    decision_block_reason=f"prediction_refresh_failed:{prediction_result.message}",
+                    refresh_actions=refresh_actions,
+                )
+
+        return self._decision_pipeline_readiness(refresh_actions=refresh_actions)
+
+    def _apply_reconciliation_notes(
+        self,
+        *,
+        context,
+        reconciliation: BrokerReconciliationSnapshot,
+        incidents: list,
+        session_notes: list[str],
+    ) -> None:
+        session_notes.extend(
+            [
+                f"bot_owned_open_orders={reconciliation.bot_owned_order_count}",
+                f"bot_owned_open_positions={reconciliation.bot_owned_position_count}",
+                f"foreign_open_orders={reconciliation.foreign_order_count}",
+                f"foreign_open_positions={reconciliation.foreign_position_count}",
+            ]
+        )
+        session_notes.extend(reconciliation.notes)
+        if reconciliation.foreign_order_count or reconciliation.foreign_position_count:
+            incidents.append(
+                self.runtime_state_service.build_incident(
+                    context=context,
+                    code="foreign_broker_exposure_observed",
+                    summary="Observed foreign or unknown Alpaca paper account exposure.",
+                    detail=(
+                        f"foreign_orders={reconciliation.foreign_order_count}, "
+                        f"foreign_positions={reconciliation.foreign_position_count}"
+                    ),
+                    severity="info",
+                    ownership_class="foreign",
+                    metadata={
+                        "foreign_order_count": reconciliation.foreign_order_count,
+                        "foreign_position_count": reconciliation.foreign_position_count,
+                        "ownership_policy": reconciliation.ownership_policy,
+                    },
+                )
+            )
+
     def run_session(
         self,
         *,
         strategy_name: str,
         mode: RuntimeMode | str,
+        auto_refresh_inputs: bool = False,
+        symbols: list[str] | None = None,
+        symbols_file: Path | None = None,
+        refresh_timeframes: list[str] | None = None,
+        intent_metadata_overrides: dict[str, str | float | bool | int] | None = None,
+        session_config: ResolvedSessionConfig | None = None,
     ) -> SessionResult:
         normalized_mode = mode if isinstance(mode, RuntimeMode) else RuntimeMode(mode)
+        effective_settings = self._effective_settings(session_config)
         context = self.runtime_state_service.create_session_context(
             strategy=strategy_name,
             mode=normalized_mode,
@@ -173,7 +415,120 @@ class TradingPlatformService:
             mode=normalized_mode,
         )
         incidents = []
+        session_notes = [
+            f"broker_mode={context.broker_mode}",
+            f"api_base_url={self.settings.broker.alpaca_base_url}",
+            "external_broker_submission_enabled="
+            f"{str(self.settings.broker.resolved_external_submission_enabled()).lower()}",
+            f"ownership_mode={self.settings.broker.ownership_policy}",
+        ]
+        readiness = self._decision_pipeline_readiness()
 
+        preflight = self.broker.preflight()
+        if not preflight.ok:
+            summary.status = "failed"
+            summary.completed_at = utc_now()
+            incidents.append(
+                self.runtime_state_service.build_incident(
+                    context=context,
+                    code="broker_rejected",
+                    summary="Broker preflight failed before session execution.",
+                    detail=preflight.message,
+                    severity="error",
+                    metadata=preflight.metadata,
+                )
+            )
+            result = SessionResult(
+                session_summary=summary,
+                prediction_status=ArtifactStatus.unavailable("predictions"),
+                health_status=HealthStatus(
+                    summary="Broker preflight failed.",
+                    ok=False,
+                    issues=[preflight.message],
+                ),
+                rejection_reasons=[preflight.message],
+                decision_pipeline_readiness=readiness,
+            )
+            result.post_session_report = self.reporting_service.build_post_session_review(result)
+            self.runtime_state_service.write_session_artifacts(
+                context=context,
+                readiness=readiness,
+                audits=[],
+                orders=[],
+                fills=[],
+                positions=[],
+                incidents=incidents,
+                notes=[*session_notes, *result.post_session_report.notes],
+            )
+            self.last_session_result = result
+            return result
+
+        try:
+            reconciliation = self.broker.reconcile_runtime_state(strategy_name=strategy_name)
+            self.runtime_state_service.refresh_completed_session_artifacts()
+        except Exception as exc:
+            summary.status = "failed"
+            summary.completed_at = utc_now()
+            incidents.append(
+                self.runtime_state_service.build_incident(
+                    context=context,
+                    code="broker_state_unreconciled",
+                    summary="Broker state reconciliation failed before session execution.",
+                    detail=str(exc),
+                    severity="error",
+                )
+            )
+            result = SessionResult(
+                session_summary=summary,
+                prediction_status=ArtifactStatus.unavailable("predictions"),
+                health_status=HealthStatus(
+                    summary="Broker reconciliation failed.",
+                    ok=False,
+                    issues=[str(exc)],
+                ),
+                rejection_reasons=["broker_state_unreconciled"],
+                decision_pipeline_readiness=readiness,
+            )
+            result.post_session_report = self.reporting_service.build_post_session_review(result)
+            self.runtime_state_service.write_session_artifacts(
+                context=context,
+                readiness=readiness,
+                audits=[],
+                orders=[],
+                fills=[],
+                positions=self.broker.list_positions(),
+                incidents=incidents,
+                notes=[*session_notes, *result.post_session_report.notes],
+            )
+            self.last_session_result = result
+            return result
+
+        self._apply_reconciliation_notes(
+            context=context,
+            reconciliation=reconciliation,
+            incidents=incidents,
+            session_notes=session_notes,
+        )
+
+        readiness = self.ensure_decision_pipeline_ready(
+            strategy_name=strategy_name,
+            auto_refresh_inputs=auto_refresh_inputs,
+            effective_settings=effective_settings,
+            symbols=symbols,
+            symbols_file=symbols_file,
+            refresh_timeframes=refresh_timeframes,
+        )
+        session_notes.extend(
+            [
+                f"market_snapshot_ready={readiness.market_snapshot_ready}",
+                f"market_snapshot_age_seconds={readiness.market_snapshot_age_seconds}",
+                f"predictions_ready={readiness.predictions_ready}",
+                f"predictions_age_seconds={readiness.predictions_age_seconds}",
+                f"decision_pipeline_ready={readiness.decision_pipeline_ready}",
+                f"decision_block_reason={readiness.decision_block_reason}",
+                *readiness.refresh_actions,
+            ]
+        )
         prediction_result = self.qlib_service.load_predictions()
         market_status = self.runtime_state_service.market_snapshot_status(
             market_snapshot_path=self.market_data_service.market_snapshot_path
@@ -198,16 +553,18 @@ class TradingPlatformService:
                     issues=["execution_guard_blocked"],
                 ),
                 rejection_reasons=["execution_guard_blocked"],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
                 positions=[],
                 incidents=incidents,
-                notes=result.post_session_report.notes,
+                notes=[*session_notes, *result.post_session_report.notes],
             )
             self.last_session_result = result
             return result
@@ -222,6 +579,14 @@ class TradingPlatformService:
                     summary="Market snapshot artifact is unavailable for trading.",
                     detail=market_status.reason,
                     severity="error",
+                    metadata={
+                        "market_snapshot_ready": readiness.market_snapshot_ready,
+                        "market_snapshot_age_seconds": readiness.market_snapshot_age_seconds,
+                        "predictions_ready": readiness.predictions_ready,
+                        "predictions_age_seconds": readiness.predictions_age_seconds,
+                        "decision_pipeline_ready": readiness.decision_pipeline_ready,
+                        "decision_block_reason": readiness.decision_block_reason,
+                    },
                 )
             )
             result = SessionResult(
@@ -233,16 +598,18 @@ class TradingPlatformService:
                     issues=market_status.guidance,
                 ),
                 rejection_reasons=[market_status.reason or "market_snapshot_unavailable"],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
                 positions=[],
                 incidents=incidents,
-                notes=result.post_session_report.notes,
+                notes=[*session_notes, *result.post_session_report.notes],
             )
             self.last_session_result = result
             return result
@@ -257,6 +624,14 @@ class TradingPlatformService:
                     summary="Prediction artifact unavailable for trading.",
                     detail=prediction_result.message,
                     severity="error",
+                    metadata={
+                        "market_snapshot_ready": readiness.market_snapshot_ready,
+                        "market_snapshot_age_seconds": readiness.market_snapshot_age_seconds,
+                        "predictions_ready": readiness.predictions_ready,
+                        "predictions_age_seconds": readiness.predictions_age_seconds,
+                        "decision_pipeline_ready": readiness.decision_pipeline_ready,
+                        "decision_block_reason": readiness.decision_block_reason,
+                    },
                 )
             )
             result = SessionResult(
@@ -268,23 +643,31 @@ class TradingPlatformService:
                     issues=[prediction_result.message],
                 ),
                 rejection_reasons=[prediction_result.message],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
                 positions=[],
                 incidents=incidents,
-                notes=result.post_session_report.notes,
+                notes=[*session_notes, *result.post_session_report.notes],
             )
             self.last_session_result = result
             return result
 
         try:
+            runtime_predictions = prediction_result.predictions
+            if session_config is not None:
+                runtime_predictions = filter_predictions_for_config(
+                    runtime_predictions,
+                    session_config,
+                )
             signals = self.market_data_service.build_signal_bundles(
-                prediction_result.predictions
+                runtime_predictions
             )
         except (FileNotFoundError, KeyError, ValueError) as exc:
             summary.status = "failed"
@@ -296,6 +679,14 @@ class TradingPlatformService:
                     summary="Market data unavailable.",
                     detail=str(exc),
                     severity="error",
+                    metadata={
+                        "market_snapshot_ready": readiness.market_snapshot_ready,
+                        "market_snapshot_age_seconds": readiness.market_snapshot_age_seconds,
+                        "predictions_ready": readiness.predictions_ready,
+                        "predictions_age_seconds": readiness.predictions_age_seconds,
+                        "decision_pipeline_ready": readiness.decision_pipeline_ready,
+                        "decision_block_reason": readiness.decision_block_reason,
+                    },
                 )
             )
             result = SessionResult(
@@ -307,16 +698,18 @@ class TradingPlatformService:
                     issues=[str(exc)],
                 ),
                 rejection_reasons=[str(exc)],
+                decision_pipeline_readiness=readiness,
             )
             result.post_session_report = self.reporting_service.build_post_session_review(result)
             self.runtime_state_service.write_session_artifacts(
                 context=context,
+                readiness=readiness,
                 audits=[],
                 orders=[],
                 fills=[],
                 positions=[],
                 incidents=incidents,
-                notes=result.post_session_report.notes,
+                notes=[*session_notes, *result.post_session_report.notes],
             )
             self.last_session_result = result
             return result
@@ -330,6 +723,7 @@ class TradingPlatformService:
                     context=context,
                     strategy_name=strategy_name,
                     result=exit_result,
+                    cooldown_minutes=effective_settings.scalping.cooldown_minutes,
                 )
                 exit_results.append(exit_result)
                 if exit_result.order is not None:
@@ -338,7 +732,7 @@ class TradingPlatformService:
 
         if signals and any(
             self.runtime_state_service.minutes_to_close(signal.market.timestamp)
-            <= self.settings.scalping.max_holding_seconds // 60
+            <= effective_settings.scalping.flatten_near_close_minutes
             for signal in signals
         ):
             for flatten_result in self.broker.flatten_open_brackets(reason="near_close_flatten"):
@@ -346,6 +740,7 @@ class TradingPlatformService:
                     context=context,
                     strategy_name=strategy_name,
                     result=flatten_result,
+                    cooldown_minutes=effective_settings.scalping.cooldown_minutes,
                 )
                 exit_results.append(flatten_result)
                 if flatten_result.order is not None:
@@ -356,10 +751,17 @@ class TradingPlatformService:
             strategy_name=strategy_name,
             signals=signals,
         )
-        strategy = self.strategy_registry.get(strategy_name)
+        strategy = self._resolve_strategy_for_session(
+            strategy_name,
+            session_config=session_config,
+        )
         attempts: list[TradeAttemptTrace] = []
         audits = []
         rejection_reasons: list[str] = []
+        eligible_candidates: list[tuple] = []
+        available_position_slots = self._available_position_slots(
+            session_config=session_config,
+        )
 
         for signal in signals:
             trace = TradeAttemptTrace.for_symbol(signal.symbol, strategy_name)
@@ -387,8 +789,17 @@ class TradingPlatformService:
                         side=strategy_decision.intent.side,
                     )
                 )
+                strategy_decision.intent.metadata["signal_source"] = "qlib_plus_rules"
+                strategy_decision.intent.metadata["broker_mode"] = context.broker_mode
+                strategy_decision.intent.metadata["session_id"] = context.session_id
+                strategy_decision.intent.metadata["run_id"] = context.run_id
+                strategy_decision.intent.metadata["ownership_policy"] = self.settings.broker.ownership_policy
                 strategy_decision.intent.metadata["position_exists"] = signal.metadata.get(
                     "position_exists",
+                    False,
+                )
+                strategy_decision.intent.metadata["foreign_position_exists"] = signal.metadata.get(
+                    "foreign_position_exists",
                     False,
                 )
                 strategy_decision.intent.metadata["circuit_breaker_blocked"] = (
@@ -397,6 +808,8 @@ class TradingPlatformService:
                         strategy_decision.intent.metadata["client_order_id"]
                     )
                 )
+                if intent_metadata_overrides:
+                    strategy_decision.intent.metadata.update(intent_metadata_overrides)
                 if strategy_decision.intent.bracket_plan is not None:
                     plan = strategy_decision.intent.bracket_plan
                     trace.notes.append(
@@ -408,59 +821,7 @@ class TradingPlatformService:
                         f"slippage={plan.estimated_slippage:.4f}, "
                         f"net_rr={plan.reward_risk_ratio:.4f}"
                     )
-
-                risk_decision = self.risk_engine.evaluate(
-                    intent=strategy_decision.intent,
-                    mode=normalized_mode if normalized_mode is not RuntimeMode.DRY_RUN else RuntimeMode.PAPER,
-                )
-                trace.risk_outcome = risk_decision
-                if not risk_decision.approved:
-                    rejection_reasons.append(risk_decision.reason or "risk_rejected")
-                    attempts.append(trace)
-                    audits.append(
-                        self.runtime_state_service.build_decision_audit(
-                            context=context,
-                            signal=signal,
-                            trace=trace,
-                            prediction_status=prediction_result.status,
-                            market_status=market_status,
-                        )
-                    )
-                    continue
-
-                execution_result = self.execution_engine.execute(
-                    risk_decision,
-                    mode=normalized_mode,
-                )
-                trace.execution_request = execution_result.request
-                trace.execution_outcome = execution_result
-                if execution_result.reason and execution_result.execution_skipped:
-                    rejection_reasons.append(execution_result.reason)
-                if execution_result.bracket_state is not None:
-                    trace.notes.append(
-                        "Bracket state: "
-                        f"status={execution_result.bracket_state.status}, "
-                        f"exit_reason={execution_result.bracket_state.exit_reason}, "
-                        f"realized_pnl={execution_result.bracket_state.realized_pnl}"
-                    )
-                self.runtime_state_service.record_execution_result(
-                    context=context,
-                    strategy_name=strategy_name,
-                    result=execution_result,
-                )
-                if execution_result.order is not None:
-                    session_orders.append(execution_result.order)
-                session_fills.extend(execution_result.fills)
-                attempts.append(trace)
-                audits.append(
-                    self.runtime_state_service.build_decision_audit(
-                        context=context,
-                        signal=signal,
-                        trace=trace,
-                        prediction_status=prediction_result.status,
-                        market_status=market_status,
-                    )
-                )
+                eligible_candidates.append((signal, trace, strategy_decision))
             except Exception as exc:  # pragma: no cover - defensive session isolation
                 trace.notes.append(str(exc))
                 attempts.append(trace)
@@ -483,6 +844,95 @@ class TradingPlatformService:
                         market_status=market_status,
                     )
                 )
+
+        selected_by_symbol: dict[str, object] = {}
+        if eligible_candidates:
+            selection_result = apply_top_n_selection(
+                [decision for _, _, decision in eligible_candidates],
+                top_n_per_cycle=effective_settings.scalping.top_n_per_cycle,
+                available_position_slots=available_position_slots,
+            )
+            for decision in [*selection_result.selected, *selection_result.rejected]:
+                selected_by_symbol[decision.symbol] = decision
+
+        for signal, trace, strategy_decision in eligible_candidates:
+            resolved_decision = selected_by_symbol.get(signal.symbol, strategy_decision)
+            trace.strategy_outcome = resolved_decision
+            if resolved_decision.quality is not None:
+                trace.notes.append(
+                    "Selection quality: "
+                    f"score={resolved_decision.quality.quality_score:.4f}, "
+                    f"edge_after_cost={resolved_decision.quality.expected_edge_after_cost:.4f}, "
+                    f"selection_rank={resolved_decision.quality.selection_rank}, "
+                    f"selected_in_top_n={resolved_decision.quality.selected_in_top_n}"
+                )
+            if not resolved_decision.should_trade or resolved_decision.intent is None:
+                rejection_reasons.append(resolved_decision.reason or "strategy_rejected")
+                attempts.append(trace)
+                audits.append(
+                    self.runtime_state_service.build_decision_audit(
+                        context=context,
+                        signal=signal,
+                        trace=trace,
+                        prediction_status=prediction_result.status,
+                        market_status=market_status,
+                    )
+                )
+                continue
+
+            risk_decision = self.risk_engine.evaluate(
+                intent=resolved_decision.intent,
+                mode=normalized_mode if normalized_mode is not RuntimeMode.DRY_RUN else RuntimeMode.PAPER,
+            )
+            trace.risk_outcome = risk_decision
+            if not risk_decision.approved:
+                rejection_reasons.append(risk_decision.reason or "risk_rejected")
+                attempts.append(trace)
+                audits.append(
+                    self.runtime_state_service.build_decision_audit(
+                        context=context,
+                        signal=signal,
+                        trace=trace,
+                        prediction_status=prediction_result.status,
+                        market_status=market_status,
+                    )
+                )
+                continue
+
+            execution_result = self.execution_engine.execute(
+                risk_decision,
+                mode=normalized_mode,
+            )
+            trace.execution_request = execution_result.request
+            trace.execution_outcome = execution_result
+            if execution_result.reason and execution_result.execution_skipped:
+                rejection_reasons.append(execution_result.reason)
+            if execution_result.bracket_state is not None:
+                trace.notes.append(
+                    "Bracket state: "
+                    f"status={execution_result.bracket_state.status}, "
+                    f"exit_reason={execution_result.bracket_state.exit_reason}, "
+                    f"realized_pnl={execution_result.bracket_state.realized_pnl}"
+                )
+            self.runtime_state_service.record_execution_result(
+                context=context,
+                strategy_name=strategy_name,
+                result=execution_result,
+                cooldown_minutes=effective_settings.scalping.cooldown_minutes,
+            )
+            if execution_result.order is not None:
+                session_orders.append(execution_result.order)
+            session_fills.extend(execution_result.fills)
+            attempts.append(trace)
+            audits.append(
+                self.runtime_state_service.build_decision_audit(
+                    context=context,
+                    signal=signal,
+                    trace=trace,
+                    prediction_status=prediction_result.status,
+                    market_status=market_status,
+                )
+            )
 
         orders = [] if normalized_mode is RuntimeMode.DRY_RUN else session_orders
         fills = [] if normalized_mode is RuntimeMode.DRY_RUN else session_fills
@@ -507,18 +957,21 @@ class TradingPlatformService:
             fills=fills,
             positions=positions,
             rejection_reasons=rejection_reasons,
+            decision_pipeline_readiness=readiness,
         )
         if summary.trade_count == 0 and summary.status == "completed":
             result.diagnostics = self.diagnostics_service.build_no_trade_report(result)
         result.post_session_report = self.reporting_service.build_post_session_review(result)
         self.runtime_state_service.write_session_artifacts(
             context=context,
+            readiness=readiness,
             audits=audits,
             orders=orders,
             fills=fills,
             positions=positions,
             incidents=incidents,
             notes=[
+                *session_notes,
                 *result.post_session_report.notes,
                 *[
                     f"managed_exit={execution.reason}"
@@ -529,3 +982,34 @@ class TradingPlatformService:
         )
         self.last_session_result = result
         return result
+
+    def _resolve_strategy_for_session(
+        self,
+        strategy_name: str,
+        *,
+        session_config: ResolvedSessionConfig | None,
+    ):
+        if session_config is None:
+            return self.strategy_registry.get(strategy_name)
+        session_settings = apply_resolved_config_to_settings(
+            self.settings,
+            session_config,
+        )
+        return StrategyRegistry.build_default(session_settings).get(strategy_name)
+
+    def _available_position_slots(
+        self,
+        *,
+        session_config: ResolvedSessionConfig | None,
+    ) -> int | None:
+        if session_config is None:
+            return None
+        max_positions = max(0, int(session_config.risk.max_positions))
+        open_positions = len(
+            [
+                position
+                for position in self.broker.list_positions()
+                if abs(position.quantity) > 0
+            ]
+        )
+        return max(0, max_positions - open_positions)

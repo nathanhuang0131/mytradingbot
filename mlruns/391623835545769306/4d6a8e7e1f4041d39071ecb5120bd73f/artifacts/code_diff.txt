@@ -1,0 +1,2131 @@
+diff --git a/README.md b/README.md
+index e65fa04..a41009c 100644
+--- a/README.md
++++ b/README.md
+@@ -12,18 +12,18 @@ MyTradingBot Next is a qlib-first, dashboard-first quant trading platform with a
+ ## Works Without `pyqlib`
+ 
+ - `app/app.py`
+-- `app/pages/01_Dashboard.py`
++- `app/pages/00_Setup_Wizard.py`
+ - `app/pages/02_Strategy_Control.py`
+-- `app/pages/04_Paper_Trading.py` when explicit prediction and market snapshot artifacts are provided
++- `app/pages/08_Status_Reference.py`
+ - `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
+ - `scripts/run_daily_maintenance.py --action download` and `scripts/run_daily_maintenance.py --action update` only if Alpaca credentials and `alpaca-py` are available
+ 
+ ## Works Without Alpaca Credentials
+ 
+ - `app/app.py`
+-- `app/pages/01_Dashboard.py`
++- `app/pages/00_Setup_Wizard.py`
+ - `app/pages/02_Strategy_Control.py`
+-- `app/pages/04_Paper_Trading.py` with explicit artifacts
++- `app/pages/08_Status_Reference.py`
+ - `scripts/run_paper_trading.py --predictions-file <path> --market-data-file <path>`
+ - `scripts/build_qlib_dataset.py`, `scripts/train_models.py`, and `scripts/refresh_predictions.py` only if repo-local normalized data and `pyqlib` are already available
+ 
+@@ -141,10 +141,14 @@ Fields marked with `Recommended default` are safe to leave unchanged for most op
+ 
+ The `Alpha & Model` step now exposes the scalping qlib gates directly:
+ 
+-- `Predicted return threshold (%)` default: `0.50%`
++- `Predicted return threshold (%)` default: `0.08%`
+ - `Confidence threshold` default: `0.60`
++- `Prediction refresh cadence` default: `600 seconds`
++- `Cooldown after exit` default: `10 minutes`
++
++The overnight scalping path also keeps the spread proxy at `6.0` bps by default and leaves the legacy VWAP-derived `order_book_imbalance` proxy disabled as a hard gate until true L2 data exists.
+ 
+-Lower them to admit more candidates, or raise them to tighten symbol selection before execution.
++The lower predicted-return default is a controlled throughput adjustment for the 5-minute scalping horizon. The loop still wakes every `300` seconds, but predictions now refresh every `600` seconds by default so the system is not constantly chasing a refresh path that often takes longer than one loop interval. This does not guarantee profitability.
+ 
+ The canonical implementation lives under `src/mytradingbot/core/`, `src/mytradingbot/data/`, `src/mytradingbot/qlib_engine/`, `src/mytradingbot/strategies/`, `src/mytradingbot/risk/`, `src/mytradingbot/execution/`, `src/mytradingbot/brokers/`, `src/mytradingbot/orchestration/`, `src/mytradingbot/diagnostics/`, `src/mytradingbot/reporting/`, `src/mytradingbot/llm/`, and `src/mytradingbot/ui_services/`.
+ ## Canonical Institutional Runtime
+diff --git a/app/app.py b/app/app.py
+index 13c3008..a66a12d 100644
+--- a/app/app.py
++++ b/app/app.py
+@@ -9,16 +9,17 @@ APP_DIR = Path(__file__).resolve().parent
+ if str(APP_DIR) not in sys.path:
+     sys.path.insert(0, str(APP_DIR))
+ 
++from components.descriptive_sections import render_descriptive_section
+ from components.runtime import get_platform_service
+ from mytradingbot.ui_services.dashboard import DashboardService
+ 
+-st.set_page_config(page_title="Dashboard", layout="wide")
++st.set_page_config(page_title="Dashboard Summary", layout="wide")
+ 
+ platform_service = get_platform_service()
+ payload = DashboardService(platform_service).get_dashboard_payload()
+ 
+-st.title("Dashboard")
+-st.caption("Qlib-first control surface for system health, trading readiness, and operator actions.")
++st.title("Dashboard Summary")
++st.caption("Readable overview of system readiness, qlib capability status, and the next operator actions to take.")
+ 
+ left, right = st.columns(2)
+ left.metric("Prediction Ready", "Yes" if payload.prediction_status.is_ready else "No")
+@@ -28,14 +29,14 @@ right.metric("Default Mode", platform_service.settings.runtime.default_mode.valu
+ 
+ st.subheader("Operator Notes")
+ st.write(
+-    "Use the pages in the sidebar to control strategies, run paper sessions, inspect diagnostics, and review advisory summaries."
++    "Use the Setup Wizard to launch trading sessions, then use the sidebar pages to inspect profile status, diagnostics, training readiness, and advisory summaries."
+ )
+ if hasattr(st, "page_link"):
+     st.page_link("pages/00_Setup_Wizard.py", label="Start New Trading Session (Wizard)")
+ else:
+     st.info("Open `00_Setup_Wizard` from the sidebar to use the guided setup flow.")
+-st.subheader("Phase Capability Snapshot")
+-st.json(payload.capabilities.model_dump(mode="json"))
++for section in payload.summary_sections:
++    render_descriptive_section(section)
+ if not payload.prediction_status.is_ready:
+     st.warning(
+         "Predictions are not currently ready. Qlib-dependent actions fail clearly, but the dashboard remains available."
+diff --git a/app/components/runtime.py b/app/components/runtime.py
+index 977cea5..ec48f39 100644
+--- a/app/components/runtime.py
++++ b/app/components/runtime.py
+@@ -29,3 +29,14 @@ def get_selected_mode() -> str:
+ 
+ def set_selected_mode(mode: str) -> None:
+     st.session_state["selected_mode"] = mode
++
++
++def get_selected_profile_name() -> str | None:
++    return st.session_state.get("selected_profile_name")
++
++
++def set_selected_profile_name(profile_name: str | None) -> None:
++    if profile_name is None:
++        st.session_state.pop("selected_profile_name", None)
++        return
++    st.session_state["selected_profile_name"] = profile_name
+diff --git a/app/pages/00_Setup_Wizard.py b/app/pages/00_Setup_Wizard.py
+index b21bc6a..88c9a94 100644
+--- a/app/pages/00_Setup_Wizard.py
++++ b/app/pages/00_Setup_Wizard.py
+@@ -9,7 +9,9 @@ APP_DIR = Path(__file__).resolve().parents[1]
+ if str(APP_DIR) not in sys.path:
+     sys.path.insert(0, str(APP_DIR))
+ 
++from components.descriptive_sections import render_descriptive_section
+ from components.runtime import get_platform_service
++from components.runtime import set_selected_profile_name
+ from mytradingbot.core.enums import RuntimeMode
+ from mytradingbot.session_setup.models import SetupWizardState
+ from mytradingbot.ui_services.setup_wizard import SetupWizardUIService
+@@ -82,6 +84,36 @@ def _profile_card(payload, selected_name: str | None) -> None:
+     )
+ 
+ 
++def _render_action_result(result_payload: dict) -> None:
++    st.markdown("### Latest Wizard Action")
++    st.caption("This is the most recent save, smoke, or session-launch result produced by the wizard.")
++    st.markdown(f"**Message:** {result_payload.get('message', 'No message')}")
++    st.markdown(
++        f"**Profile config path:** {result_payload.get('profile_path', 'Not available')}"
++    )
++    st.markdown(
++        f"**Latest session config path:** {result_payload.get('session_config_path', 'Not available')}"
++    )
++    st.markdown(
++        f"**Active universe path:** {result_payload.get('active_symbols_path', 'Not available')}"
++    )
++    if result_payload.get("process_id") is not None:
++        st.markdown(f"**Background process ID:** {result_payload['process_id']}")
++    launched_command = result_payload.get("launched_command") or []
++    if launched_command:
++        st.markdown(f"**Launched command:** {' '.join(str(part) for part in launched_command)}")
++    session_summary = result_payload.get("session_summary")
++    if session_summary:
++        st.markdown("#### Session Summary")
++        st.caption("High-level result returned by the wizard-triggered session run.")
++        st.markdown(f"**Session ID:** {session_summary.get('session_id', 'Unknown')}")
++        st.markdown(f"**Status:** {session_summary.get('status', 'Unknown')}")
++        st.markdown(f"**Trades placed:** {session_summary.get('trade_count', 0)}")
++        st.markdown(
++            f"**Rejected trade attempts:** {session_summary.get('rejected_trade_count', 0)}"
++        )
++
++
+ def _render_profile_step(service: SetupWizardUIService, payload) -> None:
+     st.subheader("Choose a profile")
+     st.caption("Profiles are auto-saved. You do not need a separate manual save step.")
+@@ -303,6 +335,9 @@ def _render_refresh_step(state: SetupWizardState) -> None:
+                 key=_wizard_state_key("prediction_refresh_interval_seconds"),
+             )
+         )
++        _recommended_hint(
++            "600 seconds is the recommended overnight prediction refresh cadence. The loop can still wake every 300 seconds while qlib refresh runs on the slower cadence."
++        )
+         state.refresh.dataset_refresh_interval_seconds = int(
+             st.number_input(
+                 "Dataset rebuild cadence (seconds)",
+@@ -382,7 +417,7 @@ def _render_alpha_step(state: SetupWizardState) -> None:
+         )
+     )
+     st.caption(
+-        "Default scalping gates are 0.50% predicted return and 0.60 confidence. Lower them to allow more symbols through, or raise them to make entry selection stricter."
++        "Default overnight scalping gates are 0.08% predicted return and 0.60 confidence. The lower return gate is a controlled throughput adjustment for the 5-minute horizon, not a profitability guarantee."
+     )
+     with st.expander("Advanced alpha settings", expanded=st.session_state.get("wizard_visibility_mode") != "basic"):
+         state.alpha.candidate_count = int(
+@@ -489,6 +524,9 @@ def _render_risk_step(state: SetupWizardState) -> None:
+                 key=_wizard_state_key("cooldown_minutes"),
+             )
+         )
++        _recommended_hint(
++            "10 minutes is the recommended overnight cooldown when predictions refresh every 5 minutes."
++        )
+         state.risk.block_foreign_manual_exposure = bool(
+             st.checkbox(
+                 "Block foreign/manual exposure",
+@@ -602,97 +640,30 @@ def _render_execution_step(state: SetupWizardState) -> None:
+ 
+ def _render_review_step(service: SetupWizardUIService, state: SetupWizardState) -> None:
+     st.subheader("Review and start")
+-    review_flags = service.review_flags(state)
+     generated_symbols = st.session_state.get("wizard_generated_symbols")
+-    preview_symbols = service.wizard_service.preview_active_symbols(
+-        state.model_copy(deep=True),
++    review_payload = service.build_review_payload(
++        state,
+         generated_symbols=generated_symbols,
+     )
+     if state.universe.selection_mode != "keep_old" and not generated_symbols:
+         st.warning(
+             "No previewed liquidity universe is cached yet. Start, smoke, or save will run the liquidity flow automatically before persisting the active symbol manifest."
+         )
+-    expected_actions = service.wizard_service.build_expected_actions(
+-        state,
+-        active_symbols=preview_symbols,
+-    )
+-    profile_col, strategy_col = st.columns(2)
+-    with profile_col:
+-        st.info(
+-            "\n".join(
+-                [
+-                    f"Profile: `{state.profile.profile_name}`",
+-                    f"Profile config: `{service.wizard_service.storage.profile_path(state.profile.profile_slug)}`",
+-                    f"Latest session config: `{service.wizard_service.storage.session_config_path(state.profile.profile_slug)}`",
+-                ]
+-            )
+-        )
+-    with strategy_col:
+-        st.info(
+-            "\n".join(
+-                [
+-                    f"Strategy: `{state.strategy.strategy_name}`",
+-                    f"Broker mode: `{state.strategy.broker_mode}`",
+-                    f"Session mode: `{state.strategy.session_mode}`",
+-                    f"Side mode: `{state.alpha.side_mode}`",
+-                    f"Predicted return gate: `{state.alpha.predicted_return_threshold * 100:.2f}%`",
+-                    f"Confidence gate: `{state.alpha.confidence_threshold:.2f}`",
+-                ]
+-            )
+-        )
+-
+-    universe_col, refresh_col = st.columns(2)
+-    with universe_col:
+-        st.success(
+-            "\n".join(
+-                [
+-                    f"Universe mode: `{state.universe.selection_mode}`",
+-                    f"Active symbols: `{len(preview_symbols)}`",
+-                    f"Active manifest: `{service.wizard_service.storage.active_symbols_path(state.profile.profile_slug)}`",
+-                    "Historical parquet retention: `enabled`",
+-                ]
+-            )
+-        )
+-    with refresh_col:
+-        st.success(
+-            "\n".join(
+-                [
+-                    f"Loop interval: `{state.refresh.loop_interval_seconds}` seconds",
+-                    f"Snapshot refresh: `{state.refresh.auto_refresh_market_snapshot}`",
+-                    f"Prediction refresh: `{state.refresh.auto_refresh_predictions}`",
+-                    f"Dataset refresh: `{state.refresh.auto_refresh_dataset}`",
+-                ]
+-            )
+-        )
+-
+-    risk_col, exec_col = st.columns(2)
+-    with risk_col:
+-        st.write(
+-            {
+-                "max_positions": state.risk.max_positions,
+-                "max_dollars_per_trade": state.risk.max_dollars_per_trade,
+-                "max_daily_loss_percent": state.risk.max_daily_loss_percent,
+-                "same_symbol_protection": state.risk.same_symbol_protection,
+-            }
+-        )
+-    with exec_col:
+-        st.write(
+-            {
+-                "order_type": state.execution.order_type,
+-                "bracket_enabled": state.execution.bracket_enabled,
+-                "take_profit_percent": state.execution.take_profit_percent,
+-                "stop_loss_percent": state.execution.stop_loss_percent,
+-                "sizing_mode": state.execution.sizing_mode,
+-                "quantity": state.execution.quantity,
+-            }
+-        )
++    first_col, second_col = st.columns(2)
++    for index, section in enumerate(review_payload.sections):
++        with first_col if index % 2 == 0 else second_col:
++            render_descriptive_section(section)
+ 
+     st.markdown("#### Expected backend actions")
+-    for action in expected_actions:
++    st.caption("This explains what the platform will do after the profile is saved and the session starts.")
++    for action in review_payload.expected_actions:
+         st.write(f"- {action}")
+ 
+-    st.markdown("#### Defaults vs customized")
+-    st.write({"defaults_applied": review_flags["defaults"], "customized": review_flags["customized"]})
++    defaults_col, customized_col = st.columns(2)
++    with defaults_col:
++        render_descriptive_section(review_payload.defaults_section)
++    with customized_col:
++        render_descriptive_section(review_payload.customized_section)
+     st.caption("Auto-save happens for profile and latest resolved session config before any launch action.")
+ 
+     back_col, start_col, smoke_col, save_col = st.columns(4)
+@@ -703,17 +674,17 @@ def _render_review_step(service: SetupWizardUIService, state: SetupWizardState)
+         result = service.start_session(state, generated_symbols=generated_symbols, smoke_only=False)
+         st.session_state["wizard_last_action_result"] = result.model_dump(mode="json")
+         st.success(result.message)
+-        st.json(st.session_state["wizard_last_action_result"])
++        _render_action_result(st.session_state["wizard_last_action_result"])
+     if smoke_col.button("Run smoke only", key=_wizard_state_key("review_smoke")):
+         result = service.start_session(state, generated_symbols=generated_symbols, smoke_only=True)
+         st.session_state["wizard_last_action_result"] = result.model_dump(mode="json")
+         st.success(result.message)
+-        st.json(st.session_state["wizard_last_action_result"])
++        _render_action_result(st.session_state["wizard_last_action_result"])
+     if save_col.button("Save and exit", key=_wizard_state_key("review_save_exit")):
+         result = service.save_and_exit(state, generated_symbols=generated_symbols)
+         st.session_state["wizard_last_action_result"] = result.model_dump(mode="json")
+         st.success(result.message)
+-        st.json(st.session_state["wizard_last_action_result"])
++        _render_action_result(st.session_state["wizard_last_action_result"])
+ 
+ 
+ def _handle_next(service: SetupWizardUIService) -> None:
+@@ -739,6 +710,7 @@ def _handle_next(service: SetupWizardUIService) -> None:
+             st.error(str(exc))
+             return
+         _set_wizard_state(state)
++        set_selected_profile_name(state.profile.profile_name)
+         st.session_state["wizard_visibility_mode"] = state.visibility_mode
+         _bump_form_version()
+         st.session_state["wizard_step"] = step + 1
+@@ -791,6 +763,7 @@ elif state is None:
+     st.stop()
+ else:
+     state.visibility_mode = visibility_mode
++    set_selected_profile_name(state.profile.profile_name)
+     if current_step == 1:
+         _render_strategy_step(wizard_service, payload, state)
+     elif current_step == 2:
+@@ -821,5 +794,4 @@ if current_step < len(STEPS) - 1:
+     )
+ 
+ if "wizard_last_action_result" in st.session_state and current_step != 7:
+-    st.subheader("Latest wizard action")
+-    st.json(st.session_state["wizard_last_action_result"])
++    _render_action_result(st.session_state["wizard_last_action_result"])
+diff --git a/app/pages/02_Strategy_Control.py b/app/pages/02_Strategy_Control.py
+index 0103256..e6b7661 100644
+--- a/app/pages/02_Strategy_Control.py
++++ b/app/pages/02_Strategy_Control.py
+@@ -39,10 +39,9 @@ set_selected_strategy(strategy)
+ set_selected_mode(mode)
+ 
+ st.write("Current selection")
+-st.json(
+-    {
+-        "strategy": strategy,
+-        "mode": mode,
+-        "live_trading_enabled": payload.live_trading_enabled,
+-    }
+-)
++st.markdown(f"**Strategy:** {strategy}")
++st.caption("This selects which strategy logic and thresholds the app treats as active on pages that follow the shared strategy state.")
++st.markdown(f"**Mode:** {mode}")
++st.caption("This is the currently selected runtime mode for UI pages that respect the shared execution mode.")
++st.markdown(f"**Live trading enabled in config:** {'Yes' if payload.live_trading_enabled else 'No'}")
++st.caption("This shows whether the repo configuration currently allows the live-trading path to be enabled at all.")
+diff --git a/app/pages/04_Paper_Trading.py b/app/pages/04_Paper_Trading.py
+deleted file mode 100644
+index 5935a59..0000000
+--- a/app/pages/04_Paper_Trading.py
++++ /dev/null
+@@ -1,36 +0,0 @@
+-from __future__ import annotations
+-
+-import sys
+-from pathlib import Path
+-
+-import streamlit as st
+-
+-APP_DIR = Path(__file__).resolve().parents[1]
+-if str(APP_DIR) not in sys.path:
+-    sys.path.insert(0, str(APP_DIR))
+-
+-from components.runtime import get_platform_service, get_selected_mode, get_selected_strategy
+-from mytradingbot.ui_services.paper_trading import PaperTradingService
+-
+-platform_service = get_platform_service()
+-service = PaperTradingService(platform_service)
+-
+-st.title("Paper Trading")
+-st.caption("Run dry-run or paper sessions and inspect resulting artifacts.")
+-
+-strategy = get_selected_strategy()
+-mode = get_selected_mode()
+-if mode == "live":
+-    st.warning("Live mode is not allowed from the Paper Trading page. Switch to dry_run or paper.")
+-else:
+-    st.write({"strategy": strategy, "mode": mode})
+-    if st.button("Run Session"):
+-        result = service.run_session(strategy_name=strategy, mode=mode)
+-        st.subheader("Session Summary")
+-        st.json(result.session_summary.model_dump(mode="json"))
+-        st.subheader("Orders")
+-        st.json([order.model_dump(mode="json") for order in result.orders])
+-        st.subheader("Positions")
+-        st.json([position.model_dump(mode="json") for position in result.positions])
+-        st.subheader("Trade Attempts")
+-        st.json([attempt.model_dump(mode="json") for attempt in result.trade_attempts])
+diff --git a/app/pages/08_Settings.py b/app/pages/08_Settings.py
+deleted file mode 100644
+index d315cff..0000000
+--- a/app/pages/08_Settings.py
++++ /dev/null
+@@ -1,19 +0,0 @@
+-from __future__ import annotations
+-
+-import sys
+-from pathlib import Path
+-
+-import streamlit as st
+-
+-APP_DIR = Path(__file__).resolve().parents[1]
+-if str(APP_DIR) not in sys.path:
+-    sys.path.insert(0, str(APP_DIR))
+-
+-from components.runtime import get_platform_service
+-from mytradingbot.ui_services.settings import SettingsService
+-
+-payload = SettingsService(get_platform_service().settings).get_settings_payload()
+-
+-st.title("Settings")
+-st.caption("Current application settings and resolved repository paths.")
+-st.json(payload)
+diff --git a/app/pages/09_Trading_Universe.py b/app/pages/09_Trading_Universe.py
+index 325a20e..49b89c2 100644
+--- a/app/pages/09_Trading_Universe.py
++++ b/app/pages/09_Trading_Universe.py
+@@ -9,7 +9,12 @@ APP_DIR = Path(__file__).resolve().parents[1]
+ if str(APP_DIR) not in sys.path:
+     sys.path.insert(0, str(APP_DIR))
+ 
+-from components.runtime import get_platform_service, get_selected_strategy
++from components.runtime import (
++    get_platform_service,
++    get_selected_profile_name,
++    get_selected_strategy,
++    set_selected_profile_name,
++)
+ from mytradingbot.ui_services.trading_universe import TradingUniverseUIService
+ 
+ 
+@@ -40,8 +45,13 @@ if not payload.profile_names:
+ profile_name = st.selectbox(
+     "Profile",
+     options=payload.profile_names,
+-    index=payload.profile_names.index(payload.default_profile_name or payload.profile_names[0]),
++    index=payload.profile_names.index(
++        get_selected_profile_name()
++        if get_selected_profile_name() in payload.profile_names
++        else (payload.default_profile_name or payload.profile_names[0])
++    ),
+ )
++set_selected_profile_name(profile_name)
+ selection_mode = st.radio(
+     "Final trading universe mode",
+     options=payload.selection_modes,
+@@ -157,4 +167,11 @@ if preview_payload:
+             include_etfs=include_etfs,
+         )
+         st.success(f"Saved {len(result.final_symbols)} symbols to the active trading universe.")
+-        st.json(result.model_dump(mode="json"))
++        st.markdown(f"**Active universe file:** {result.active_symbols_path}")
++        if result.latest_session_config_path:
++            st.markdown(
++                f"**Latest session config updated:** {result.latest_session_config_path}"
++            )
++        st.caption(
++            "The saved final universe becomes the profile-scoped active symbol manifest for future session runs."
++        )
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index d192cc8..4ff37e7 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -69,10 +69,14 @@ Fields marked `Recommended default` are the safe operator defaults. Basic mode i
+ 
+ Use the `Alpha & Model` step to adjust the qlib entry gates for scalping:
+ 
+-- `Predicted return threshold (%)` default: `0.50%`
++- `Predicted return threshold (%)` default: `0.08%`
+ - `Confidence threshold` default: `0.60`
++- `Prediction refresh cadence` default: `600 seconds`
++- `Cooldown after exit` default: `10 minutes`
+ 
+-Lowering them allows more symbols through. Raising them makes the qlib filter stricter.
++The overnight scalping profile keeps the spread proxy at `6.0` bps by default and leaves the legacy VWAP-derived `order_book_imbalance` proxy disabled as a hard gate until true L2 data is available.
++
++The lower predicted-return default is a controlled throughput adjustment for the 5-minute horizon. The loop still wakes every `300` seconds, but predictions refresh every `600` seconds by default so the runtime is not constantly forcing a refresh path that can take longer than a single loop interval. This may increase accepted submissions, but it does not guarantee profitability.
+ 
+ ## Canonical Institutional Order
+ 
+@@ -184,8 +188,9 @@ Inspect:
+ 2. Check the phase capability snapshot and prediction freshness.
+ 3. Use `app/pages/03_Data_Management.py` for phase-2 and phase-3 actions.
+ 4. Use `app/pages/09_Trading_Universe.py` to review and save the final active universe for the selected profile.
+-5. Use `app/pages/04_Paper_Trading.py` for `dry_run` and `paper` execution.
+-6. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
++5. Use `app/pages/00_Setup_Wizard.py` to save the selected profile and launch sessions.
++6. Use `app/pages/08_Status_Reference.py` to review the saved profile state, artifact readiness, and recent Trading Track activity.
++7. Use `app/pages/07_Diagnostics.py` and `app/pages/06_LLM_Copilot.py` for review.
+ 
+ ## If Phase 2 Fails
+ 
+@@ -260,7 +265,13 @@ For each symbol considered by the strategy, inspect:
+ - side considered
+ - whether bracket logic was evaluated
+ - raw qlib score
++- confidence
+ - predicted return / target return
++- spread proxy
++- liquidity score
++- VWAP relationship result
++- bracket expectancy result
++- rejection reasons list
+ - filter outcomes
+ - risk sizing result
+ - bracket calculation result
+@@ -284,16 +295,20 @@ Expected final decision statuses include:
+ 
+ Common rejection reason codes include:
+ 
++- `signal_direction_conflict`
+ - `score_below_threshold`
+ - `target_return_below_threshold`
++- `vwap_relationship_blocked`
+ - `spread_too_wide`
+ - `liquidity_too_low`
++- `liquidity_stress_too_high`
+ - `volatility_regime_blocked`
+ - `imbalance_not_confirmed`
+ - `liquidity_sweep_not_confirmed`
+ - `risk_budget_exceeded`
+ - `position_exists`
+ - `cooldown_active`
++- `near_close_window_blocked`
+ - `bracket_invalid`
+ - `broker_rejected`
+ - `missing_market_data`
+diff --git a/reports/universe/top_liquidity_universe_report.md b/reports/universe/top_liquidity_universe_report.md
+index 59252ac..ef6ac73 100644
+--- a/reports/universe/top_liquidity_universe_report.md
++++ b/reports/universe/top_liquidity_universe_report.md
+@@ -4,23 +4,23 @@
+ 
+ | Rank | Symbol | Avg Close | Avg Volume | Avg Dollar Volume |
+ | --- | --- | ---: | ---: | ---: |
+-| 1 | NVDA | 181.31 | 5,077,393 | 918,912,786.60 |
+-| 2 | AMZN | 211.06 | 1,771,605 | 374,846,218.52 |
+-| 3 | MSFT | 396.58 | 805,664 | 319,520,334.02 |
+-| 4 | TSLA | 395.72 | 744,604 | 293,395,760.93 |
+-| 5 | AAPL | 257.95 | 1,082,968 | 279,665,139.20 |
+-| 6 | NFLX | 94.26 | 2,919,831 | 275,495,426.28 |
+-| 7 | MU | 413.10 | 633,401 | 263,547,285.47 |
+-| 8 | GOOGL | 304.18 | 815,153 | 247,201,323.46 |
+-| 9 | AVGO | 325.10 | 743,102 | 242,840,998.81 |
+-| 10 | META | 633.66 | 315,825 | 198,847,737.01 |
+-| 11 | AMD | 201.32 | 868,350 | 174,761,773.31 |
+-| 12 | SNDK | 651.57 | 260,911 | 170,502,737.50 |
+-| 13 | LITE | 688.17 | 232,839 | 158,791,499.75 |
+-| 14 | TSM | 350.51 | 411,245 | 143,655,121.15 |
+-| 15 | XOM | 154.70 | 899,895 | 139,157,568.10 |
+-| 16 | GOOG | 303.43 | 419,087 | 126,760,150.11 |
+-| 17 | INTC | 45.38 | 2,787,805 | 126,560,293.12 |
+-| 18 | BAC | 48.61 | 2,478,754 | 120,257,530.46 |
+-| 19 | PLTR | 150.66 | 714,728 | 107,590,794.18 |
+-| 20 | TQQQ | 47.66 | 2,188,795 | 104,382,875.21 |
++| 1 | NVDA | 180.14 | 5,126,475 | 921,935,407.75 |
++| 2 | AMZN | 210.91 | 1,820,542 | 384,835,642.08 |
++| 3 | MSFT | 394.93 | 797,569 | 314,319,936.65 |
++| 4 | TSLA | 393.56 | 743,782 | 291,349,791.22 |
++| 5 | AAPL | 256.94 | 1,100,969 | 283,287,380.50 |
++| 6 | NFLX | 94.77 | 2,932,037 | 278,726,355.31 |
++| 7 | MU | 409.61 | 659,363 | 271,614,793.26 |
++| 8 | GOOGL | 302.67 | 837,107 | 252,276,475.28 |
++| 9 | AVGO | 324.01 | 731,293 | 238,414,203.95 |
++| 10 | META | 628.61 | 352,765 | 218,023,502.76 |
++| 11 | SNDK | 650.14 | 265,036 | 172,710,064.71 |
++| 12 | AMD | 200.98 | 831,481 | 166,681,891.99 |
++| 13 | LITE | 686.58 | 230,750 | 157,015,691.60 |
++| 14 | TSM | 347.57 | 423,872 | 146,846,022.89 |
++| 15 | XOM | 155.48 | 908,648 | 141,121,406.39 |
++| 16 | GOOG | 301.89 | 437,347 | 131,099,652.34 |
++| 17 | INTC | 45.25 | 2,751,984 | 124,556,625.15 |
++| 18 | BAC | 48.44 | 2,503,710 | 121,204,338.52 |
++| 19 | PLTR | 151.29 | 704,292 | 106,592,353.20 |
++| 20 | TQQQ | 47.16 | 2,249,153 | 106,375,976.44 |
+diff --git a/src/mytradingbot/core/settings.py b/src/mytradingbot/core/settings.py
+index 52e8777..29a5d8b 100644
+--- a/src/mytradingbot/core/settings.py
++++ b/src/mytradingbot/core/settings.py
+@@ -179,11 +179,11 @@ class RuntimeSafetySettings(BaseModel):
+     max_consecutive_broker_rejects: int = 3
+     max_consecutive_execution_failures: int = 3
+     max_consecutive_replace_stop_failures: int = 3
+-    supervised_loop_interval_seconds: int = 60
++    supervised_loop_interval_seconds: int = 300
+     auto_refresh_inputs_in_loop: bool = True
+     market_refresh_interval_seconds: int = 300
+     dataset_refresh_interval_seconds: int = 1800
+-    prediction_refresh_interval_seconds: int = 1800
++    prediction_refresh_interval_seconds: int = 600
+ 
+ 
+ class TrainingSettings(BaseModel):
+@@ -219,8 +219,14 @@ class QlibSettings(BaseModel):
+ class ScalpingBracketSettings(BaseModel):
+     """Bracket-planning controls for scalping."""
+ 
+-    predicted_return_threshold: float = 0.005
++    predicted_return_threshold: float = 0.0008
+     confidence_threshold: float = 0.6
++    max_spread_bps: float = 6.0
++    min_liquidity_score: float = 0.5
++    max_liquidity_stress: float = 0.7
++    cooldown_minutes: int = 10
++    flatten_near_close_minutes: int = 10
++    enable_order_book_imbalance_gate: bool = False
+     minimum_reward_risk_ratio: float = 1.4
+     estimated_slippage_bps: float = 2.5
+     estimated_fee_per_share: float = 0.0
+diff --git a/src/mytradingbot/orchestration/service.py b/src/mytradingbot/orchestration/service.py
+index ffc4402..cbd2fd5 100644
+--- a/src/mytradingbot/orchestration/service.py
++++ b/src/mytradingbot/orchestration/service.py
+@@ -220,6 +220,14 @@ class TradingPlatformService:
+             refresh_actions=refresh_actions or [],
+         )
+ 
++    def _effective_settings(
++        self,
++        session_config: ResolvedSessionConfig | None,
++    ) -> AppSettings:
++        if session_config is None:
++            return self.settings
++        return apply_resolved_config_to_settings(self.settings, session_config)
++
+     def _resolve_runtime_refresh_symbols(
+         self,
+         *,
+@@ -247,10 +255,12 @@ class TradingPlatformService:
+         *,
+         strategy_name: str,
+         auto_refresh_inputs: bool,
++        effective_settings: AppSettings | None = None,
+         symbols: list[str] | None = None,
+         symbols_file: Path | None = None,
+         refresh_timeframes: list[str] | None = None,
+     ) -> DecisionPipelineReadiness:
++        runtime_settings = effective_settings or self.settings
+         refresh_actions: list[str] = []
+         readiness = self._decision_pipeline_readiness()
+         if not auto_refresh_inputs:
+@@ -261,7 +271,7 @@ class TradingPlatformService:
+             or (
+                 readiness.market_snapshot_age_seconds is not None
+                 and readiness.market_snapshot_age_seconds
+-                >= self.settings.runtime_safety.market_refresh_interval_seconds
++                >= runtime_settings.runtime_safety.market_refresh_interval_seconds
+             )
+         )
+         prediction_refresh_due = (
+@@ -269,10 +279,10 @@ class TradingPlatformService:
+             or (
+                 readiness.predictions_age_seconds is not None
+                 and readiness.predictions_age_seconds
+-                >= self.settings.runtime_safety.prediction_refresh_interval_seconds
++                >= runtime_settings.runtime_safety.prediction_refresh_interval_seconds
+             )
+         )
+-        dataset_path = self.settings.qlib_dataset_artifact_path()
++        dataset_path = runtime_settings.qlib_dataset_artifact_path()
+         dataset_age_seconds = self._path_age_seconds(dataset_path)
+         dataset_refresh_due = False
+ 
+@@ -311,7 +321,7 @@ class TradingPlatformService:
+                 or (
+                     dataset_age_seconds is not None
+                     and dataset_age_seconds
+-                    >= self.settings.runtime_safety.dataset_refresh_interval_seconds
++                    >= runtime_settings.runtime_safety.dataset_refresh_interval_seconds
+                 )
+                 or (
+                     dataset_path.exists()
+@@ -393,6 +403,7 @@ class TradingPlatformService:
+         session_config: ResolvedSessionConfig | None = None,
+     ) -> SessionResult:
+         normalized_mode = mode if isinstance(mode, RuntimeMode) else RuntimeMode(mode)
++        effective_settings = self._effective_settings(session_config)
+         context = self.runtime_state_service.create_session_context(
+             strategy=strategy_name,
+             mode=normalized_mode,
+@@ -500,6 +511,7 @@ class TradingPlatformService:
+         readiness = self.ensure_decision_pipeline_ready(
+             strategy_name=strategy_name,
+             auto_refresh_inputs=auto_refresh_inputs,
++            effective_settings=effective_settings,
+             symbols=symbols,
+             symbols_file=symbols_file,
+             refresh_timeframes=refresh_timeframes,
+@@ -709,6 +721,7 @@ class TradingPlatformService:
+                     context=context,
+                     strategy_name=strategy_name,
+                     result=exit_result,
++                    cooldown_minutes=effective_settings.scalping.cooldown_minutes,
+                 )
+                 exit_results.append(exit_result)
+                 if exit_result.order is not None:
+@@ -717,7 +730,7 @@ class TradingPlatformService:
+ 
+         if signals and any(
+             self.runtime_state_service.minutes_to_close(signal.market.timestamp)
+-            <= self.settings.scalping.max_holding_seconds // 60
++            <= effective_settings.scalping.flatten_near_close_minutes
+             for signal in signals
+         ):
+             for flatten_result in self.broker.flatten_open_brackets(reason="near_close_flatten"):
+@@ -725,6 +738,7 @@ class TradingPlatformService:
+                     context=context,
+                     strategy_name=strategy_name,
+                     result=flatten_result,
++                    cooldown_minutes=effective_settings.scalping.cooldown_minutes,
+                 )
+                 exit_results.append(flatten_result)
+                 if flatten_result.order is not None:
+@@ -840,6 +854,7 @@ class TradingPlatformService:
+                     context=context,
+                     strategy_name=strategy_name,
+                     result=execution_result,
++                    cooldown_minutes=effective_settings.scalping.cooldown_minutes,
+                 )
+                 if execution_result.order is not None:
+                     session_orders.append(execution_result.order)
+diff --git a/src/mytradingbot/runtime/models.py b/src/mytradingbot/runtime/models.py
+index de3d643..1bb5254 100644
+--- a/src/mytradingbot/runtime/models.py
++++ b/src/mytradingbot/runtime/models.py
+@@ -51,16 +51,20 @@ DecisionStatus = Literal[
+ ]
+ 
+ RejectionReasonCode = Literal[
++    "signal_direction_conflict",
+     "score_below_threshold",
+     "target_return_below_threshold",
++    "vwap_relationship_blocked",
+     "spread_too_wide",
+     "liquidity_too_low",
++    "liquidity_stress_too_high",
+     "volatility_regime_blocked",
+     "imbalance_not_confirmed",
+     "liquidity_sweep_not_confirmed",
+     "risk_budget_exceeded",
+     "position_exists",
+     "cooldown_active",
++    "near_close_window_blocked",
+     "bracket_invalid",
+     "broker_rejected",
+     "missing_market_data",
+@@ -130,8 +134,14 @@ class DecisionAuditRecord(BaseModel):
+     bracket_considered: bool = False
+     signal_source: SignalSource = "no_valid_signal"
+     qlib_raw_score: float | None = None
++    confidence: float | None = None
+     predicted_return: float | None = None
+     target_return: float | None = None
++    spread_bps: float | None = None
++    liquidity_score: float | None = None
++    liquidity_stress: float | None = None
++    vwap_alignment_passed: bool | None = None
++    bracket_expectancy_passed: bool | None = None
+     candidate_rank: int | None = None
+     prediction_artifact_path: str
+     model_artifact_path: str
+@@ -142,6 +152,7 @@ class DecisionAuditRecord(BaseModel):
+     final_decision_status: DecisionStatus = "no_action"
+     final_rejection_reason_code: RejectionReasonCode | None = None
+     final_rejection_reason_detail: str | None = None
++    rejection_reasons: list[str] = Field(default_factory=list)
+     notes: list[str] = Field(default_factory=list)
+ 
+ 
+@@ -181,8 +192,14 @@ class SignalOutcomeLedgerRow(BaseModel):
+     signal_source: SignalSource
+     final_decision_status: DecisionStatus
+     rejection_reason_code: RejectionReasonCode | None = None
++    confidence: float | None = None
+     predicted_return: float | None = None
+     qlib_raw_score: float | None = None
++    spread_bps: float | None = None
++    liquidity_score: float | None = None
++    vwap_alignment_passed: bool | None = None
++    bracket_expectancy_passed: bool | None = None
++    rejection_reasons: list[str] = Field(default_factory=list)
+     candidate_rank: int | None = None
+     actual_exit_reason: str | None = None
+     realized_pnl: float | None = None
+diff --git a/src/mytradingbot/runtime/service.py b/src/mytradingbot/runtime/service.py
+index cb582d1..93cced7 100644
+--- a/src/mytradingbot/runtime/service.py
++++ b/src/mytradingbot/runtime/service.py
+@@ -4,7 +4,8 @@ from __future__ import annotations
+ 
+ import csv
+ import json
+-from datetime import datetime
++from collections import Counter
++from datetime import datetime, timedelta
+ from pathlib import Path
+ from zoneinfo import ZoneInfo
+ 
+@@ -38,15 +39,19 @@ from mytradingbot.runtime.store import RuntimeStateStore
+ 
+ 
+ FILTER_REASON_MAP: dict[str, RejectionReasonCode] = {
++    "qlib_signal_gating": "signal_direction_conflict",
+     "predicted_return_threshold": "target_return_below_threshold",
+     "confidence_threshold": "score_below_threshold",
++    "vwap_relationship": "vwap_relationship_blocked",
+     "spread_filter": "spread_too_wide",
+     "liquidity_filter": "liquidity_too_low",
++    "liquidity_stress_filter": "liquidity_stress_too_high",
+     "intraday_volatility_regime": "volatility_regime_blocked",
+     "order_book_imbalance": "imbalance_not_confirmed",
+     "liquidity_sweep_detection": "liquidity_sweep_not_confirmed",
+     "cooldown_logic": "cooldown_active",
+     "duplicate_position": "position_exists",
++    "flatten_near_close_logic": "near_close_window_blocked",
+     "missing_market_data": "missing_market_data",
+     "fee_adjusted_expectancy": "bracket_invalid",
+     "invalid_broker_quantity": "bracket_invalid",
+@@ -198,6 +203,10 @@ class RuntimeStateService:
+             else:
+                 final_status = "accepted_short"
+ 
++        rejection_reasons = self._collect_rejection_reasons(trace)
++        vwap_alignment_passed = self._filter_result(trace, "vwap_relationship")
++        bracket_expectancy_passed = self._filter_result(trace, "fee_adjusted_expectancy")
++        rejection_code = self.map_rejection_reason(rejection_detail)
+         audit = DecisionAuditRecord(
+             session_id=context.session_id,
+             run_id=context.run_id,
+@@ -212,8 +221,14 @@ class RuntimeStateService:
+             bracket_considered=bool(strategy_outcome and strategy_outcome.intent and strategy_outcome.intent.bracket_plan),
+             signal_source=signal_source,
+             qlib_raw_score=signal.prediction.score,
++            confidence=signal.prediction.confidence,
+             predicted_return=signal.prediction.predicted_return,
+             target_return=signal.prediction.predicted_return,
++            spread_bps=signal.market.spread_bps,
++            liquidity_score=signal.market.liquidity_score,
++            liquidity_stress=signal.market.liquidity_stress,
++            vwap_alignment_passed=vwap_alignment_passed,
++            bracket_expectancy_passed=bracket_expectancy_passed,
+             candidate_rank=signal.prediction.rank,
+             prediction_artifact_path=context.prediction_artifact_path,
+             model_artifact_path=context.model_artifact_path,
+@@ -227,8 +242,9 @@ class RuntimeStateService:
+                 market_status=market_status,
+             ),
+             final_decision_status=final_status,
+-            final_rejection_reason_code=self.map_rejection_reason(rejection_detail),
+-            final_rejection_reason_detail=rejection_detail,
++            final_rejection_reason_code=rejection_code,
++            final_rejection_reason_detail=self._normalize_rejection_detail(rejection_detail),
++            rejection_reasons=rejection_reasons,
+             notes=list(trace.notes),
+         )
+         self.store.record_decision(audit)
+@@ -241,6 +257,7 @@ class RuntimeStateService:
+         context: RuntimeSessionContext,
+         strategy_name: str,
+         result,
++        cooldown_minutes: int | None = None,
+     ) -> None:
+         if result.order is not None:
+             self.store.record_order(
+@@ -283,11 +300,21 @@ class RuntimeStateService:
+         if result.bracket_state is not None:
+             self.store.record_bracket(result.bracket_state)
+             if result.bracket_state.status == "closed" and result.bracket_state.closed_at is not None:
+-                self.store.set_cooldown(
+-                    symbol=result.bracket_state.symbol,
+-                    strategy=strategy_name,
+-                    expires_at=result.bracket_state.closed_at,
++                resolved_cooldown_minutes = max(
++                    0,
++                    int(
++                        self.settings.scalping.cooldown_minutes
++                        if cooldown_minutes is None
++                        else cooldown_minutes
++                    ),
+                 )
++                if resolved_cooldown_minutes > 0:
++                    self.store.set_cooldown(
++                        symbol=result.bracket_state.symbol,
++                        strategy=strategy_name,
++                        expires_at=result.bracket_state.closed_at
++                        + timedelta(minutes=resolved_cooldown_minutes),
++                    )
+ 
+     def build_incident(
+         self,
+@@ -343,18 +370,28 @@ class RuntimeStateService:
+             [
+                 {
+                     "event_id": audit.event_id,
++                    "timestamp": audit.timestamp.isoformat(),
+                     "symbol": audit.symbol,
+                     "broker_mode": audit.broker_mode,
+                     "signal_source": audit.signal_source,
+                     "final_decision_status": audit.final_decision_status,
+                     "rejection_reason_code": audit.final_rejection_reason_code,
++                    "rejection_reason_detail": audit.final_rejection_reason_detail,
++                    "rejection_reasons": "; ".join(audit.rejection_reasons),
++                    "confidence": audit.confidence,
+                     "predicted_return": audit.predicted_return,
+                     "qlib_raw_score": audit.qlib_raw_score,
++                    "spread_bps": audit.spread_bps,
++                    "liquidity_score": audit.liquidity_score,
++                    "liquidity_stress": audit.liquidity_stress,
++                    "vwap_alignment_passed": audit.vwap_alignment_passed,
++                    "bracket_expectancy_passed": audit.bracket_expectancy_passed,
+                     "candidate_rank": audit.candidate_rank,
+                 }
+                 for audit in audits
+             ],
+         )
++        self._write_csv(paths["analytics_csv"], self._build_tuning_rows(audits))
+         paths["audit_md"].write_text(self._render_audit_markdown(audits), encoding="utf-8")
+         analytics_paths = self.materialize_closed_trade_analytics()
+ 
+@@ -391,7 +428,18 @@ class RuntimeStateService:
+                 context.dataset_artifact_path,
+                 context.market_snapshot_artifact_path,
+             ],
+-            report_paths=[str(paths[key]) for key in ("audit_json", "audit_csv", "audit_md", "session_json", "session_md", "analytics_md")],
++            report_paths=[
++                str(paths[key])
++                for key in (
++                    "audit_json",
++                    "audit_csv",
++                    "audit_md",
++                    "session_json",
++                    "session_md",
++                    "analytics_md",
++                    "analytics_csv",
++                )
++            ],
+             incident_count=len(incidents),
+             foreign_order_count=len(foreign_orders),
+             foreign_position_count=len(foreign_positions),
+@@ -413,6 +461,8 @@ class RuntimeStateService:
+     def map_rejection_reason(self, reason: str | None) -> RejectionReasonCode | None:
+         if reason is None:
+             return None
++        if reason.startswith("invalid_signal_payload:"):
++            return "invalid_signal_payload"
+         if reason.startswith("broker_rejected:"):
+             return "broker_rejected"
+         return FILTER_REASON_MAP.get(reason, "invalid_signal_payload")
+@@ -431,6 +481,21 @@ class RuntimeStateService:
+         checks = [
+             RuleCheckRecord(stage="freshness", name="predictions_fresh", passed=prediction_status.is_ready, detail=prediction_status.reason),
+             RuleCheckRecord(stage="freshness", name="market_snapshot_fresh", passed=market_status.is_ready, detail=market_status.reason),
++            RuleCheckRecord(stage="prediction", name="qlib_raw_score", value=signal.prediction.score),
++            RuleCheckRecord(stage="prediction", name="confidence", value=signal.prediction.confidence),
++            RuleCheckRecord(stage="prediction", name="predicted_return", value=signal.prediction.predicted_return),
++            RuleCheckRecord(stage="strategy", name="spread_proxy_bps", value=signal.market.spread_bps),
++            RuleCheckRecord(stage="strategy", name="liquidity_score", value=signal.market.liquidity_score),
++            RuleCheckRecord(stage="strategy", name="liquidity_stress", value=signal.market.liquidity_stress),
++            RuleCheckRecord(
++                stage="strategy",
++                name="vwap_reference",
++                value={
++                    "last_price": signal.market.last_price,
++                    "vwap": signal.market.vwap,
++                    "direction": signal.prediction.direction,
++                },
++            ),
+             RuleCheckRecord(stage="strategy", name="duplicate_position_check", passed=not bool(signal.metadata.get("position_exists", False))),
+             RuleCheckRecord(stage="strategy", name="foreign_position_check", passed=not bool(signal.metadata.get("foreign_position_exists", False))),
+             RuleCheckRecord(stage="strategy", name="cooldown_check", passed=not bool(signal.metadata.get("cooldown_active", False))),
+@@ -477,8 +542,14 @@ class RuntimeStateService:
+                 signal_source=audit.signal_source,
+                 final_decision_status=audit.final_decision_status,
+                 rejection_reason_code=audit.final_rejection_reason_code,
++                confidence=audit.confidence,
+                 predicted_return=audit.predicted_return,
+                 qlib_raw_score=audit.qlib_raw_score,
++                spread_bps=audit.spread_bps,
++                liquidity_score=audit.liquidity_score,
++                vwap_alignment_passed=audit.vwap_alignment_passed,
++                bracket_expectancy_passed=audit.bracket_expectancy_passed,
++                rejection_reasons=audit.rejection_reasons,
+                 candidate_rank=audit.candidate_rank,
+             ).model_dump(mode="json"),
+         )
+@@ -497,6 +568,7 @@ class RuntimeStateService:
+             "session_json": self.settings.paths.reports_paper_trading_dir / f"{context.session_id}_paper_session.json",
+             "session_md": self.settings.paths.reports_paper_trading_dir / f"{context.session_id}_paper_session.md",
+             "analytics_md": self.settings.paths.reports_analytics_dir / f"{context.session_id}_analytics.md",
++            "analytics_csv": self.settings.paths.reports_analytics_dir / f"{context.session_id}_analytics.csv",
+         }
+ 
+     @staticmethod
+@@ -529,14 +601,17 @@ class RuntimeStateService:
+             f"- broker_mode: `{broker_mode}`",
+             f"- broker_description: `{broker_mode_description(broker_mode)}`",
+             "",
+-            "| Symbol | Broker Mode | Source | Status | Rejection | Score | Predicted Return |",
+-            "| --- | --- | --- | --- | --- | ---: | ---: |",
++            "| Symbol | Timestamp | Source | Status | Rejection | Score | Confidence | Predicted Return | Spread (bps) | Liquidity | VWAP OK | Expectancy OK | Rejection Reasons |",
++            "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+         ]
+         for audit in audits:
+             lines.append(
+-                f"| {audit.symbol} | {audit.broker_mode} | {audit.signal_source} | {audit.final_decision_status} | "
++                f"| {audit.symbol} | {audit.timestamp.isoformat()} | {audit.signal_source} | {audit.final_decision_status} | "
+                 f"{audit.final_rejection_reason_code or ''} | {audit.qlib_raw_score or 0:.4f} | "
+-                f"{audit.predicted_return or 0:.4f} |"
++                f"{audit.confidence or 0:.4f} | {audit.predicted_return or 0:.4f} | "
++                f"{audit.spread_bps or 0:.2f} | {audit.liquidity_score or 0:.2f} | "
++                f"{audit.vwap_alignment_passed} | {audit.bracket_expectancy_passed} | "
++                f"{', '.join(audit.rejection_reasons) if audit.rejection_reasons else ''} |"
+             )
+         return "\n".join(lines) + "\n"
+ 
+@@ -582,17 +657,151 @@ class RuntimeStateService:
+ 
+     @staticmethod
+     def _render_analytics_markdown(audits: list[DecisionAuditRecord]) -> str:
+-        by_source: dict[str, int] = {}
+-        by_broker_mode: dict[str, int] = {}
++        by_source: Counter[str] = Counter()
++        by_broker_mode: Counter[str] = Counter()
++        reject_counts: Counter[str] = Counter()
++        approved_symbols: Counter[str] = Counter()
++        threshold_blocked: Counter[str] = Counter()
++        spread_blocked: Counter[str] = Counter()
++        invalid_payload_blocked: Counter[str] = Counter()
++        approved_count = 0
++
+         for audit in audits:
+-            by_source[audit.signal_source] = by_source.get(audit.signal_source, 0) + 1
+-            by_broker_mode[audit.broker_mode] = by_broker_mode.get(audit.broker_mode, 0) + 1
++            by_source[audit.signal_source] += 1
++            by_broker_mode[audit.broker_mode] += 1
++            if audit.final_rejection_reason_code is not None:
++                reject_counts[audit.final_rejection_reason_code] += 1
++            if audit.final_decision_status.startswith("accepted"):
++                approved_count += 1
++                approved_symbols[audit.symbol] += 1
++            if RuntimeStateService._audit_failed_check(audit, "predicted_return_threshold"):
++                threshold_blocked[audit.symbol] += 1
++            if RuntimeStateService._audit_failed_check(audit, "spread_filter"):
++                spread_blocked[audit.symbol] += 1
++            if audit.final_rejection_reason_code == "invalid_signal_payload":
++                invalid_payload_blocked[audit.symbol] += 1
++
+         headline_mode = next(iter(sorted(by_broker_mode))) if by_broker_mode else "local_paper"
+         lines = [f"# Analytics Summary ({broker_mode_description(headline_mode).title()})", ""]
++        lines.append(f"- candidate count: `{len(audits)}`")
++        lines.append(f"- approved count: `{approved_count}`")
++        lines.append(f"- rejected count: `{len([audit for audit in audits if audit.final_decision_status == 'rejected'])}`")
++        lines.append("")
+         for broker_mode, count in sorted(by_broker_mode.items()):
+             lines.append(
+                 f"- broker_mode={broker_mode}: `{count}` candidates via {broker_mode_description(broker_mode)}"
+             )
+         for source, count in sorted(by_source.items()):
+-            lines.append(f"- {source}: `{count}`")
++            lines.append(f"- source={source}: `{count}`")
++        lines.append("")
++        lines.append("## Reject Counts By Reason")
++        lines.extend(RuntimeStateService._format_counter_lines(reject_counts))
++        lines.append("")
++        lines.append("## Approved Symbols By Frequency")
++        lines.extend(RuntimeStateService._format_counter_lines(approved_symbols))
++        lines.append("")
++        lines.append("## Top Symbols Blocked By Threshold")
++        lines.extend(RuntimeStateService._format_counter_lines(threshold_blocked))
++        lines.append("")
++        lines.append("## Top Symbols Blocked By Spread")
++        lines.extend(RuntimeStateService._format_counter_lines(spread_blocked))
++        lines.append("")
++        lines.append("## Top Symbols Blocked By Invalid Payload")
++        lines.extend(RuntimeStateService._format_counter_lines(invalid_payload_blocked))
+         return "\n".join(lines) + "\n"
++
++    @staticmethod
++    def _format_counter_lines(counter: Counter[str]) -> list[str]:
++        if not counter:
++            return ["- none"]
++        return [f"- {key}: `{count}`" for key, count in counter.most_common(10)]
++
++    @staticmethod
++    def _audit_failed_check(audit: DecisionAuditRecord, check_name: str) -> bool:
++        return any(
++            check.name == check_name and check.passed is False
++            for check in audit.rule_checks
++        )
++
++    def _build_tuning_rows(self, audits: list[DecisionAuditRecord]) -> list[dict[str, object]]:
++        reject_counts: Counter[str] = Counter()
++        approved_symbols: Counter[str] = Counter()
++        threshold_blocked: Counter[str] = Counter()
++        spread_blocked: Counter[str] = Counter()
++        invalid_payload_blocked: Counter[str] = Counter()
++
++        for audit in audits:
++            if audit.final_rejection_reason_code is not None:
++                reject_counts[audit.final_rejection_reason_code] += 1
++            if audit.final_decision_status.startswith("accepted"):
++                approved_symbols[audit.symbol] += 1
++            if self._audit_failed_check(audit, "predicted_return_threshold"):
++                threshold_blocked[audit.symbol] += 1
++            if self._audit_failed_check(audit, "spread_filter"):
++                spread_blocked[audit.symbol] += 1
++            if audit.final_rejection_reason_code == "invalid_signal_payload":
++                invalid_payload_blocked[audit.symbol] += 1
++
++        rows: list[dict[str, object]] = [
++            {"section": "summary", "key": "candidate_count", "count": len(audits)},
++            {
++                "section": "summary",
++                "key": "approved_count",
++                "count": len([audit for audit in audits if audit.final_decision_status.startswith("accepted")]),
++            },
++            {
++                "section": "summary",
++                "key": "rejected_count",
++                "count": len([audit for audit in audits if audit.final_decision_status == "rejected"]),
++            },
++        ]
++        rows.extend(self._counter_rows("reject_reason", reject_counts))
++        rows.extend(self._counter_rows("approved_symbol", approved_symbols))
++        rows.extend(self._counter_rows("blocked_by_threshold", threshold_blocked))
++        rows.extend(self._counter_rows("blocked_by_spread", spread_blocked))
++        rows.extend(self._counter_rows("blocked_by_invalid_payload", invalid_payload_blocked))
++        return rows
++
++    @staticmethod
++    def _counter_rows(section: str, counter: Counter[str]) -> list[dict[str, object]]:
++        return [
++            {"section": section, "key": key, "count": count}
++            for key, count in counter.most_common()
++        ]
++
++    @staticmethod
++    def _normalize_rejection_detail(reason: str | None) -> str | None:
++        if reason is None:
++            return None
++        if ":" in reason:
++            return reason.split(":", 1)[1]
++        return reason
++
++    @staticmethod
++    def _collect_rejection_reasons(trace: TradeAttemptTrace) -> list[str]:
++        reasons: list[str] = []
++        if trace.strategy_outcome is not None:
++            reasons.extend(trace.strategy_outcome.failed_filters)
++            if trace.strategy_outcome.reason and trace.strategy_outcome.reason not in reasons:
++                reasons.append(trace.strategy_outcome.reason)
++        if trace.risk_outcome is not None and trace.risk_outcome.reason:
++            reasons.append(trace.risk_outcome.reason)
++        if trace.execution_outcome is not None and trace.execution_outcome.reason:
++            reasons.append(trace.execution_outcome.reason)
++        deduped: list[str] = []
++        for reason in reasons:
++            normalized = RuntimeStateService._normalize_rejection_detail(reason) or reason
++            if normalized not in deduped:
++                deduped.append(normalized)
++        return deduped
++
++    @staticmethod
++    def _filter_result(trace: TradeAttemptTrace, filter_name: str) -> bool | None:
++        strategy_outcome = trace.strategy_outcome
++        if strategy_outcome is None:
++            return None
++        if filter_name in strategy_outcome.passed_filters:
++            return True
++        if filter_name in strategy_outcome.failed_filters:
++            return False
++        return None
+diff --git a/src/mytradingbot/session_setup/models.py b/src/mytradingbot/session_setup/models.py
+index 75e0149..d0ce63a 100644
+--- a/src/mytradingbot/session_setup/models.py
++++ b/src/mytradingbot/session_setup/models.py
+@@ -88,7 +88,7 @@ class RefreshPolicyProfile(BaseModel):
+     loop_interval_seconds: int = 300
+     stale_input_behavior: StaleInputBehavior = "block_trading"
+     market_refresh_interval_seconds: int = 300
+-    prediction_refresh_interval_seconds: int = 1800
++    prediction_refresh_interval_seconds: int = 600
+     dataset_refresh_interval_seconds: int = 1800
+     training_remains_separate: bool = True
+     market_snapshot_max_age_minutes: int = 15
+@@ -103,7 +103,7 @@ class AlphaModelProfile(BaseModel):
+     model_artifact_path: str | None = None
+     long_threshold: float = 0.0
+     short_threshold: float = 0.0
+-    predicted_return_threshold: float = 0.005
++    predicted_return_threshold: float = 0.0008
+     confidence_threshold: float = 0.6
+ 
+ 
+@@ -114,7 +114,7 @@ class RiskProfile(BaseModel):
+     same_symbol_protection: bool = True
+     max_positions_long: int = 3
+     max_positions_short: int = 2
+-    cooldown_minutes: int = 15
++    cooldown_minutes: int = 10
+     block_foreign_manual_exposure: bool = True
+     shortability_gate_policy: Literal["required", "warn", "off"] = "required"
+     reversal_policy: Literal["block", "allow_after_flatten", "allow_immediate"] = "block"
+diff --git a/src/mytradingbot/session_setup/presets.py b/src/mytradingbot/session_setup/presets.py
+index 16d941c..2cc56b6 100644
+--- a/src/mytradingbot/session_setup/presets.py
++++ b/src/mytradingbot/session_setup/presets.py
+@@ -107,11 +107,15 @@ def build_wizard_presets() -> dict[PresetName, dict[str, object]]:
+                 auto_refresh_dataset=True,
+                 loop_interval_seconds=300,
+                 market_refresh_interval_seconds=300,
+-                prediction_refresh_interval_seconds=1800,
++                prediction_refresh_interval_seconds=600,
+                 dataset_refresh_interval_seconds=1800,
+             ),
+-            "alpha": AlphaModelProfile(side_mode="both"),
+-            "risk": RiskProfile(),
++            "alpha": AlphaModelProfile(
++                side_mode="both",
++                predicted_return_threshold=0.0008,
++                confidence_threshold=0.6,
++            ),
++            "risk": RiskProfile(cooldown_minutes=10),
+             "execution": ExecutionProfile(),
+         },
+     }
+diff --git a/src/mytradingbot/session_setup/runtime.py b/src/mytradingbot/session_setup/runtime.py
+index 83e2b4b..0b9626b 100644
+--- a/src/mytradingbot/session_setup/runtime.py
++++ b/src/mytradingbot/session_setup/runtime.py
+@@ -36,6 +36,7 @@ def apply_resolved_config_to_settings(
+     resolved.scalping.max_position_notional = config.risk.max_dollars_per_trade
+     resolved.scalping.predicted_return_threshold = config.alpha.predicted_return_threshold
+     resolved.scalping.confidence_threshold = config.alpha.confidence_threshold
++    resolved.scalping.cooldown_minutes = config.risk.cooldown_minutes
+     resolved.scalping.stop_loss_buffer_bps = config.execution.stop_loss_percent * 100
+     return resolved
+ 
+diff --git a/src/mytradingbot/session_setup/service.py b/src/mytradingbot/session_setup/service.py
+index 3fc80c0..bc9247f 100644
+--- a/src/mytradingbot/session_setup/service.py
++++ b/src/mytradingbot/session_setup/service.py
+@@ -41,11 +41,15 @@ class SetupWizardService:
+             "strategy.session_mode": "single_run",
+             "universe.selection_mode": "keep_old",
+             "refresh.loop_interval_seconds": 300,
++            "refresh.prediction_refresh_interval_seconds": 600,
+             "refresh.auto_refresh_market_snapshot": True,
+             "refresh.auto_refresh_predictions": True,
+             "alpha.side_mode": "both",
++            "alpha.predicted_return_threshold": 0.0008,
++            "alpha.confidence_threshold": 0.6,
+             "risk.max_positions": 3,
+             "risk.max_dollars_per_trade": 5000.0,
++            "risk.cooldown_minutes": 10,
+             "execution.bracket_enabled": True,
+         }
+ 
+diff --git a/src/mytradingbot/strategies/scalping.py b/src/mytradingbot/strategies/scalping.py
+index 66c71b4..5e97cfa 100644
+--- a/src/mytradingbot/strategies/scalping.py
++++ b/src/mytradingbot/strategies/scalping.py
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ import logging
++import math
+ 
+ from mytradingbot.core.models import BracketPlan, ExitPlan, SignalBundle, StrategyDecision
+ from mytradingbot.core.settings import AppSettings
+@@ -16,22 +17,33 @@ class ScalpingStrategy(BaseStrategy):
+ 
+     name = "scalping"
+ 
+-    max_spread_bps = 5.0
+-    min_liquidity_score = 0.5
+-    max_liquidity_stress = 0.7
+-    flatten_near_close_minutes = 10
+-    timeout_seconds = 900
+-
+     def __init__(self, settings: AppSettings | None = None) -> None:
+         self.settings = settings or AppSettings()
+         self.predicted_return_threshold = self.settings.scalping.predicted_return_threshold
+         self.confidence_threshold = self.settings.scalping.confidence_threshold
++        self.max_spread_bps = self.settings.scalping.max_spread_bps
++        self.min_liquidity_score = self.settings.scalping.min_liquidity_score
++        self.max_liquidity_stress = self.settings.scalping.max_liquidity_stress
++        self.flatten_near_close_minutes = self.settings.scalping.flatten_near_close_minutes
++        self.order_book_imbalance_gate_enabled = (
++            self.settings.scalping.enable_order_book_imbalance_gate
++        )
+         self.timeout_seconds = self.settings.scalping.max_holding_seconds
+ 
+     def evaluate(self, signal: SignalBundle) -> StrategyDecision:
+         passed_filters: list[str] = []
+         failed_filters: list[str] = []
+ 
++        self._validate_signal_payload(signal, failed_filters)
++        if failed_filters:
++            return StrategyDecision.reject(
++                strategy_name=self.name,
++                symbol=signal.symbol,
++                reason=failed_filters[0],
++                failed_filters=failed_filters,
++                passed_filters=passed_filters,
++            )
++
+         self._apply_qlib_signal_gate(signal, passed_filters, failed_filters)
+         self._check_thresholds(signal, passed_filters, failed_filters)
+         self._check_market_structure(signal, passed_filters, failed_filters)
+@@ -145,12 +157,15 @@ class ScalpingStrategy(BaseStrategy):
+         else:
+             passed_filters.append("liquidity_stress_filter")
+ 
+-        if (is_long and signal.market.order_book_imbalance < 0) or (
+-            not is_long and signal.market.order_book_imbalance > 0
+-        ):
+-            failed_filters.append("order_book_imbalance")
++        if self.order_book_imbalance_gate_enabled:
++            if (is_long and signal.market.order_book_imbalance < 0) or (
++                not is_long and signal.market.order_book_imbalance > 0
++            ):
++                failed_filters.append("order_book_imbalance")
++            else:
++                passed_filters.append("order_book_imbalance")
+         else:
+-            passed_filters.append("order_book_imbalance")
++            passed_filters.append("order_book_imbalance_gate_disabled")
+ 
+         if signal.market.liquidity_sweep_detected:
+             failed_filters.append("liquidity_sweep_detection")
+@@ -178,7 +193,8 @@ class ScalpingStrategy(BaseStrategy):
+         else:
+             passed_filters.append("cooldown_logic")
+ 
+-        if int(signal.metadata.get("minutes_to_close", 999)) <= self.flatten_near_close_minutes:
++        minutes_to_close = int(signal.metadata.get("minutes_to_close", 999))
++        if minutes_to_close <= self.flatten_near_close_minutes:
+             failed_filters.append("flatten_near_close_logic")
+         else:
+             passed_filters.append("flatten_near_close_logic")
+@@ -283,3 +299,67 @@ class ScalpingStrategy(BaseStrategy):
+             base_take_profit / self.settings.scalping.take_profit_multiplier,
+         )
+         return base_take_profit * volatility_multiplier, base_stop_loss * volatility_multiplier
++
++    def _validate_signal_payload(
++        self,
++        signal: SignalBundle,
++        failed_filters: list[str],
++    ) -> None:
++        if not self._is_positive_number(signal.market.last_price):
++            failed_filters.append("invalid_signal_payload:last_price_unavailable")
++        if not self._is_positive_number(signal.market.vwap):
++            failed_filters.append("invalid_signal_payload:vwap_unavailable")
++        if not self._is_non_negative_number(signal.market.spread_bps):
++            failed_filters.append("invalid_signal_payload:spread_proxy_invalid")
++        if not self._is_non_negative_number(signal.market.liquidity_score):
++            failed_filters.append("invalid_signal_payload:liquidity_score_invalid")
++        if not self._is_non_negative_number(signal.market.liquidity_stress):
++            failed_filters.append("invalid_signal_payload:liquidity_stress_invalid")
++
++        normalized_minutes_to_close = self._normalize_minutes_to_close(
++            signal.metadata.get("minutes_to_close")
++        )
++        if normalized_minutes_to_close is None:
++            failed_filters.append("invalid_signal_payload:minutes_to_close_invalid")
++        else:
++            signal.metadata["minutes_to_close"] = normalized_minutes_to_close
++
++    @staticmethod
++    def _is_positive_number(value: float | int) -> bool:
++        try:
++            numeric = float(value)
++        except (TypeError, ValueError):
++            return False
++        return math.isfinite(numeric) and numeric > 0
++
++    @staticmethod
++    def _is_non_negative_number(value: float | int) -> bool:
++        try:
++            numeric = float(value)
++        except (TypeError, ValueError):
++            return False
++        return math.isfinite(numeric) and numeric >= 0
++
++    @staticmethod
++    def _normalize_minutes_to_close(value: object) -> int | None:
++        if value is None:
++            return 999
++        if isinstance(value, bool):
++            return None
++        if isinstance(value, (int, float)):
++            numeric = float(value)
++            if not math.isfinite(numeric) or numeric < 0:
++                return None
++            return int(numeric)
++        if isinstance(value, str):
++            stripped = value.strip()
++            if not stripped:
++                return None
++            try:
++                numeric = float(stripped)
++            except ValueError:
++                return None
++            if not math.isfinite(numeric) or numeric < 0:
++                return None
++            return int(numeric)
++        return None
+diff --git a/src/mytradingbot/ui_services/__init__.py b/src/mytradingbot/ui_services/__init__.py
+index 844c10a..39fd184 100644
+--- a/src/mytradingbot/ui_services/__init__.py
++++ b/src/mytradingbot/ui_services/__init__.py
+@@ -7,6 +7,7 @@ from mytradingbot.ui_services.live_trading import LiveTradingPayload, LiveTradin
+ from mytradingbot.ui_services.llm_copilot import LLMCopilotService
+ from mytradingbot.ui_services.paper_trading import PaperTradingService
+ from mytradingbot.ui_services.settings import SettingsService
++from mytradingbot.ui_services.status_reference import StatusReferenceService
+ from mytradingbot.ui_services.strategy_control import (
+     StrategyControlPayload,
+     StrategyControlService,
+@@ -23,6 +24,7 @@ __all__ = [
+     "LiveTradingService",
+     "PaperTradingService",
+     "SettingsService",
++    "StatusReferenceService",
+     "StrategyControlPayload",
+     "StrategyControlService",
+ ]
+diff --git a/src/mytradingbot/ui_services/dashboard.py b/src/mytradingbot/ui_services/dashboard.py
+index 34f6eb8..c5d36f9 100644
+--- a/src/mytradingbot/ui_services/dashboard.py
++++ b/src/mytradingbot/ui_services/dashboard.py
+@@ -9,6 +9,7 @@ from pydantic import BaseModel
+ from mytradingbot.core.capabilities import CapabilitySnapshot
+ from mytradingbot.core.models import ArtifactStatus, HealthStatus, SessionSummary
+ from mytradingbot.orchestration.service import TradingPlatformService
++from mytradingbot.ui_services.descriptive_sections import DescriptiveSection, describe_item
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -21,6 +22,7 @@ class DashboardPayload(BaseModel):
+     available_strategies: list[str]
+     capabilities: CapabilitySnapshot
+     last_session: SessionSummary | None = None
++    summary_sections: list[DescriptiveSection] = []
+ 
+ 
+ class DashboardService:
+@@ -30,14 +32,87 @@ class DashboardService:
+         self.platform_service = platform_service
+ 
+     def get_dashboard_payload(self) -> DashboardPayload:
++        health = self.platform_service.get_health_status()
++        prediction_status = self.platform_service.get_prediction_status()
++        capabilities = self.platform_service.get_capabilities()
+         return DashboardPayload(
+-            health=self.platform_service.get_health_status(),
+-            prediction_status=self.platform_service.get_prediction_status(),
++            health=health,
++            prediction_status=prediction_status,
+             available_strategies=self.platform_service.get_strategy_names(),
+-            capabilities=self.platform_service.get_capabilities(),
++            capabilities=capabilities,
+             last_session=(
+                 self.platform_service.last_session_result.session_summary
+                 if self.platform_service.last_session_result
+                 else None
+             ),
++            summary_sections=[
++                DescriptiveSection(
++                    title="Runtime Readiness",
++                    description="A concise summary of whether the platform is ready for a session and what the operator should watch first.",
++                    items=[
++                        describe_item(
++                            "dashboard.health_summary",
++                            health.summary,
++                            label="Health summary",
++                            description="The top-level health summary produced by the platform.",
++                            effect="Tells the operator whether the environment looks ready or needs attention.",
++                        ),
++                        describe_item(
++                            "dashboard.predictions_ready",
++                            "Ready" if prediction_status.is_ready else f"{prediction_status.reason or 'Unavailable'}",
++                            label="Prediction readiness",
++                            description="Whether the runtime prediction artifact is currently usable.",
++                            effect="Determines whether qlib-driven session flows can proceed without a freshness warning.",
++                        ),
++                        describe_item(
++                            "dashboard.default_mode",
++                            self.platform_service.settings.runtime.default_mode.value,
++                            label="Default runtime mode",
++                            description="The repo's default runtime mode when a session does not explicitly override it.",
++                            effect="Sets the baseline execution mode the operator starts from in the UI.",
++                        ),
++                        describe_item(
++                            "dashboard.strategy_count",
++                            len(self.platform_service.get_strategy_names()),
++                            label="Available strategies",
++                            description="How many strategy choices are currently exposed by the registry.",
++                            effect="Shows the breadth of strategy workflows available from the UI.",
++                        ),
++                    ],
++                ),
++                DescriptiveSection(
++                    title="Phase Capability Snapshot",
++                    description="The current readiness of each rollout phase and what each phase means operationally.",
++                    items=[
++                        describe_item(
++                            "dashboard.phase_1",
++                            capabilities.phase_1.status,
++                            label=capabilities.phase_1.name,
++                            description=capabilities.phase_1.summary,
++                            effect="Summarizes whether paper-trading artifacts and basic runtime flows are ready.",
++                        ),
++                        describe_item(
++                            "dashboard.phase_2",
++                            capabilities.phase_2.status,
++                            label=capabilities.phase_2.name,
++                            description=capabilities.phase_2.summary,
++                            effect="Summarizes whether the market-data download and normalization pipeline is operational.",
++                        ),
++                        describe_item(
++                            "dashboard.phase_3",
++                            capabilities.phase_3.status,
++                            label=capabilities.phase_3.name,
++                            description=capabilities.phase_3.summary,
++                            effect="Summarizes whether qlib dataset, training, and prediction-refresh workflows are ready.",
++                        ),
++                        describe_item(
++                            "dashboard.phase_4",
++                            capabilities.phase_4.status,
++                            label=capabilities.phase_4.name,
++                            description=capabilities.phase_4.summary,
++                            effect="Summarizes whether live-trading scaffolding is available or still guarded.",
++                        ),
++                    ],
++                ),
++            ],
+         )
+diff --git a/src/mytradingbot/ui_services/setup_wizard.py b/src/mytradingbot/ui_services/setup_wizard.py
+index c320d4d..3c4e51d 100644
+--- a/src/mytradingbot/ui_services/setup_wizard.py
++++ b/src/mytradingbot/ui_services/setup_wizard.py
+@@ -13,6 +13,7 @@ from mytradingbot.orchestration.service import TradingPlatformService
+ from mytradingbot.session_setup.models import ResolvedSessionConfig, SetupWizardState, UserProfile
+ from mytradingbot.session_setup.runtime import apply_resolved_config_to_settings
+ from mytradingbot.session_setup.service import SetupWizardService
++from mytradingbot.ui_services.descriptive_sections import DescriptiveSection, describe_item
+ 
+ 
+ class SetupWizardProfileCard(BaseModel):
+@@ -47,6 +48,15 @@ class SetupWizardActionResult(BaseModel):
+     session_summary: dict | None = None
+ 
+ 
++class SetupWizardReviewPayload(BaseModel):
++    """Readable review payload for the wizard review step."""
++
++    sections: list[DescriptiveSection] = Field(default_factory=list)
++    defaults_section: DescriptiveSection
++    customized_section: DescriptiveSection
++    expected_actions: list[str] = Field(default_factory=list)
++
++
+ class SetupWizardUIService:
+     def __init__(
+         self,
+@@ -146,6 +156,123 @@ class SetupWizardUIService:
+     def review_flags(self, state: SetupWizardState) -> dict[str, list[str]]:
+         return self.wizard_service.build_review_flags(state)
+ 
++    def build_review_payload(
++        self,
++        state: SetupWizardState,
++        *,
++        generated_symbols: list[str] | None = None,
++    ) -> SetupWizardReviewPayload:
++        preview_symbols = self.wizard_service.preview_active_symbols(
++            state.model_copy(deep=True),
++            generated_symbols=generated_symbols,
++        )
++        flags = self.review_flags(state)
++        sections = [
++            DescriptiveSection(
++                title="Profile & Session",
++                description="The identity of the saved profile and the high-level session choices that will be persisted and launched.",
++                items=[
++                    describe_item("profile.profile_name", state.profile.profile_name),
++                    describe_item("strategy.preset_name", state.strategy.preset_name),
++                    describe_item("strategy.strategy_name", state.strategy.strategy_name),
++                    describe_item("strategy.broker_mode", state.strategy.broker_mode),
++                    describe_item("strategy.session_mode", state.strategy.session_mode),
++                ],
++            ),
++            DescriptiveSection(
++                title="Universe",
++                description="How the active symbol universe will be resolved for this run and what files it will update.",
++                items=[
++                    describe_item("universe.selection_mode", state.universe.selection_mode),
++                    describe_item("universe.target_symbol_count", state.universe.target_symbol_count),
++                    describe_item("universe.min_price", state.universe.min_price),
++                    describe_item("universe.min_average_volume", state.universe.min_average_volume),
++                    describe_item("universe.include_etfs", state.universe.include_etfs),
++                    describe_item("universe.active_symbol_count", len(preview_symbols)),
++                    describe_item(
++                        "universe.active_symbols_path",
++                        self.wizard_service.storage.active_symbols_path(state.profile.profile_slug),
++                    ),
++                ],
++            ),
++            DescriptiveSection(
++                title="Refresh Policy",
++                description="The refresh behavior that keeps snapshots, datasets, and predictions up to date while the session runs.",
++                items=[
++                    describe_item("refresh.auto_refresh_market_snapshot", state.refresh.auto_refresh_market_snapshot),
++                    describe_item("refresh.auto_refresh_predictions", state.refresh.auto_refresh_predictions),
++                    describe_item("refresh.auto_refresh_dataset", state.refresh.auto_refresh_dataset),
++                    describe_item("refresh.loop_interval_seconds", state.refresh.loop_interval_seconds),
++                    describe_item("refresh.stale_input_behavior", state.refresh.stale_input_behavior),
++                ],
++            ),
++            DescriptiveSection(
++                title="Alpha & Model",
++                description="The qlib ranking and gate settings that control how many symbols are considered and what strength they must show.",
++                items=[
++                    describe_item("alpha.side_mode", state.alpha.side_mode),
++                    describe_item("alpha.candidate_count", state.alpha.candidate_count),
++                    describe_item("alpha.long_threshold", state.alpha.long_threshold),
++                    describe_item("alpha.short_threshold", state.alpha.short_threshold),
++                    describe_item("alpha.predicted_return_threshold", state.alpha.predicted_return_threshold),
++                    describe_item("alpha.confidence_threshold", state.alpha.confidence_threshold),
++                ],
++            ),
++            DescriptiveSection(
++                title="Risk Controls",
++                description="The position limits and protections that constrain how much the profile can put at risk.",
++                items=[
++                    describe_item("risk.max_positions", state.risk.max_positions),
++                    describe_item("risk.max_dollars_per_trade", state.risk.max_dollars_per_trade),
++                    describe_item("risk.max_daily_loss_percent", state.risk.max_daily_loss_percent),
++                    describe_item("risk.same_symbol_protection", state.risk.same_symbol_protection),
++                ],
++            ),
++            DescriptiveSection(
++                title="Execution & Brackets",
++                description="The order and bracket settings that shape how approved trades are submitted and protected.",
++                items=[
++                    describe_item("execution.order_type", state.execution.order_type),
++                    describe_item("execution.bracket_enabled", state.execution.bracket_enabled),
++                    describe_item("execution.take_profit_percent", state.execution.take_profit_percent),
++                    describe_item("execution.stop_loss_percent", state.execution.stop_loss_percent),
++                    describe_item("execution.sizing_mode", state.execution.sizing_mode),
++                    describe_item("execution.quantity", state.execution.quantity),
++                ],
++            ),
++        ]
++        return SetupWizardReviewPayload(
++            sections=sections,
++            defaults_section=DescriptiveSection(
++                title="Recommended Defaults Currently Kept",
++                description="These settings still match the recommended starting defaults for the guided workflow.",
++                items=[
++                    describe_item(
++                        dotted_key,
++                        self._resolve_dotted_value(state, dotted_key),
++                        badge="Recommended default",
++                    )
++                    for dotted_key in flags["defaults"]
++                ],
++            ),
++            customized_section=DescriptiveSection(
++                title="Customized Settings",
++                description="These settings differ from the recommended starting defaults and will directly change how the session behaves.",
++                items=[
++                    describe_item(
++                        dotted_key,
++                        self._resolve_dotted_value(state, dotted_key),
++                        badge="Customized",
++                    )
++                    for dotted_key in flags["customized"]
++                ],
++            ),
++            expected_actions=self.wizard_service.build_expected_actions(
++                state,
++                active_symbols=preview_symbols,
++            ),
++        )
++
+     def _build_runtime_service(self, config: ResolvedSessionConfig) -> TradingPlatformService:
+         settings = apply_resolved_config_to_settings(
+             self.platform_service.settings,
+@@ -200,3 +327,10 @@ class SetupWizardUIService:
+             stderr_log_path=str(stderr_log),
+             process_id=process.pid,
+         )
++
++    @staticmethod
++    def _resolve_dotted_value(state: SetupWizardState, dotted_key: str):
++        current = state
++        for part in dotted_key.split("."):
++            current = getattr(current, part)
++        return current
+diff --git a/tests/smoke/test_streamlit_structure.py b/tests/smoke/test_streamlit_structure.py
+index ee13a71..bb6fb2e 100644
+--- a/tests/smoke/test_streamlit_structure.py
++++ b/tests/smoke/test_streamlit_structure.py
+@@ -8,11 +8,10 @@ def test_streamlit_page_files_exist() -> None:
+         "app/pages/00_Setup_Wizard.py",
+         "app/pages/02_Strategy_Control.py",
+         "app/pages/03_Data_Management.py",
+-        "app/pages/04_Paper_Trading.py",
+         "app/pages/05_Live_Trading.py",
+         "app/pages/06_LLM_Copilot.py",
+         "app/pages/07_Diagnostics.py",
+-        "app/pages/08_Settings.py",
++        "app/pages/08_Status_Reference.py",
+         "app/pages/09_Trading_Universe.py",
+     ]
+ 
+@@ -29,11 +28,10 @@ def test_streamlit_entrypoints_do_not_use_package_shadowed_runtime_imports() ->
+         "app/pages/00_Setup_Wizard.py",
+         "app/pages/02_Strategy_Control.py",
+         "app/pages/03_Data_Management.py",
+-        "app/pages/04_Paper_Trading.py",
+         "app/pages/05_Live_Trading.py",
+         "app/pages/06_LLM_Copilot.py",
+         "app/pages/07_Diagnostics.py",
+-        "app/pages/08_Settings.py",
++        "app/pages/08_Status_Reference.py",
+         "app/pages/09_Trading_Universe.py",
+     ]
+ 
+@@ -46,8 +44,8 @@ def test_streamlit_app_landing_page_is_dashboard() -> None:
+     project_root = Path(__file__).resolve().parents[2]
+     source = (project_root / "app/app.py").read_text(encoding="utf-8")
+ 
+-    assert 'st.set_page_config(page_title="Dashboard"' in source
+-    assert 'st.title("Dashboard")' in source
++    assert 'st.set_page_config(page_title="Dashboard Summary"' in source
++    assert 'st.title("Dashboard Summary")' in source
+ 
+ 
+ def test_data_management_page_uses_real_operation_tabs() -> None:
+diff --git a/tests/unit/core/test_settings.py b/tests/unit/core/test_settings.py
+index 12e2ed6..6cfb755 100644
+--- a/tests/unit/core/test_settings.py
++++ b/tests/unit/core/test_settings.py
+@@ -35,6 +35,15 @@ def test_data_pipeline_defaults_include_minute_timeframes() -> None:
+     assert settings.data.processing_workers >= 1
+ 
+ 
++def test_scalping_runtime_defaults_align_with_overnight_tuning_pass() -> None:
++    settings = AppSettings()
++
++    assert settings.runtime_safety.prediction_refresh_interval_seconds == 600
++    assert settings.scalping.predicted_return_threshold == 0.0008
++    assert settings.scalping.confidence_threshold == 0.6
++    assert settings.scalping.cooldown_minutes == 10
++
++
+ def test_flat_env_aliases_load_broker_credentials(monkeypatch) -> None:
+     monkeypatch.setenv("ALPACA_API_KEY", "key")
+     monkeypatch.setenv("ALPACA_SECRET_KEY", "secret")
+diff --git a/tests/unit/orchestration/test_orchestration_service.py b/tests/unit/orchestration/test_orchestration_service.py
+index 722a9a7..32794ee 100644
+--- a/tests/unit/orchestration/test_orchestration_service.py
++++ b/tests/unit/orchestration/test_orchestration_service.py
+@@ -224,7 +224,7 @@ def _set_mtime(path: Path, *, minutes_ago: int) -> None:
+ 
+ def test_run_session_writes_decision_audit_even_when_no_trade(tmp_path) -> None:
+     settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+-    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.001)
++    predictions_path, market_path = _write_runtime_artifacts(tmp_path, predicted_return=0.0004)
+     service = TradingPlatformService(
+         settings=settings,
+         qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
+diff --git a/tests/unit/runtime/test_runtime_state_service.py b/tests/unit/runtime/test_runtime_state_service.py
+index 84ce769..2461d00 100644
+--- a/tests/unit/runtime/test_runtime_state_service.py
++++ b/tests/unit/runtime/test_runtime_state_service.py
+@@ -4,7 +4,14 @@ from datetime import datetime, timedelta, timezone
+ 
+ from mytradingbot.brokers.paper import PaperBroker
+ from mytradingbot.core.enums import RuntimeMode
+-from mytradingbot.core.models import ArtifactStatus, PositionSnapshot, TradeAttemptTrace
++from mytradingbot.core.models import (
++    ArtifactStatus,
++    BracketPlan,
++    BrokerBracketState,
++    ExecutionResult,
++    PositionSnapshot,
++    TradeAttemptTrace,
++)
+ from mytradingbot.core.paths import RepoPaths
+ from mytradingbot.core.settings import AppSettings
+ from mytradingbot.core.models import StrategyDecision
+@@ -156,3 +163,157 @@ def test_runtime_service_minutes_to_close_ignores_prior_session_close_timestamp(
+     )
+ 
+     assert minutes == 999
++
++
++def test_runtime_service_records_configured_cooldown_window_for_closed_brackets(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    settings.scalping.cooldown_minutes = 10
++    runtime_service = RuntimeStateService(settings=settings)
++    context = runtime_service.create_session_context(strategy="scalping", mode=RuntimeMode.PAPER)
++    closed_at = datetime(2026, 3, 27, 10, 0, tzinfo=timezone.utc)
++
++    runtime_service.record_execution_result(
++        context=context,
++        strategy_name="scalping",
++        result=ExecutionResult(
++            bracket_state=BrokerBracketState(
++                symbol="AAPL",
++                entry_order_id="entry-1",
++                status="closed",
++                closed_at=closed_at,
++                exit_reason="timeout_exit",
++                bracket_plan=BracketPlan(
++                    planned_entry_price=100.0,
++                    planned_stop_loss_price=99.0,
++                    planned_take_profit_price=101.5,
++                    planned_quantity=1.0,
++                    risk_per_share=1.0,
++                    gross_reward_per_share=1.5,
++                    estimated_fees=0.0,
++                    estimated_slippage=0.0,
++                    estimated_fee_per_share=0.0,
++                    estimated_slippage_per_share=0.0,
++                    estimated_fixed_fees=0.0,
++                    net_reward_per_share=1.5,
++                    reward_risk_ratio=1.5,
++                    expected_net_profit=1.5,
++                ),
++            )
++        ),
++    )
++
++    assert runtime_service.store.active_cooldowns(
++        strategy="scalping",
++        now=closed_at + timedelta(minutes=9, seconds=59),
++    ) == {"AAPL"}
++    assert runtime_service.store.active_cooldowns(
++        strategy="scalping",
++        now=closed_at + timedelta(minutes=10),
++    ) == set()
++
++
++def test_runtime_service_cooldowns_survive_restart(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    settings.scalping.cooldown_minutes = 10
++    first = RuntimeStateService(settings=settings)
++    context = first.create_session_context(strategy="scalping", mode=RuntimeMode.PAPER)
++    closed_at = datetime(2026, 3, 27, 11, 0, tzinfo=timezone.utc)
++
++    first.record_execution_result(
++        context=context,
++        strategy_name="scalping",
++        result=ExecutionResult(
++            bracket_state=BrokerBracketState(
++                symbol="MSFT",
++                entry_order_id="entry-2",
++                status="closed",
++                closed_at=closed_at,
++                exit_reason="take_profit",
++                bracket_plan=BracketPlan(
++                    planned_entry_price=200.0,
++                    planned_stop_loss_price=198.0,
++                    planned_take_profit_price=203.0,
++                    planned_quantity=1.0,
++                    risk_per_share=2.0,
++                    gross_reward_per_share=3.0,
++                    estimated_fees=0.0,
++                    estimated_slippage=0.0,
++                    estimated_fee_per_share=0.0,
++                    estimated_slippage_per_share=0.0,
++                    estimated_fixed_fees=0.0,
++                    net_reward_per_share=3.0,
++                    reward_risk_ratio=1.5,
++                    expected_net_profit=3.0,
++                ),
++            )
++        ),
++    )
++
++    restarted = RuntimeStateService(settings=settings)
++
++    assert restarted.store.active_cooldowns(
++        strategy="scalping",
++        now=closed_at + timedelta(minutes=5),
++    ) == {"MSFT"}
++
++
++def test_runtime_service_maps_strategy_rejections_to_precise_reason_codes(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    runtime_service = RuntimeStateService(settings=settings)
++
++    assert runtime_service.map_rejection_reason("vwap_relationship") == "vwap_relationship_blocked"
++    assert runtime_service.map_rejection_reason("flatten_near_close_logic") == "near_close_window_blocked"
++    assert runtime_service.map_rejection_reason("invalid_signal_payload:vwap_unavailable") == "invalid_signal_payload"
++
++
++def test_runtime_service_writes_detailed_audit_and_tuning_artifacts(
++    signal_bundle_factory,
++    tmp_path,
++) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    runtime_service = RuntimeStateService(settings=settings)
++    context = runtime_service.create_session_context(
++        strategy="scalping",
++        mode=RuntimeMode.PAPER,
++    )
++    signal = signal_bundle_factory(symbol="AAPL", predicted_return=0.0004, spread_bps=6.2)
++    trace = TradeAttemptTrace.for_symbol("AAPL", "scalping")
++    trace.signal = signal
++    trace.strategy_outcome = StrategyDecision.reject(
++        strategy_name="scalping",
++        symbol="AAPL",
++        reason="predicted_return_threshold",
++        failed_filters=["predicted_return_threshold", "spread_filter"],
++        passed_filters=["confidence_threshold", "vwap_relationship"],
++    )
++
++    audit = runtime_service.build_decision_audit(
++        context=context,
++        signal=signal,
++        trace=trace,
++        prediction_status=ArtifactStatus.ready("predictions", freshness_minutes=5),
++        market_status=ArtifactStatus.ready("market_snapshot", freshness_minutes=1),
++    )
++    report = runtime_service.write_session_artifacts(
++        context=context,
++        audits=[audit],
++        orders=[],
++        fills=[],
++        positions=[],
++        incidents=[],
++        notes=["overnight tuning artifact check"],
++    )
++
++    audit_csv = (
++        settings.paths.reports_signals_dir / f"{context.session_id}_decision_audit.csv"
++    ).read_text(encoding="utf-8")
++    tuning_csv_path = settings.paths.reports_analytics_dir / f"{context.session_id}_analytics.csv"
++    tuning_md_path = settings.paths.reports_analytics_dir / f"{context.session_id}_analytics.md"
++
++    assert "confidence" in audit_csv
++    assert "spread_bps" in audit_csv
++    assert "liquidity_score" in audit_csv
++    assert "rejection_reasons" in audit_csv
++    assert tuning_csv_path.exists()
++    assert "top symbols blocked by threshold" in tuning_md_path.read_text(encoding="utf-8").lower()
++    assert str(tuning_csv_path) in report.report_paths
+diff --git a/tests/unit/session_setup/test_service.py b/tests/unit/session_setup/test_service.py
+index 6bcda14..b29be22 100644
+--- a/tests/unit/session_setup/test_service.py
++++ b/tests/unit/session_setup/test_service.py
+@@ -50,7 +50,22 @@ def test_setup_wizard_service_applies_presets_with_real_defaults(tmp_path) -> No
+     assert state.strategy.session_mode == "loop"
+     assert state.refresh.auto_refresh_market_snapshot is True
+     assert state.refresh.auto_refresh_predictions is True
++    assert state.refresh.prediction_refresh_interval_seconds == 600
+     assert state.alpha.side_mode == "both"
++    assert state.alpha.predicted_return_threshold == 0.0008
++    assert state.alpha.confidence_threshold == 0.6
++    assert state.risk.cooldown_minutes == 10
++
++
++def test_setup_wizard_service_exposes_overnight_recommended_defaults(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    service = SetupWizardService(settings=settings)
++
++    assert service.recommended_defaults["refresh.loop_interval_seconds"] == 300
++    assert service.recommended_defaults["refresh.prediction_refresh_interval_seconds"] == 600
++    assert service.recommended_defaults["alpha.predicted_return_threshold"] == 0.0008
++    assert service.recommended_defaults["alpha.confidence_threshold"] == 0.6
++    assert service.recommended_defaults["risk.cooldown_minutes"] == 10
+ 
+ 
+ def test_setup_wizard_service_keep_old_symbols_preserves_existing_manifest(tmp_path) -> None:
+diff --git a/tests/unit/strategies/test_scalping_strategy.py b/tests/unit/strategies/test_scalping_strategy.py
+index a4a28fc..1244c09 100644
+--- a/tests/unit/strategies/test_scalping_strategy.py
++++ b/tests/unit/strategies/test_scalping_strategy.py
+@@ -5,7 +5,7 @@ from mytradingbot.strategies.scalping import ScalpingStrategy
+ def test_scalping_rejects_signal_below_return_threshold(signal_bundle_factory) -> None:
+     strategy = ScalpingStrategy()
+ 
+-    decision = strategy.evaluate(signal_bundle_factory(predicted_return=0.001))
++    decision = strategy.evaluate(signal_bundle_factory(predicted_return=0.0005))
+ 
+     assert not decision.should_trade
+     assert "predicted_return_threshold" in decision.failed_filters
+@@ -29,6 +29,17 @@ def test_scalping_rejects_wide_spread(signal_bundle_factory) -> None:
+     assert "spread_filter" in decision.failed_filters
+ 
+ 
++def test_scalping_allows_spread_up_to_six_bps_and_rejects_beyond(signal_bundle_factory) -> None:
++    strategy = ScalpingStrategy()
++
++    at_limit = strategy.evaluate(signal_bundle_factory(spread_bps=6.0))
++    above_limit = strategy.evaluate(signal_bundle_factory(spread_bps=6.01))
++
++    assert at_limit.should_trade
++    assert not above_limit.should_trade
++    assert "spread_filter" in above_limit.failed_filters
++
++
+ def test_scalping_respects_cooldown_and_near_close_logic(signal_bundle_factory) -> None:
+     strategy = ScalpingStrategy()
+ 
+@@ -106,3 +117,38 @@ def test_scalping_uses_runtime_configured_confidence_threshold(signal_bundle_fac
+ 
+     assert not decision.should_trade
+     assert "confidence_threshold" in decision.failed_filters
++
++
++def test_scalping_does_not_hard_reject_on_order_book_imbalance_proxy_by_default(
++    signal_bundle_factory,
++) -> None:
++    strategy = ScalpingStrategy()
++
++    decision = strategy.evaluate(signal_bundle_factory(order_book_imbalance=-0.95))
++
++    assert decision.should_trade
++    assert "order_book_imbalance" not in decision.failed_filters
++
++
++def test_scalping_rejects_invalid_vwap_payload_before_market_structure_checks(
++    signal_bundle_factory,
++) -> None:
++    strategy = ScalpingStrategy()
++
++    decision = strategy.evaluate(signal_bundle_factory(vwap=0.0))
++
++    assert not decision.should_trade
++    assert decision.reason == "invalid_signal_payload:vwap_unavailable"
++    assert "invalid_signal_payload:vwap_unavailable" in decision.failed_filters
++
++
++def test_scalping_rejects_invalid_minutes_to_close_payload_with_precise_reason(
++    signal_bundle_factory,
++) -> None:
++    strategy = ScalpingStrategy()
++
++    decision = strategy.evaluate(signal_bundle_factory(metadata={"minutes_to_close": "soon"}))
++
++    assert not decision.should_trade
++    assert decision.reason == "invalid_signal_payload:minutes_to_close_invalid"
++    assert "invalid_signal_payload:minutes_to_close_invalid" in decision.failed_filters
+diff --git a/tests/unit/ui_services/test_dashboard.py b/tests/unit/ui_services/test_dashboard.py
+index a10d5cf..840fa12 100644
+--- a/tests/unit/ui_services/test_dashboard.py
++++ b/tests/unit/ui_services/test_dashboard.py
+@@ -8,3 +8,14 @@ def test_dashboard_service_surfaces_prediction_health() -> None:
+     assert payload.health is not None
+     assert payload.prediction_status is not None
+     assert payload.available_strategies
++
++
++def test_dashboard_service_builds_readable_summary_sections() -> None:
++    payload = DashboardService(TradingPlatformService.bootstrap_default()).get_dashboard_payload()
++
++    section_titles = [section.title for section in payload.summary_sections]
++
++    assert "Runtime Readiness" in section_titles
++    assert "Phase Capability Snapshot" in section_titles
++    assert all(section.description for section in payload.summary_sections)
++    assert all(item.description and item.effect for section in payload.summary_sections for item in section.items)
+diff --git a/tests/unit/ui_services/test_setup_wizard.py b/tests/unit/ui_services/test_setup_wizard.py
+index 5544db9..9bf2700 100644
+--- a/tests/unit/ui_services/test_setup_wizard.py
++++ b/tests/unit/ui_services/test_setup_wizard.py
+@@ -1,3 +1,5 @@
++from mytradingbot.core.paths import RepoPaths
++from mytradingbot.core.settings import AppSettings
+ from mytradingbot.orchestration.service import TradingPlatformService
+ from mytradingbot.ui_services.setup_wizard import SetupWizardUIService
+ 
+@@ -12,3 +14,33 @@ def test_setup_wizard_ui_service_exposes_profiles_presets_and_recommended_defaul
+     assert payload.recommended_defaults["strategy.strategy_name"] == "scalping"
+     assert payload.recommended_defaults["strategy.broker_mode"] == "local_paper"
+     assert payload.recommended_defaults["refresh.loop_interval_seconds"] == 300
++    assert payload.recommended_defaults["refresh.prediction_refresh_interval_seconds"] == 600
++    assert payload.recommended_defaults["alpha.predicted_return_threshold"] == 0.0008
++    assert payload.recommended_defaults["alpha.confidence_threshold"] == 0.6
++    assert payload.recommended_defaults["risk.cooldown_minutes"] == 10
++
++
++def test_setup_wizard_ui_service_builds_readable_review_payload(tmp_path) -> None:
++    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
++    platform_service = TradingPlatformService(settings=settings)
++    service = SetupWizardUIService(platform_service)
++    state = service.initialize_wizard(
++        profile_name="Alice Trader",
++        source_mode="create_new",
++    )
++    state.alpha.confidence_threshold = 0.72
++    state.risk.max_positions = 8
++
++    review = service.build_review_payload(
++        state,
++        generated_symbols=["AAPL", "MSFT", "NVDA"],
++    )
++
++    assert review.sections
++    assert any(section.title == "Risk Controls" for section in review.sections)
++    assert any(section.title == "Execution & Brackets" for section in review.sections)
++    assert review.defaults_section.items
++    assert review.customized_section.items
++    assert all("." not in item.label for item in review.defaults_section.items)
++    assert all(item.description and item.effect for item in review.defaults_section.items)
++    assert all(item.description and item.effect for item in review.customized_section.items)

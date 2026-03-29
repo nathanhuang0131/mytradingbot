@@ -1,11 +1,26 @@
+from mytradingbot.core.models import HigherTimeframeTrend, MicrostructureProxySignal
 from mytradingbot.core.settings import AppSettings, ScalpingBracketSettings
 from mytradingbot.strategies.scalping import ScalpingStrategy
+
+
+def _microstructure_proxy(*, state: str, score: float) -> MicrostructureProxySignal:
+    return MicrostructureProxySignal(
+        state=state,
+        score=score,
+        directional_pressure=score,
+        relative_volume=0.7,
+        range_expansion=0.4,
+        vwap_bias=score / 2,
+        wick_bias=score / 3,
+        persistence=score / 2,
+        reason=f"synthetic_{state}_pressure",
+    )
 
 
 def test_scalping_rejects_signal_below_return_threshold(signal_bundle_factory) -> None:
     strategy = ScalpingStrategy()
 
-    decision = strategy.evaluate(signal_bundle_factory(predicted_return=0.001))
+    decision = strategy.evaluate(signal_bundle_factory(predicted_return=0.0005))
 
     assert not decision.should_trade
     assert "predicted_return_threshold" in decision.failed_filters
@@ -27,6 +42,17 @@ def test_scalping_rejects_wide_spread(signal_bundle_factory) -> None:
 
     assert not decision.should_trade
     assert "spread_filter" in decision.failed_filters
+
+
+def test_scalping_allows_spread_up_to_six_bps_and_rejects_beyond(signal_bundle_factory) -> None:
+    strategy = ScalpingStrategy()
+
+    at_limit = strategy.evaluate(signal_bundle_factory(spread_bps=6.0))
+    above_limit = strategy.evaluate(signal_bundle_factory(spread_bps=6.01))
+
+    assert at_limit.should_trade
+    assert not above_limit.should_trade
+    assert "spread_filter" in above_limit.failed_filters
 
 
 def test_scalping_respects_cooldown_and_near_close_logic(signal_bundle_factory) -> None:
@@ -63,13 +89,14 @@ def test_scalping_rejects_trade_when_fee_adjusted_expectancy_is_poor(
                 estimated_fee_per_share=0.5,
                 minimum_reward_risk_ratio=1.5,
                 minimum_net_reward_per_share=0.5,
+                edge_after_cost_min_buffer=0.0,
             )
         )
     )
 
     decision = strategy.evaluate(
         signal_bundle_factory(
-            predicted_return=0.0055,
+            predicted_return=0.055,
             confidence=0.8,
             last_price=10.0,
             vwap=9.9,
@@ -80,3 +107,239 @@ def test_scalping_rejects_trade_when_fee_adjusted_expectancy_is_poor(
 
     assert not decision.should_trade
     assert "fee_adjusted_expectancy" in decision.failed_filters
+
+
+def test_scalping_uses_runtime_configured_predicted_return_threshold(signal_bundle_factory) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(predicted_return_threshold=0.02)
+        )
+    )
+
+    decision = strategy.evaluate(signal_bundle_factory(predicted_return=0.012))
+
+    assert not decision.should_trade
+    assert "predicted_return_threshold" in decision.failed_filters
+
+
+def test_scalping_uses_runtime_configured_confidence_threshold(signal_bundle_factory) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(confidence_threshold=0.95)
+        )
+    )
+
+    decision = strategy.evaluate(signal_bundle_factory(confidence=0.84))
+
+    assert not decision.should_trade
+    assert "confidence_threshold" in decision.failed_filters
+
+
+def test_scalping_does_not_hard_reject_on_order_book_imbalance_proxy_by_default(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy()
+
+    decision = strategy.evaluate(signal_bundle_factory(order_book_imbalance=-0.95))
+
+    assert decision.should_trade
+    assert "order_book_imbalance" not in decision.failed_filters
+
+
+def test_scalping_rejects_invalid_vwap_payload_before_market_structure_checks(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy()
+
+    decision = strategy.evaluate(signal_bundle_factory(vwap=0.0))
+
+    assert not decision.should_trade
+    assert decision.reason == "invalid_signal_payload:vwap_unavailable"
+    assert "invalid_signal_payload:vwap_unavailable" in decision.failed_filters
+
+
+def test_scalping_rejects_invalid_minutes_to_close_payload_with_precise_reason(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy()
+
+    decision = strategy.evaluate(signal_bundle_factory(metadata={"minutes_to_close": "soon"}))
+
+    assert not decision.should_trade
+    assert decision.reason == "invalid_signal_payload:minutes_to_close_invalid"
+    assert "invalid_signal_payload:minutes_to_close_invalid" in decision.failed_filters
+
+
+def test_scalping_rejects_when_higher_timeframe_trend_is_not_aligned(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy()
+
+    decision = strategy.evaluate(
+        signal_bundle_factory(
+            metadata={
+                "higher_timeframe_trend": HigherTimeframeTrend(
+                    source_timeframe="15m",
+                    fast_ma_length=5,
+                    slow_ma_length=10,
+                    state="bearish",
+                    long_allowed=False,
+                    short_allowed=True,
+                    reason="close_below_vwap_and_fast_below_slow",
+                    latest_close=99.0,
+                    latest_vwap=100.0,
+                    fast_ma=99.1,
+                    slow_ma=100.4,
+                    slow_ma_slope_bps=-12.0,
+                )
+            },
+        )
+    )
+
+    assert not decision.should_trade
+    assert "higher_timeframe_trend_alignment" in decision.failed_filters
+
+
+def test_scalping_rejects_when_edge_after_cost_buffer_is_not_met(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(
+                predicted_return_threshold=0.0,
+                confidence_threshold=0.0,
+                edge_after_cost_min_buffer=0.0015,
+                estimated_slippage_bps=4.0,
+            )
+        )
+    )
+
+    decision = strategy.evaluate(
+        signal_bundle_factory(
+            predicted_return=0.0016,
+            spread_bps=5.0,
+            liquidity_score=1.0,
+            metadata={
+                "higher_timeframe_trend": HigherTimeframeTrend(
+                    source_timeframe="15m",
+                    fast_ma_length=5,
+                    slow_ma_length=10,
+                    state="bullish",
+                    long_allowed=True,
+                    short_allowed=False,
+                    reason="close_above_vwap_and_fast_above_slow",
+                    latest_close=101.0,
+                    latest_vwap=100.2,
+                    fast_ma=100.8,
+                    slow_ma=100.1,
+                    slow_ma_slope_bps=8.0,
+                )
+            },
+        )
+    )
+
+    assert not decision.should_trade
+    assert "edge_after_cost_buffer" in decision.failed_filters
+
+
+def test_scalping_attaches_quality_snapshot_for_selection(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy()
+
+    decision = strategy.evaluate(
+        signal_bundle_factory(
+            metadata={
+                "higher_timeframe_trend": HigherTimeframeTrend(
+                    source_timeframe="15m",
+                    fast_ma_length=5,
+                    slow_ma_length=10,
+                    state="bullish",
+                    long_allowed=True,
+                    short_allowed=False,
+                    reason="close_above_vwap_and_fast_above_slow",
+                    latest_close=101.0,
+                    latest_vwap=100.2,
+                    fast_ma=100.8,
+                    slow_ma=100.1,
+                    slow_ma_slope_bps=8.0,
+                )
+            },
+        )
+    )
+
+    assert decision.should_trade
+    assert decision.quality is not None
+    assert decision.quality.expected_edge_after_cost > 0
+    assert decision.quality.quality_score > 0
+    assert decision.quality.trend.state == "bullish"
+
+
+def test_scalping_soft_microstructure_confirmation_penalizes_contradictory_candidates(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(microstructure_proxy_mode="soft_rank")
+        )
+    )
+
+    supportive = strategy.evaluate(
+        signal_bundle_factory(
+            microstructure_proxy=_microstructure_proxy(state="bullish", score=0.72)
+        )
+    )
+    contradictory = strategy.evaluate(
+        signal_bundle_factory(
+            microstructure_proxy=_microstructure_proxy(state="bearish", score=-0.72)
+        )
+    )
+
+    assert supportive.should_trade
+    assert contradictory.should_trade
+    assert supportive.quality is not None
+    assert contradictory.quality is not None
+    assert supportive.quality.microstructure_relation == "supports"
+    assert contradictory.quality.microstructure_relation == "strong_contradiction"
+    assert supportive.quality.quality_score > contradictory.quality.quality_score
+
+
+def test_scalping_can_optionally_gate_on_microstructure_contradiction(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(
+                microstructure_proxy_mode="confirmation_gate",
+                microstructure_proxy_min_alignment_score=0.15,
+            )
+        )
+    )
+
+    decision = strategy.evaluate(
+        signal_bundle_factory(
+            microstructure_proxy=_microstructure_proxy(state="bearish", score=-0.68)
+        )
+    )
+
+    assert not decision.should_trade
+    assert "microstructure_proxy_alignment" in decision.failed_filters
+
+
+def test_scalping_leaves_existing_path_intact_when_microstructure_proxy_is_off(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(microstructure_proxy_mode="off")
+        )
+    )
+
+    decision = strategy.evaluate(
+        signal_bundle_factory(
+            microstructure_proxy=_microstructure_proxy(state="bearish", score=-0.68)
+        )
+    )
+
+    assert decision.should_trade
+    assert "microstructure_proxy_alignment" not in decision.failed_filters

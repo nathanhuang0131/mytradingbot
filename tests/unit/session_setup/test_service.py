@@ -61,6 +61,8 @@ def test_setup_wizard_service_applies_presets_with_real_defaults(tmp_path) -> No
     assert state.risk.higher_timeframe_fast_ma_length == 5
     assert state.risk.higher_timeframe_slow_ma_length == 10
     assert state.risk.disable_pseudo_order_book_gate is True
+    assert state.risk.microstructure_proxy_mode == "soft_rank"
+    assert state.risk.microstructure_proxy_min_alignment_score == 0.15
     assert state.risk.cooldown_minutes == 10
 
 
@@ -79,6 +81,8 @@ def test_setup_wizard_service_exposes_overnight_recommended_defaults(tmp_path) -
     assert service.recommended_defaults["risk.higher_timeframe_fast_ma_length"] == 5
     assert service.recommended_defaults["risk.higher_timeframe_slow_ma_length"] == 10
     assert service.recommended_defaults["risk.disable_pseudo_order_book_gate"] is True
+    assert service.recommended_defaults["risk.microstructure_proxy_mode"] == "soft_rank"
+    assert service.recommended_defaults["risk.microstructure_proxy_min_alignment_score"] == 0.15
     assert service.recommended_defaults["risk.cooldown_minutes"] == 10
 
 

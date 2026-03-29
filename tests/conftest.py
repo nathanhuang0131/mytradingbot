@@ -16,6 +16,7 @@ if str(SRC_DIR) not in sys.path:
 from mytradingbot.core.models import (
     HigherTimeframeTrend,
     MarketSnapshot,
+    MicrostructureProxySignal,
     QlibPrediction,
     SignalBundle,
     TradeIntent,
@@ -54,6 +55,20 @@ def signal_bundle_factory():
             order_book_imbalance=overrides.get("order_book_imbalance", 0.35),
             liquidity_sweep_detected=overrides.get("liquidity_sweep_detected", False),
             volatility_regime=overrides.get("volatility_regime", "normal"),
+            microstructure_proxy=overrides.get(
+                "microstructure_proxy",
+                MicrostructureProxySignal(
+                    state="bullish",
+                    score=0.55,
+                    directional_pressure=0.6,
+                    relative_volume=0.7,
+                    range_expansion=0.4,
+                    vwap_bias=0.5,
+                    wick_bias=0.2,
+                    persistence=0.5,
+                    reason="price_volume_vwap_alignment",
+                ),
+            ),
             higher_timeframe_trend=overrides.get(
                 "higher_timeframe_trend",
                 HigherTimeframeTrend(

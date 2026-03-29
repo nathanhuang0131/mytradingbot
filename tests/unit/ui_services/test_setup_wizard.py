@@ -24,6 +24,8 @@ def test_setup_wizard_ui_service_exposes_profiles_presets_and_recommended_defaul
     assert payload.recommended_defaults["risk.higher_timeframe_fast_ma_length"] == 5
     assert payload.recommended_defaults["risk.higher_timeframe_slow_ma_length"] == 10
     assert payload.recommended_defaults["risk.disable_pseudo_order_book_gate"] is True
+    assert payload.recommended_defaults["risk.microstructure_proxy_mode"] == "soft_rank"
+    assert payload.recommended_defaults["risk.microstructure_proxy_min_alignment_score"] == 0.15
     assert payload.recommended_defaults["risk.cooldown_minutes"] == 10
 
 

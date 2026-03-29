@@ -57,6 +57,7 @@ RejectionReasonCode = Literal[
     "edge_after_cost_below_buffer",
     "vwap_relationship_blocked",
     "higher_timeframe_trend_blocked",
+    "microstructure_proxy_blocked",
     "spread_too_wide",
     "liquidity_too_low",
     "liquidity_stress_too_high",
@@ -151,6 +152,9 @@ class DecisionAuditRecord(BaseModel):
     liquidity_score: float | None = None
     liquidity_stress: float | None = None
     vwap_alignment_passed: bool | None = None
+    microstructure_state: str | None = None
+    microstructure_score: float | None = None
+    microstructure_relation: str | None = None
     higher_timeframe_state: str | None = None
     higher_timeframe_reason: str | None = None
     higher_timeframe_source_timeframe: str | None = None

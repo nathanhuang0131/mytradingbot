@@ -324,6 +324,9 @@ def test_runtime_service_writes_detailed_audit_and_tuning_artifacts(
     assert "expected_edge_after_cost" in audit_csv
     assert "quality_score" in audit_csv
     assert "higher_timeframe_state" in audit_csv
+    assert "microstructure_state" in audit_csv
+    assert "microstructure_score" in audit_csv
+    assert "microstructure_relation" in audit_csv
     assert "rejection_reasons" in audit_csv
     assert tuning_csv_path.exists()
     assert "top symbols blocked by threshold" in tuning_md_path.read_text(encoding="utf-8").lower()

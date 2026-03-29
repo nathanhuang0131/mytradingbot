@@ -3,6 +3,7 @@
 from mytradingbot.signals.models import (
     ExitPlan,
     MarketSnapshot,
+    MicrostructureProxySignal,
     QlibPrediction,
     SignalBundle,
     StrategyDecision,
@@ -12,6 +13,7 @@ from mytradingbot.signals.models import (
 __all__ = [
     "ExitPlan",
     "MarketSnapshot",
+    "MicrostructureProxySignal",
     "QlibPrediction",
     "SignalBundle",
     "StrategyDecision",

@@ -50,6 +50,10 @@ def apply_resolved_config_to_settings(
         config.risk.higher_timeframe_slow_ma_length
     )
     resolved.scalping.enable_pseudo_order_book_gate = not config.risk.disable_pseudo_order_book_gate
+    resolved.scalping.microstructure_proxy_mode = config.risk.microstructure_proxy_mode
+    resolved.scalping.microstructure_proxy_min_alignment_score = (
+        config.risk.microstructure_proxy_min_alignment_score
+    )
     resolved.scalping.stop_loss_buffer_bps = config.execution.stop_loss_percent * 100
     return resolved
 

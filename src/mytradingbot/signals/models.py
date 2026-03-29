@@ -7,6 +7,7 @@ import logging
 from mytradingbot.core.models import (
     ExitPlan,
     MarketSnapshot,
+    MicrostructureProxySignal,
     QlibPrediction,
     SignalBundle,
     StrategyDecision,
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "ExitPlan",
     "MarketSnapshot",
+    "MicrostructureProxySignal",
     "QlibPrediction",
     "SignalBundle",
     "StrategyDecision",

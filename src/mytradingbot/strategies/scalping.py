@@ -11,10 +11,12 @@ from mytradingbot.core.models import (
     CandidateQualitySnapshot,
     ExitPlan,
     HigherTimeframeTrend,
+    MicrostructureProxySignal,
     SignalBundle,
     StrategyDecision,
 )
 from mytradingbot.core.settings import AppSettings
+from mytradingbot.signals.microstructure import microstructure_relation_for_direction
 from mytradingbot.strategies.base import BaseStrategy
 
 logger = logging.getLogger(__name__)
@@ -23,12 +25,13 @@ logger = logging.getLogger(__name__)
 # throughput. These weights are deterministic so the operator can compare runs
 # cleanly, and they avoid double-counting qlib raw score because the current adapter
 # already maps predicted_return directly from score.
-PREDICTED_RETURN_WEIGHT = 0.20
-CONFIDENCE_WEIGHT = 0.15
+PREDICTED_RETURN_WEIGHT = 0.17
+CONFIDENCE_WEIGHT = 0.12
 EDGE_AFTER_COST_WEIGHT = 0.30
-SPREAD_QUALITY_WEIGHT = 0.10
+SPREAD_QUALITY_WEIGHT = 0.08
 LIQUIDITY_WEIGHT = 0.10
 TREND_ALIGNMENT_WEIGHT = 0.10
+MICROSTRUCTURE_WEIGHT = 0.08
 REWARD_RISK_WEIGHT = 0.05
 
 
@@ -50,6 +53,10 @@ class ScalpingStrategy(BaseStrategy):
             self.settings.scalping.higher_timeframe_filter_enabled
         )
         self.pseudo_order_book_gate_enabled = self.settings.scalping.enable_pseudo_order_book_gate
+        self.microstructure_proxy_mode = self.settings.scalping.microstructure_proxy_mode
+        self.microstructure_proxy_min_alignment_score = (
+            self.settings.scalping.microstructure_proxy_min_alignment_score
+        )
         self.timeout_seconds = self.settings.scalping.max_holding_seconds
 
     def evaluate(self, signal: SignalBundle) -> StrategyDecision:
@@ -68,16 +75,24 @@ class ScalpingStrategy(BaseStrategy):
 
         trend = self._resolve_higher_timeframe_trend(signal)
         cost_estimate = self._estimate_candidate_cost(signal)
+        microstructure = self._resolve_microstructure_proxy(signal)
         quality = self._build_quality_snapshot(
             signal,
             trend=trend,
+            microstructure=microstructure,
             cost_estimate=cost_estimate,
             bracket_plan=None,
         )
 
         self._apply_qlib_signal_gate(signal, passed_filters, failed_filters)
         self._check_thresholds(signal, cost_estimate, passed_filters, failed_filters)
-        self._check_market_structure(signal, trend, passed_filters, failed_filters)
+        self._check_market_structure(
+            signal,
+            trend,
+            microstructure,
+            passed_filters,
+            failed_filters,
+        )
         self._check_session_logic(signal, passed_filters, failed_filters)
 
         if failed_filters:
@@ -94,6 +109,7 @@ class ScalpingStrategy(BaseStrategy):
         quality = self._build_quality_snapshot(
             signal,
             trend=trend,
+            microstructure=microstructure,
             cost_estimate=cost_estimate,
             bracket_plan=bracket_plan,
         )
@@ -178,6 +194,7 @@ class ScalpingStrategy(BaseStrategy):
         self,
         signal: SignalBundle,
         trend: HigherTimeframeTrend,
+        microstructure: MicrostructureProxySignal,
         passed_filters: list[str],
         failed_filters: list[str],
     ) -> None:
@@ -197,6 +214,22 @@ class ScalpingStrategy(BaseStrategy):
                 passed_filters.append("higher_timeframe_trend_alignment")
         else:
             passed_filters.append("higher_timeframe_trend_filter_disabled")
+
+        alignment_score, relation = microstructure_relation_for_direction(
+            microstructure,
+            signal.prediction.direction,
+        )
+        if self.microstructure_proxy_mode == "confirmation_gate":
+            if relation in {"unavailable", "neutral"}:
+                passed_filters.append("microstructure_proxy_unavailable")
+            elif alignment_score < self.microstructure_proxy_min_alignment_score:
+                failed_filters.append("microstructure_proxy_alignment")
+            else:
+                passed_filters.append("microstructure_proxy_alignment")
+        elif self.microstructure_proxy_mode == "soft_rank":
+            passed_filters.append("microstructure_proxy_soft_rank")
+        else:
+            passed_filters.append("microstructure_proxy_off")
 
         if signal.market.spread_bps > self.max_spread_bps:
             failed_filters.append("spread_filter")
@@ -406,6 +439,25 @@ class ScalpingStrategy(BaseStrategy):
             reason="higher_timeframe_trend_missing",
         )
 
+    @staticmethod
+    def _resolve_microstructure_proxy(signal: SignalBundle) -> MicrostructureProxySignal:
+        raw_proxy = signal.metadata.get("microstructure_proxy") or signal.market.microstructure_proxy
+        if isinstance(raw_proxy, MicrostructureProxySignal):
+            return raw_proxy
+        if isinstance(raw_proxy, dict):
+            return MicrostructureProxySignal.model_validate(raw_proxy)
+        return MicrostructureProxySignal(
+            state="unavailable",
+            score=0.0,
+            directional_pressure=0.0,
+            relative_volume=0.0,
+            range_expansion=0.0,
+            vwap_bias=0.0,
+            wick_bias=0.0,
+            persistence=0.0,
+            reason="microstructure_proxy_missing",
+        )
+
     def _estimate_candidate_cost(self, signal: SignalBundle) -> CandidateCostEstimate:
         price = max(signal.market.last_price, 0.01)
         gross_predicted_return = abs(signal.prediction.predicted_return)
@@ -439,6 +491,7 @@ class ScalpingStrategy(BaseStrategy):
         signal: SignalBundle,
         *,
         trend: HigherTimeframeTrend,
+        microstructure: MicrostructureProxySignal,
         cost_estimate: CandidateCostEstimate,
         bracket_plan: BracketPlan | None,
     ) -> CandidateQualitySnapshot:
@@ -465,6 +518,14 @@ class ScalpingStrategy(BaseStrategy):
             trend_component = 1.0 if trend.long_allowed else 0.0
         else:
             trend_component = 1.0 if trend.short_allowed else 0.0
+        alignment_score, relation = microstructure_relation_for_direction(
+            microstructure,
+            direction,
+        )
+        if relation == "unavailable":
+            microstructure_component = 0.5
+        else:
+            microstructure_component = max(0.0, min(1.0, (alignment_score + 1.0) / 2))
         reward_risk_ratio = bracket_plan.reward_risk_ratio if bracket_plan is not None else None
         reward_risk_component = 0.0
         if reward_risk_ratio is not None and self.settings.scalping.minimum_reward_risk_ratio > 0:
@@ -479,6 +540,7 @@ class ScalpingStrategy(BaseStrategy):
             + (spread_quality_component * SPREAD_QUALITY_WEIGHT)
             + (liquidity_component * LIQUIDITY_WEIGHT)
             + (trend_component * TREND_ALIGNMENT_WEIGHT)
+            + (microstructure_component * MICROSTRUCTURE_WEIGHT)
             + (reward_risk_component * REWARD_RISK_WEIGHT)
         )
         return CandidateQualitySnapshot(
@@ -486,12 +548,15 @@ class ScalpingStrategy(BaseStrategy):
             expected_edge_after_cost=cost_estimate.expected_edge_after_cost,
             cost_estimate=cost_estimate,
             trend=trend,
+            microstructure=microstructure,
+            microstructure_relation=relation,
             predicted_return_component=predicted_return_component,
             confidence_component=confidence_component,
             edge_component=edge_component,
             spread_quality_component=spread_quality_component,
             liquidity_component=liquidity_component,
             trend_component=trend_component,
+            microstructure_component=microstructure_component,
             reward_risk_component=reward_risk_component,
             reward_risk_ratio=reward_risk_ratio,
             expected_net_profit=(

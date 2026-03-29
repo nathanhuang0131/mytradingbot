@@ -717,3 +717,149 @@ def test_run_session_applies_top_n_selection_after_hard_filters(tmp_path) -> Non
         and row["final_rejection_reason_detail"] == "higher_timeframe_trend_alignment"
         for row in audit_payload
     )
+
+
+def test_run_session_microstructure_proxy_can_break_quality_ties_for_top_n(tmp_path) -> None:
+    settings = AppSettings(paths=RepoPaths.for_root(tmp_path))
+    predictions_path = tmp_path / "predictions_microstructure.json"
+    market_path = tmp_path / "market_microstructure.json"
+    generated_at = datetime(2026, 3, 28, 1, 0, tzinfo=timezone.utc)
+    predictions_path.write_text(
+        json.dumps(
+            [
+                {
+                    "symbol": "AAPL",
+                    "score": 0.008,
+                    "predicted_return": 0.008,
+                    "confidence": 0.88,
+                    "rank": 2,
+                    "direction": "long",
+                    "horizon": "intraday",
+                    "generated_at": generated_at.isoformat(),
+                },
+                {
+                    "symbol": "MSFT",
+                    "score": 0.008,
+                    "predicted_return": 0.008,
+                    "confidence": 0.88,
+                    "rank": 1,
+                    "direction": "long",
+                    "horizon": "intraday",
+                    "generated_at": generated_at.isoformat(),
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    market_path.write_text(
+        json.dumps(
+            [
+                {
+                    "symbol": "AAPL",
+                    "last_price": 100.0,
+                    "vwap": 99.4,
+                    "spread_bps": 1.0,
+                    "volume": 1500000,
+                    "liquidity_score": 0.95,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": 0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                    "microstructure_proxy": {
+                        "state": "bullish",
+                        "score": 0.72,
+                        "directional_pressure": 0.74,
+                        "relative_volume": 0.82,
+                        "range_expansion": 0.48,
+                        "vwap_bias": 0.52,
+                        "wick_bias": 0.18,
+                        "persistence": 0.65,
+                        "reason": "price_volume_vwap_alignment"
+                    },
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bullish",
+                        "long_allowed": True,
+                        "short_allowed": False,
+                        "reason": "close_above_vwap_and_fast_above_slow"
+                    },
+                    "timestamp": generated_at.isoformat(),
+                },
+                {
+                    "symbol": "MSFT",
+                    "last_price": 100.0,
+                    "vwap": 99.4,
+                    "spread_bps": 1.0,
+                    "volume": 1500000,
+                    "liquidity_score": 0.95,
+                    "liquidity_stress": 0.2,
+                    "order_book_imbalance": 0.35,
+                    "liquidity_sweep_detected": False,
+                    "volatility_regime": "normal",
+                    "microstructure_proxy": {
+                        "state": "bearish",
+                        "score": -0.72,
+                        "directional_pressure": -0.74,
+                        "relative_volume": 0.82,
+                        "range_expansion": 0.48,
+                        "vwap_bias": -0.52,
+                        "wick_bias": -0.18,
+                        "persistence": -0.65,
+                        "reason": "price_volume_vwap_alignment"
+                    },
+                    "higher_timeframe_trend": {
+                        "source_timeframe": "15m",
+                        "fast_ma_length": 5,
+                        "slow_ma_length": 10,
+                        "state": "bullish",
+                        "long_allowed": True,
+                        "short_allowed": False,
+                        "reason": "close_above_vwap_and_fast_above_slow"
+                    },
+                    "timestamp": generated_at.isoformat(),
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    runtime_service = RuntimeStateService(settings=settings)
+    wizard_service = SetupWizardService(settings=settings)
+    state = wizard_service.initialize_wizard(profile_name="Alice Trader", source_mode="create_new")
+    state.alpha.side_mode = "both"
+    state.alpha.candidate_count = 2
+    state.alpha.top_n_per_cycle = 1
+    state.alpha.predicted_return_threshold = 0.0
+    state.alpha.confidence_threshold = 0.0
+    state.risk.higher_timeframe_filter_enabled = True
+    state.risk.microstructure_proxy_mode = "soft_rank"
+    resolved_config = wizard_service.finalize_setup(state, generated_symbols=["AAPL", "MSFT"])
+
+    service = TradingPlatformService(
+        settings=settings,
+        qlib_service=QlibWorkflowService(settings=settings, predictions_path=predictions_path),
+        market_data_service=MarketDataService(settings=settings, market_snapshot_path=market_path),
+        runtime_state_service=runtime_service,
+    )
+
+    result = service.run_session(
+        strategy_name="scalping",
+        mode=RuntimeMode.PAPER,
+        session_config=resolved_config,
+        symbols_file=Path(resolved_config.active_symbols_path),
+    )
+
+    assert result.session_summary.trade_count == 1
+    audit_path = settings.paths.reports_signals_dir / f"{result.session_summary.session_id}_decision_audit.json"
+    audit_payload = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert any(
+        row["symbol"] == "AAPL" and row["final_decision_status"].startswith("accepted")
+        for row in audit_payload
+    )
+    assert any(
+        row["symbol"] == "MSFT"
+        and row["final_rejection_reason_detail"] == "top_n_selection_cutoff"
+        for row in audit_payload
+    )

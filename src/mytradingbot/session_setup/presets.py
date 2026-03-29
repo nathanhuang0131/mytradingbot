@@ -124,6 +124,8 @@ def build_wizard_presets() -> dict[PresetName, dict[str, object]]:
                 higher_timeframe_fast_ma_length=5,
                 higher_timeframe_slow_ma_length=10,
                 disable_pseudo_order_book_gate=True,
+                microstructure_proxy_mode="soft_rank",
+                microstructure_proxy_min_alignment_score=0.15,
             ),
             "execution": ExecutionProfile(),
         },

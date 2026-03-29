@@ -56,6 +56,8 @@ class SetupWizardService:
             "risk.higher_timeframe_fast_ma_length": 5,
             "risk.higher_timeframe_slow_ma_length": 10,
             "risk.disable_pseudo_order_book_gate": True,
+            "risk.microstructure_proxy_mode": "soft_rank",
+            "risk.microstructure_proxy_min_alignment_score": 0.15,
             "risk.cooldown_minutes": 10,
             "execution.bracket_enabled": True,
         }

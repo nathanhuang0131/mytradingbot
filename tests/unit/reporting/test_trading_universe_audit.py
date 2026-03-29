@@ -84,6 +84,9 @@ def test_trading_universe_audit_service_generates_loop_markdown(tmp_path) -> Non
                 "expected_edge_after_cost": 0.0108,
                 "quality_score": 0.88,
                 "higher_timeframe_state": "bullish",
+                "microstructure_state": "bullish",
+                "microstructure_score": 0.62,
+                "microstructure_relation": "supports",
                 "rule_checks": [
                     {"stage": "freshness", "name": "predictions_fresh", "passed": True},
                     {"stage": "strategy", "name": "predicted_return_threshold", "passed": True},
@@ -106,6 +109,9 @@ def test_trading_universe_audit_service_generates_loop_markdown(tmp_path) -> Non
                 "expected_edge_after_cost": 0.0001,
                 "quality_score": 0.51,
                 "higher_timeframe_state": "bullish",
+                "microstructure_state": "bearish",
+                "microstructure_score": -0.41,
+                "microstructure_relation": "weak_contradiction",
                 "rule_checks": [
                     {"stage": "freshness", "name": "predictions_fresh", "passed": True},
                     {"stage": "strategy", "name": "predicted_return_threshold", "passed": True},
@@ -131,6 +137,9 @@ def test_trading_universe_audit_service_generates_loop_markdown(tmp_path) -> Non
                 "expected_edge_after_cost": -0.0001,
                 "quality_score": 0.2,
                 "higher_timeframe_state": "neutral",
+                "microstructure_state": "neutral",
+                "microstructure_score": 0.02,
+                "microstructure_relation": "neutral",
                 "rule_checks": [
                     {"stage": "freshness", "name": "predictions_fresh", "passed": True},
                     {"stage": "strategy", "name": "predicted_return_threshold", "passed": False},
@@ -168,3 +177,4 @@ def test_trading_universe_audit_service_generates_loop_markdown(tmp_path) -> Non
     assert "predicted_return_threshold" in text
     assert "Edge After Cost" in text
     assert "HTF Trend" in text
+    assert "Microstructure" in text

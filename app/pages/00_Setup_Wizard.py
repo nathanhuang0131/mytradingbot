@@ -620,8 +620,29 @@ def _render_risk_step(state: SetupWizardState) -> None:
                 help="For equities, this path uses bar/quote-derived spread and VWAP context rather than pretending to have true L2 depth.",
             )
         )
+        state.risk.microstructure_proxy_mode = st.selectbox(
+            "Microstructure proxy mode",
+            options=["off", "soft_rank", "confirmation_gate"],
+            index=["off", "soft_rank", "confirmation_gate"].index(
+                state.risk.microstructure_proxy_mode
+            ),
+            key=_wizard_state_key("microstructure_proxy_mode"),
+            help="Uses an honest bars/VWAP participation proxy instead of pretending to have stock L2 depth. Soft rank is the least disruptive default.",
+        )
+        state.risk.microstructure_proxy_min_alignment_score = float(
+            st.number_input(
+                "Microstructure gate minimum alignment score",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(state.risk.microstructure_proxy_min_alignment_score),
+                step=0.05,
+                format="%.2f",
+                key=_wizard_state_key("microstructure_proxy_min_alignment_score"),
+                help="Only used when confirmation_gate mode is selected. Longs need positive support above this threshold, shorts need negative support below the mirrored threshold.",
+            )
+        )
         st.caption(
-            "Recommended overnight setting: keep the higher-timeframe filter on and keep the pseudo order-book gate disabled."
+            "Recommended overnight setting: keep the higher-timeframe filter on, keep the pseudo order-book gate disabled, and use the microstructure proxy in soft-rank mode."
         )
     _set_wizard_state(state)
 

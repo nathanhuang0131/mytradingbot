@@ -251,6 +251,14 @@ class SetupWizardUIService:
                         "risk.disable_pseudo_order_book_gate",
                         state.risk.disable_pseudo_order_book_gate,
                     ),
+                    describe_item(
+                        "risk.microstructure_proxy_mode",
+                        state.risk.microstructure_proxy_mode,
+                    ),
+                    describe_item(
+                        "risk.microstructure_proxy_min_alignment_score",
+                        state.risk.microstructure_proxy_min_alignment_score,
+                    ),
                 ],
             ),
             DescriptiveSection(

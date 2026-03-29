@@ -148,7 +148,7 @@ The `Alpha & Model` step now exposes the scalping qlib gates directly:
 - `Prediction refresh cadence` default: `600 seconds`
 - `Cooldown after exit` default: `10 minutes`
 
-The overnight scalping path also keeps the spread proxy at `6.0` bps by default, requires higher-timeframe directional alignment from `15m` bars with `EMA(5)` vs `EMA(10)`, and leaves the pseudo order-book gate disabled by default.
+The overnight scalping path also keeps the spread proxy at `6.0` bps by default, requires higher-timeframe directional alignment from `15m` bars with `EMA(5)` vs `EMA(10)`, leaves the pseudo order-book gate disabled by default, and enables the new microstructure proxy in `soft_rank` mode with a `0.15` confirmation threshold available if you switch it to a hard gate.
 
 Smarter selection is preferred over blindly increasing trade count. In the current equities path, the platform uses quotes/spread proxies, VWAP, and normalized bars. It does not pretend to have a true Alpaca stock L2 order book. Candidate approval therefore combines:
 
@@ -157,9 +157,12 @@ Smarter selection is preferred over blindly increasing trade count. In the curre
 - spread quality
 - liquidity quality
 - higher-timeframe trend alignment
+- lightweight microstructure proxy confirmation
 - bracket reward/risk quality
 
 `edge after cost` means the directional predicted return after subtracting estimated spread, slippage, configured per-share fees, and a lightweight equities regulatory-fee hook. A candidate must clear a positive buffer, not merely scrape above zero.
+
+The microstructure proxy is not true Level 2 depth. It is a lightweight equities confirmation layer built from already-loaded bars and existing intraday features such as candle body pressure, relative volume, range expansion, VWAP bias, wick structure, and short persistence. By default it adjusts ranking without blocking trades, so current update/build/train/predict flows stay unchanged and the hot loop does not add network calls.
 
 The lower predicted-return default is a controlled throughput adjustment for the 5-minute scalping horizon. The loop still wakes every `300` seconds, but predictions now refresh every `600` seconds by default so the system is not constantly chasing a refresh path that often takes longer than one loop interval. The smarter top-N and trend-alignment path improves selection discipline, not profitability guarantees.
 

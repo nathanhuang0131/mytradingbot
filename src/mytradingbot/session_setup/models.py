@@ -126,6 +126,8 @@ class RiskProfile(BaseModel):
     higher_timeframe_fast_ma_length: int = 5
     higher_timeframe_slow_ma_length: int = 10
     disable_pseudo_order_book_gate: bool = True
+    microstructure_proxy_mode: Literal["off", "soft_rank", "confirmation_gate"] = "soft_rank"
+    microstructure_proxy_min_alignment_score: float = 0.15
 
 
 class ExecutionProfile(BaseModel):

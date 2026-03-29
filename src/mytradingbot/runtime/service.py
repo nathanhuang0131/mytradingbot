@@ -20,6 +20,7 @@ from mytradingbot.core.models import (
 )
 from mytradingbot.core.settings import AppSettings
 from mytradingbot.reporting.analytics import RealizedAnalyticsExporter
+from mytradingbot.signals.microstructure import microstructure_relation_for_direction
 from mytradingbot.runtime.models import (
     BrokerMode,
     DecisionPipelineReadiness,
@@ -45,6 +46,7 @@ FILTER_REASON_MAP: dict[str, RejectionReasonCode] = {
     "edge_after_cost_buffer": "edge_after_cost_below_buffer",
     "vwap_relationship": "vwap_relationship_blocked",
     "higher_timeframe_trend_alignment": "higher_timeframe_trend_blocked",
+    "microstructure_proxy_alignment": "microstructure_proxy_blocked",
     "spread_filter": "spread_too_wide",
     "liquidity_filter": "liquidity_too_low",
     "liquidity_stress_filter": "liquidity_stress_too_high",
@@ -217,6 +219,18 @@ class RuntimeStateService:
         quality = strategy_outcome.quality if strategy_outcome is not None else None
         cost_estimate = quality.cost_estimate if quality is not None else None
         trend = quality.trend if quality is not None else signal.market.higher_timeframe_trend
+        microstructure = (
+            quality.microstructure
+            if quality is not None and quality.microstructure is not None
+            else signal.market.microstructure_proxy
+        )
+        if quality is not None and quality.microstructure_relation is not None:
+            microstructure_relation = quality.microstructure_relation
+        else:
+            _, microstructure_relation = microstructure_relation_for_direction(
+                microstructure,
+                signal.prediction.direction,
+            )
         rejection_code = self.map_rejection_reason(rejection_detail)
         audit = DecisionAuditRecord(
             session_id=context.session_id,
@@ -262,6 +276,9 @@ class RuntimeStateService:
             liquidity_score=signal.market.liquidity_score,
             liquidity_stress=signal.market.liquidity_stress,
             vwap_alignment_passed=vwap_alignment_passed,
+            microstructure_state=microstructure.state if microstructure is not None else None,
+            microstructure_score=microstructure.score if microstructure is not None else None,
+            microstructure_relation=microstructure_relation,
             higher_timeframe_state=trend.state if trend is not None else None,
             higher_timeframe_reason=trend.reason if trend is not None else None,
             higher_timeframe_source_timeframe=(
@@ -436,6 +453,9 @@ class RuntimeStateService:
                     "liquidity_score": audit.liquidity_score,
                     "liquidity_stress": audit.liquidity_stress,
                     "vwap_alignment_passed": audit.vwap_alignment_passed,
+                    "microstructure_state": audit.microstructure_state,
+                    "microstructure_score": audit.microstructure_score,
+                    "microstructure_relation": audit.microstructure_relation,
                     "higher_timeframe_state": audit.higher_timeframe_state,
                     "higher_timeframe_reason": audit.higher_timeframe_reason,
                     "bracket_expectancy_passed": audit.bracket_expectancy_passed,
@@ -617,6 +637,53 @@ class RuntimeStateService:
                             value=quality.trend.state,
                         ),
                         RuleCheckRecord(
+                            stage="strategy",
+                            name="microstructure_proxy",
+                            value={
+                                "state": (
+                                    quality.microstructure.state
+                                    if quality.microstructure is not None
+                                    else None
+                                ),
+                                "score": (
+                                    quality.microstructure.score
+                                    if quality.microstructure is not None
+                                    else None
+                                ),
+                                "relation": quality.microstructure_relation,
+                                "directional_pressure": (
+                                    quality.microstructure.directional_pressure
+                                    if quality.microstructure is not None
+                                    else None
+                                ),
+                                "relative_volume": (
+                                    quality.microstructure.relative_volume
+                                    if quality.microstructure is not None
+                                    else None
+                                ),
+                                "range_expansion": (
+                                    quality.microstructure.range_expansion
+                                    if quality.microstructure is not None
+                                    else None
+                                ),
+                                "vwap_bias": (
+                                    quality.microstructure.vwap_bias
+                                    if quality.microstructure is not None
+                                    else None
+                                ),
+                                "wick_bias": (
+                                    quality.microstructure.wick_bias
+                                    if quality.microstructure is not None
+                                    else None
+                                ),
+                                "persistence": (
+                                    quality.microstructure.persistence
+                                    if quality.microstructure is not None
+                                    else None
+                                ),
+                            },
+                        ),
+                        RuleCheckRecord(
                             stage="runtime",
                             name="top_n_selection",
                             passed=quality.selected_in_top_n,
@@ -737,8 +804,8 @@ class RuntimeStateService:
             f"- broker_mode: `{broker_mode}`",
             f"- broker_description: `{broker_mode_description(broker_mode)}`",
             "",
-            "| Symbol | Timestamp | Source | Status | Rejection | Score | Confidence | Predicted Return | Edge After Cost | Quality Score | Trend | Spread (bps) | Liquidity | VWAP OK | Expectancy OK | Rejection Reasons |",
-            "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | --- | --- | --- |",
+            "| Symbol | Timestamp | Source | Status | Rejection | Score | Confidence | Predicted Return | Edge After Cost | Quality Score | Trend | Microstructure | Spread (bps) | Liquidity | VWAP OK | Expectancy OK | Rejection Reasons |",
+            "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | --- | --- | --- |",
         ]
         for audit in audits:
             edge_after_cost = (
@@ -752,7 +819,9 @@ class RuntimeStateService:
                 f"{audit.final_rejection_reason_code or ''} | {audit.qlib_raw_score or 0:.4f} | "
                 f"{audit.confidence or 0:.4f} | {audit.predicted_return or 0:.4f} | "
                 f"{edge_after_cost:.4f} | {quality_score:.4f} | "
-                f"{audit.higher_timeframe_state or ''} | {audit.spread_bps or 0:.2f} | {audit.liquidity_score or 0:.2f} | "
+                f"{audit.higher_timeframe_state or ''} | "
+                f"{(audit.microstructure_relation or '')}:{(audit.microstructure_score or 0):.2f} | "
+                f"{audit.spread_bps or 0:.2f} | {audit.liquidity_score or 0:.2f} | "
                 f"{audit.vwap_alignment_passed} | {audit.bracket_expectancy_passed} | "
                 f"{', '.join(audit.rejection_reasons) if audit.rejection_reasons else ''} |"
             )
@@ -808,6 +877,7 @@ class RuntimeStateService:
         spread_blocked: Counter[str] = Counter()
         invalid_payload_blocked: Counter[str] = Counter()
         trend_blocked: Counter[str] = Counter()
+        microstructure_blocked: Counter[str] = Counter()
         top_ranked_symbols: Counter[str] = Counter()
         negative_edge_symbols: Counter[str] = Counter()
         top_n_approvals = 0
@@ -830,6 +900,8 @@ class RuntimeStateService:
                 spread_blocked[audit.symbol] += 1
             if RuntimeStateService._audit_failed_check(audit, "higher_timeframe_trend_alignment"):
                 trend_blocked[audit.symbol] += 1
+            if RuntimeStateService._audit_failed_check(audit, "microstructure_proxy_alignment"):
+                microstructure_blocked[audit.symbol] += 1
             if audit.final_rejection_reason_code == "invalid_signal_payload":
                 invalid_payload_blocked[audit.symbol] += 1
             if audit.selection_rank == 1:
@@ -875,6 +947,9 @@ class RuntimeStateService:
         lines.append("## Symbols Blocked By Trend Alignment")
         lines.extend(RuntimeStateService._format_counter_lines(trend_blocked))
         lines.append("")
+        lines.append("## Symbols Blocked By Microstructure Confirmation")
+        lines.extend(RuntimeStateService._format_counter_lines(microstructure_blocked))
+        lines.append("")
         lines.append("## Highest Ranked Symbols")
         lines.extend(RuntimeStateService._format_counter_lines(top_ranked_symbols))
         lines.append("")
@@ -905,6 +980,7 @@ class RuntimeStateService:
         spread_blocked: Counter[str] = Counter()
         invalid_payload_blocked: Counter[str] = Counter()
         trend_blocked: Counter[str] = Counter()
+        microstructure_blocked: Counter[str] = Counter()
         top_ranked_symbols: Counter[str] = Counter()
         negative_edge_symbols: Counter[str] = Counter()
         edge_distribution: Counter[str] = Counter()
@@ -923,6 +999,8 @@ class RuntimeStateService:
                 spread_blocked[audit.symbol] += 1
             if self._audit_failed_check(audit, "higher_timeframe_trend_alignment"):
                 trend_blocked[audit.symbol] += 1
+            if self._audit_failed_check(audit, "microstructure_proxy_alignment"):
+                microstructure_blocked[audit.symbol] += 1
             if audit.final_rejection_reason_code == "invalid_signal_payload":
                 invalid_payload_blocked[audit.symbol] += 1
             if audit.selection_rank == 1:
@@ -960,6 +1038,7 @@ class RuntimeStateService:
         rows.extend(self._counter_rows("blocked_by_spread", spread_blocked))
         rows.extend(self._counter_rows("blocked_by_invalid_payload", invalid_payload_blocked))
         rows.extend(self._counter_rows("blocked_by_trend_alignment", trend_blocked))
+        rows.extend(self._counter_rows("blocked_by_microstructure_confirmation", microstructure_blocked))
         rows.extend(self._counter_rows("highest_ranked_symbol", top_ranked_symbols))
         rows.extend(self._counter_rows("positive_return_negative_edge", negative_edge_symbols))
         rows.extend(self._counter_rows("edge_after_cost_distribution", edge_distribution))

@@ -49,6 +49,8 @@ def test_scalping_runtime_defaults_align_with_overnight_tuning_pass() -> None:
     assert settings.scalping.higher_timeframe_fast_ma_length == 5
     assert settings.scalping.higher_timeframe_slow_ma_length == 10
     assert settings.scalping.enable_pseudo_order_book_gate is False
+    assert settings.scalping.microstructure_proxy_mode == "soft_rank"
+    assert settings.scalping.microstructure_proxy_min_alignment_score == 0.15
 
 
 def test_flat_env_aliases_load_broker_credentials(monkeypatch) -> None:

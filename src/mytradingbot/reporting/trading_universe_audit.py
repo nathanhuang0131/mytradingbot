@@ -20,6 +20,9 @@ class SymbolDecisionTrace:
     expected_edge_after_cost: float | None
     quality_score: float | None
     higher_timeframe_state: str | None
+    microstructure_state: str | None
+    microstructure_score: float | None
+    microstructure_relation: str | None
     passed_filters: list[str]
     failed_filters: list[str]
     final_decision_status: str
@@ -207,6 +210,15 @@ class TradingUniverseAuditService:
                     higher_timeframe_state=self._optional_text(
                         row.get("higher_timeframe_state")
                     ),
+                    microstructure_state=self._optional_text(
+                        row.get("microstructure_state")
+                    ),
+                    microstructure_score=self._optional_float(
+                        row.get("microstructure_score")
+                    ),
+                    microstructure_relation=self._optional_text(
+                        row.get("microstructure_relation")
+                    ),
                     passed_filters=passed_filters,
                     failed_filters=failed_filters,
                     final_decision_status=final_status,
@@ -334,8 +346,8 @@ class TradingUniverseAuditService:
                     f"- Blocked symbols ({len(session.blocked_symbols)}): {self._format_symbol_list(session.blocked_symbols)}",
                     f"- top rejection reasons: {', '.join(session.top_rejection_reasons) if session.top_rejection_reasons else 'none'}",
                     "",
-                    "| Symbol | Qlib Score | Predicted Return | Edge After Cost | Quality Score | HTF Trend | Signal Source | Passed Filters | Failed Filters | Final Decision | Decision Reason |",
-                    "| --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- |",
+                    "| Symbol | Qlib Score | Predicted Return | Edge After Cost | Quality Score | HTF Trend | Microstructure | Signal Source | Passed Filters | Failed Filters | Final Decision | Decision Reason |",
+                    "| --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- |",
                 ]
             )
             for trace in session.traces:
@@ -353,9 +365,15 @@ class TradingUniverseAuditService:
                 quality_score = (
                     f"{trace.quality_score:.4f}" if trace.quality_score is not None else "n/a"
                 )
+                microstructure = (
+                    f"{trace.microstructure_relation or trace.microstructure_state or 'n/a'}"
+                    f" ({trace.microstructure_score:.2f})"
+                    if trace.microstructure_score is not None
+                    else (trace.microstructure_relation or trace.microstructure_state or "n/a")
+                )
                 lines.append(
                     f"| {trace.symbol} | {score} | {predicted_return} | {expected_edge_after_cost} | "
-                    f"{quality_score} | {trace.higher_timeframe_state or 'n/a'} | {trace.signal_source} | "
+                    f"{quality_score} | {trace.higher_timeframe_state or 'n/a'} | {microstructure} | {trace.signal_source} | "
                     f"{passed_filters} | {failed_filters} | {trace.final_decision_status} | {trace.reason} |"
                 )
         lines.append("")

@@ -87,6 +87,20 @@ class HigherTimeframeTrend(BaseModel):
     slow_ma_slope_bps: float | None = None
 
 
+class MicrostructureProxySignal(BaseModel):
+    """Lightweight equities microstructure proxy built from bars/VWAP context."""
+
+    state: Literal["bullish", "bearish", "neutral", "unavailable"]
+    score: float
+    directional_pressure: float
+    relative_volume: float
+    range_expansion: float
+    vwap_bias: float
+    wick_bias: float
+    persistence: float
+    reason: str
+
+
 class CandidateCostEstimate(BaseModel):
     """Per-candidate edge-versus-cost breakdown expressed in return units."""
 
@@ -106,12 +120,15 @@ class CandidateQualitySnapshot(BaseModel):
     expected_edge_after_cost: float = 0.0
     cost_estimate: CandidateCostEstimate
     trend: HigherTimeframeTrend
+    microstructure: MicrostructureProxySignal | None = None
+    microstructure_relation: str | None = None
     predicted_return_component: float = 0.0
     confidence_component: float = 0.0
     edge_component: float = 0.0
     spread_quality_component: float = 0.0
     liquidity_component: float = 0.0
     trend_component: float = 0.0
+    microstructure_component: float = 0.0
     reward_risk_component: float = 0.0
     reward_risk_ratio: float | None = None
     expected_net_profit: float | None = None
@@ -131,6 +148,7 @@ class MarketSnapshot(BaseModel):
     liquidity_score: float
     liquidity_stress: float
     order_book_imbalance: float
+    microstructure_proxy: MicrostructureProxySignal | None = None
     liquidity_sweep_detected: bool
     volatility_regime: Literal["low", "normal", "high"]
     higher_timeframe_trend: HigherTimeframeTrend | None = None

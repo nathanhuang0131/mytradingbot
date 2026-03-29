@@ -78,9 +78,11 @@ Use the `Alpha & Model` step to adjust the qlib entry gates for scalping:
 
 The overnight scalping profile keeps the spread proxy at `6.0` bps, applies a `15m` higher-timeframe trend filter using `EMA(5)` and `EMA(10)`, and keeps the pseudo order-book gate disabled by default.
 
-Smarter selection is preferred over simply chasing more trades. The runtime now ranks only hard-filter-eligible names and keeps the best few per cycle by combining predicted return, confidence, edge after cost, spread quality, liquidity quality, higher-timeframe alignment, and bracket reward/risk. In the equities path, this is based on bars and quote-level spread proxies, not a fabricated stock L2 book.
+Smarter selection is preferred over simply chasing more trades. The runtime now ranks only hard-filter-eligible names and keeps the best few per cycle by combining predicted return, confidence, edge after cost, spread quality, liquidity quality, higher-timeframe alignment, a lightweight microstructure proxy, and bracket reward/risk. In the equities path, this is based on bars and quote-level spread proxies, not a fabricated stock L2 book.
 
 `edge after cost` is the directional predicted return minus estimated spread, slippage, configured per-share fees, and the lightweight equities regulatory fee hook. It is a throughput and selection discipline control, not a profitability guarantee.
+
+The microstructure proxy is an optional confirmation tool for equities, not a true order book. It uses already-loaded bar context such as candle pressure, relative volume, range expansion, VWAP bias, wick structure, and short persistence. The recommended overnight setting is `soft_rank`, which lets the proxy improve ranking without adding a disruptive hard gate to the existing loop.
 
 ## Canonical Institutional Order
 
@@ -223,6 +225,7 @@ Check:
 - `models/predictions/latest.json` freshness
 - `data/snapshots/market_snapshot.json` freshness
 - qlib return and confidence thresholds
+- microstructure proxy mode and alignment diagnostics in `reports/signals/` and `reports/analytics/`
 - scalping fee-adjusted bracket expectancy
 - whole-share execution rounding effects
 - cooldown and flatten-near-close logic

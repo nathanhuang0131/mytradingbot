@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -233,6 +234,8 @@ class ScalpingBracketSettings(BaseModel):
     higher_timeframe_fast_ma_length: int = 5
     higher_timeframe_slow_ma_length: int = 10
     enable_pseudo_order_book_gate: bool = False
+    microstructure_proxy_mode: Literal["off", "soft_rank", "confirmation_gate"] = "soft_rank"
+    microstructure_proxy_min_alignment_score: float = 0.15
     minimum_reward_risk_ratio: float = 1.4
     estimated_slippage_bps: float = 2.5
     estimated_fee_per_share: float = 0.0

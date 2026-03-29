@@ -1,6 +1,20 @@
-from mytradingbot.core.models import HigherTimeframeTrend
+from mytradingbot.core.models import HigherTimeframeTrend, MicrostructureProxySignal
 from mytradingbot.core.settings import AppSettings, ScalpingBracketSettings
 from mytradingbot.strategies.scalping import ScalpingStrategy
+
+
+def _microstructure_proxy(*, state: str, score: float) -> MicrostructureProxySignal:
+    return MicrostructureProxySignal(
+        state=state,
+        score=score,
+        directional_pressure=score,
+        relative_volume=0.7,
+        range_expansion=0.4,
+        vwap_bias=score / 2,
+        wick_bias=score / 3,
+        persistence=score / 2,
+        reason=f"synthetic_{state}_pressure",
+    )
 
 
 def test_scalping_rejects_signal_below_return_threshold(signal_bundle_factory) -> None:
@@ -259,3 +273,73 @@ def test_scalping_attaches_quality_snapshot_for_selection(
     assert decision.quality.expected_edge_after_cost > 0
     assert decision.quality.quality_score > 0
     assert decision.quality.trend.state == "bullish"
+
+
+def test_scalping_soft_microstructure_confirmation_penalizes_contradictory_candidates(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(microstructure_proxy_mode="soft_rank")
+        )
+    )
+
+    supportive = strategy.evaluate(
+        signal_bundle_factory(
+            microstructure_proxy=_microstructure_proxy(state="bullish", score=0.72)
+        )
+    )
+    contradictory = strategy.evaluate(
+        signal_bundle_factory(
+            microstructure_proxy=_microstructure_proxy(state="bearish", score=-0.72)
+        )
+    )
+
+    assert supportive.should_trade
+    assert contradictory.should_trade
+    assert supportive.quality is not None
+    assert contradictory.quality is not None
+    assert supportive.quality.microstructure_relation == "supports"
+    assert contradictory.quality.microstructure_relation == "strong_contradiction"
+    assert supportive.quality.quality_score > contradictory.quality.quality_score
+
+
+def test_scalping_can_optionally_gate_on_microstructure_contradiction(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(
+                microstructure_proxy_mode="confirmation_gate",
+                microstructure_proxy_min_alignment_score=0.15,
+            )
+        )
+    )
+
+    decision = strategy.evaluate(
+        signal_bundle_factory(
+            microstructure_proxy=_microstructure_proxy(state="bearish", score=-0.68)
+        )
+    )
+
+    assert not decision.should_trade
+    assert "microstructure_proxy_alignment" in decision.failed_filters
+
+
+def test_scalping_leaves_existing_path_intact_when_microstructure_proxy_is_off(
+    signal_bundle_factory,
+) -> None:
+    strategy = ScalpingStrategy(
+        settings=AppSettings(
+            scalping=ScalpingBracketSettings(microstructure_proxy_mode="off")
+        )
+    )
+
+    decision = strategy.evaluate(
+        signal_bundle_factory(
+            microstructure_proxy=_microstructure_proxy(state="bearish", score=-0.68)
+        )
+    )
+
+    assert decision.should_trade
+    assert "microstructure_proxy_alignment" not in decision.failed_filters
